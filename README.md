@@ -1,36 +1,41 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Meccha Chameleon
 
-## Getting Started
+A LAN-only multiplayer hide-and-seek game. Hiders are stick figures who can lie
+on their side to pass as scenery; seekers hunt them in first person with a
+shotgun. No internet, no accounts — everything runs on machines on the same
+Wi-Fi.
 
-First, run the development server:
+## Run it
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+This starts a custom server (`server.mjs`): Next.js on `:3000` and a Colyseus
+game server on `:2567`. It prints a LAN URL — other players on the same Wi-Fi
+open that. Sessions on the network are discovered automatically via UDP
+broadcast and listed in the menu.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Env vars: `PORT` (web), `GAME_PORT` (Colyseus), `SESSION_NAME`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Controls
 
-## Learn More
+`WASD` to move, mouse to look, `Q`/`E` to turn the figure, `Space` to jump.
+Click the canvas to lock the cursor, `Esc` to release.
 
-To learn more about Next.js, take a look at the following resources:
+- **Hider** — third-person camera, `1` stands upright and `2` lies flat on your side.
+- **Seeker** — first person with a shotgun, left click to fire.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Stack
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Next.js 16 App Router, React 19, TypeScript, Tailwind v4, three.js via
+`@react-three/fiber` / `drei` / `rapier`, and Colyseus 0.16 for netcode.
 
-## Deploy on Vercel
+## Status
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Movement, roles, lying flat, shooting marks and LAN discovery all work. Hit
+registration, health, round flow and sound are not built yet.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+See [CLAUDE.md](CLAUDE.md) for architecture notes and the traps worth knowing
+before changing anything.
