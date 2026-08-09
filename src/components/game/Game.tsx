@@ -1,12 +1,22 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { RoleMenu } from "./RoleMenu";
 import { ControlsPanel } from "./ControlsPanel";
 import { PlayerList } from "./PlayerList";
 import { PauseMenu } from "./PauseMenu";
-import { connect, disconnect, type Session } from "@/lib/net";
+import { PaintPanel, DEFAULT_BRUSH, type Brush } from "./PaintPanel";
+import { DeathScreen } from "./DeathScreen";
+import {
+  connect,
+  disconnect,
+  onKilled,
+  selfId,
+  sendClearSkin,
+  type Session,
+} from "@/lib/net";
+import { clearSkin, SELF } from "@/lib/skin";
 import { requestLock } from "@/lib/pointerLock";
 import type { Role } from "./types";
 
@@ -17,14 +27,41 @@ export function Game() {
   const [role, setRole] = useState<Role | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [paused, setPaused] = useState(false);
+  // `painting` means the palette is up. Hovering your own body opens it, and
+  // from then on it stays open until it is minimised — a palette that closed
+  // itself while you were mixing a colour would be maddening.
+  const [painting, setPainting] = useState(false);
+  const [brush, setBrush] = useState<Brush>(DEFAULT_BRUSH);
   const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState("player");
+  const [killedBy, setKilledBy] = useState<string | null>(null);
+  // Paint mode deliberately gives the cursor back, so the pointer-lock handler
+  // below must not read that as "the player wants the pause menu".
+  const paintingRef = useRef(false);
+  useEffect(() => {
+    paintingRef.current = painting;
+  }, [painting]);
+  const pausedRef = useRef(false);
+  useEffect(() => {
+    pausedRef.current = paused;
+  }, [paused]);
 
-  const join = useCallback((name: string, picked: Role, target: Session) => {
+  // Pausing always hands the cursor back, whichever role you are, so the menu
+  // buttons are reachable. A hider never held the lock, so this is a no-op for
+  // them; a seeker usually lost it to Esc already, but not if something else
+  // raised the menu.
+  useEffect(() => {
+    if (paused) document.exitPointerLock();
+  }, [paused]);
+
+  const join = useCallback((who: string, picked: Role, target: Session) => {
     setError(null);
+    setName(who);
     setRole(picked);
     setSession(target);
     setPaused(false);
-    connect(name, picked, target).catch((e: unknown) => {
+    setKilledBy(null);
+    connect(who, picked, target).catch((e: unknown) => {
       setError(
         `Could not reach ${target.name} at ${target.host}:${target.gamePort}. ${
           e instanceof Error ? e.message : ""
@@ -33,20 +70,91 @@ export function Game() {
     });
   }, []);
 
+  // Opening the panel hands the cursor back so you can draw; collapsing it
+  // re-locks the pointer for normal play.
+  const setPaintOpen = useCallback(
+    (open: boolean) => {
+      setPainting(open);
+      if (open) {
+        setPaused(false);
+        document.exitPointerLock();
+      } else if (role === "seeker") {
+        // Hiders never hold the lock, so there is nothing to take back.
+        requestLock();
+      }
+    },
+    [role],
+  );
+
+  // Opening the palette clears `paused`, so a hover arriving while the menu is
+  // up would dismiss it. Player already stops reporting hovers when paused;
+  // this is the second lock on the same door.
+  const onHoverBody = useCallback(
+    (hovering: boolean) => {
+      if (pausedRef.current) return;
+      if (hovering && !paintingRef.current) setPaintOpen(true);
+    },
+    [setPaintOpen],
+  );
+
   const leave = useCallback(() => {
     void disconnect();
     setRole(null);
     setSession(null);
     setPaused(false);
+    setPainting(false);
+    setKilledBy(null);
   }, []);
 
-  // Esc releases the pointer lock rather than reaching the app, so losing the
-  // lock is what actually means "the player wants out".
+  // Being shot drops you out of the room, so the death screen is the only
+  // thing left holding the session details for a respawn.
   useEffect(() => {
     if (!role) return;
+    return onKilled((victimId, by) => {
+      if (victimId !== selfId()) return;
+      setKilledBy(by);
+      setPainting(false);
+      setPaused(false);
+      document.exitPointerLock();
+      void disconnect();
+    });
+  }, [role]);
+
+  const resume = useCallback(() => {
+    setPaused(false);
+    if (role === "seeker") requestLock();
+  }, [role]);
+
+  const respawn = useCallback(() => {
+    if (!role || !session) return;
+    setKilledBy(null);
+    join(name, role, session);
+  }, [join, name, role, session]);
+
+  // A hider has no pointer lock to lose, so their Esc has to be read directly.
+  // A seeker's Esc is swallowed by the browser while the lock is held — losing
+  // the lock is what raises the menu (below) — but once the menu is up their
+  // cursor is free and Esc reaches us like anyone else's, so it can close it.
+  useEffect(() => {
+    if (!role) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== "Escape" || e.repeat || killedBy) return;
+      if (paintingRef.current) setPaintOpen(false);
+      else if (pausedRef.current) resume();
+      else if (role === "hider") setPaused(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [role, killedBy, resume, setPaintOpen]);
+
+  // For a seeker, Esc releases the pointer lock rather than reaching the app,
+  // so losing the lock is what actually means "the player wants out".
+  useEffect(() => {
+    if (role !== "seeker") return;
     const onLockChange = () => {
-      if (!document.pointerLockElement) setPaused(true);
-      else setPaused(false);
+      if (!document.pointerLockElement) {
+        if (!paintingRef.current) setPaused(true);
+      } else setPaused(false);
     };
     document.addEventListener("pointerlockchange", onLockChange);
     return () => document.removeEventListener("pointerlockchange", onLockChange);
@@ -62,19 +170,46 @@ export function Game() {
   // you straight into the room instead of swapping out the whole tree.
   return (
     <div className="relative h-dvh w-full">
-      <Scene role={role} />
+      <Scene
+        role={role}
+        alive={!killedBy}
+        painting={painting}
+        paused={paused}
+        brush={brush}
+        onHoverBody={onHoverBody}
+      />
       {role ? (
         <>
           <ControlsPanel role={role} />
           <PlayerList />
-          {role === "seeker" && !paused && (
+          {!paused && !killedBy && (
+            <PaintPanel
+              open={painting}
+              onOpenChange={setPaintOpen}
+              brush={brush}
+              onBrush={setBrush}
+              onClear={() => {
+                clearSkin(SELF);
+                sendClearSkin();
+              }}
+            />
+          )}
+          {role === "seeker" && !paused && !painting && !killedBy && (
             <div className="pointer-events-none absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-black/70" />
           )}
-          {paused && (
+          {paused && !painting && !killedBy && (
             <PauseMenu
               sessionName={session?.name ?? "session"}
-              onResume={requestLock}
+              onResume={resume}
               onLeave={leave}
+            />
+          )}
+          {killedBy && (
+            <DeathScreen
+              by={killedBy}
+              sessionName={session?.name ?? "session"}
+              onRespawn={respawn}
+              onExit={leave}
             />
           )}
           {error && (

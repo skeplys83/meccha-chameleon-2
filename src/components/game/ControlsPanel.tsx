@@ -1,23 +1,35 @@
 "use client";
 
 import type { Role } from "./types";
+import { POSES } from "./poses";
 
-const BASE: [key: string, action: string][] = [
+type Row = [key: string, action: string];
+
+/**
+ * The two roles do not share a control scheme, so they do not share a legend
+ * either. Anything listed here must actually be wired up in `Player.tsx` for
+ * that role — a hider has no shoot, and a seeker has no pose, no Q/E and no
+ * zoom, so none of those appear on the wrong card.
+ */
+const HIDER: Row[] = [
   ["W A S D", "Move (relative to view)"],
-  ["Mouse", "Look around"],
-  ["Q / E", "Turn your figure"],
   ["Space", "Jump"],
+  ["Q / E", "Turn your figure"],
+  ["Right drag", "Look around"],
+  ["Scroll", "Zoom the camera"],
+  ["Left drag", "Paint your body"],
+  ...POSES.map((p, i): Row => [String(i + 1), p.label]),
 ];
 
-const HIDER: [key: string, action: string][] = [
-  ["1", "Stand upright"],
-  ["2", "Lie on your side"],
+const SEEKER: Row[] = [
+  ["W A S D", "Move (relative to aim)"],
+  ["Space", "Jump"],
+  ["Mouse", "Aim"],
+  ["Left click", "Shoot"],
 ];
-
-const SEEKER: [key: string, action: string][] = [["Left click", "Shoot"]];
 
 export function ControlsPanel({ role }: { role: Role }) {
-  const rows = [...BASE, ...(role === "hider" ? HIDER : SEEKER)];
+  const rows = role === "seeker" ? SEEKER : HIDER;
 
   return (
     <div className="pointer-events-none absolute right-4 top-4 select-none rounded-lg bg-black/55 px-4 py-3 font-mono text-xs text-neutral-100 backdrop-blur">
@@ -35,7 +47,9 @@ export function ControlsPanel({ role }: { role: Role }) {
         </tbody>
       </table>
       <div className="mt-2 text-[11px] text-neutral-500">
-        Click to lock the cursor · Esc to release
+        {role === "seeker"
+          ? "Click to lock the cursor · Esc to release"
+          : "Esc pauses · your cursor stays free"}
       </div>
     </div>
   );

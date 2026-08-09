@@ -3,18 +3,42 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchSessions, type Session } from "@/lib/net";
 import type { Role } from "./types";
+import { randomName } from "./names";
 
-const COOKIE = "mc_name";
+/**
+ * The name lives in `sessionStorage`, deliberately — it is scoped to the tab,
+ * not to the browser. This was a cookie, which meant two tabs on one machine
+ * (the normal way to test two players locally) shared and overwrote a single
+ * name. `sessionStorage` gives each tab its own, and it survives a reload.
+ *
+ * Storage throws in some privacy modes, so neither side is allowed to be fatal:
+ * the worst case is a fresh random name.
+ */
+const NAME_KEY = "mc_name";
+/** Left over from the cookie era. Expired on sight so it stops travelling with
+ *  every request and can never leak a browser-wide name back into a tab. */
+const LEGACY_COOKIE = "mc_name";
 
-function readNameCookie() {
-  const hit = document.cookie
-    .split("; ")
-    .find((c) => c.startsWith(`${COOKIE}=`));
-  return hit ? decodeURIComponent(hit.slice(COOKIE.length + 1)) : "";
+function readName() {
+  try {
+    return sessionStorage.getItem(NAME_KEY) ?? "";
+  } catch {
+    return "";
+  }
 }
 
-function writeNameCookie(name: string) {
-  document.cookie = `${COOKIE}=${encodeURIComponent(name)}; path=/; max-age=31536000; samesite=lax`;
+function writeName(name: string) {
+  try {
+    sessionStorage.setItem(NAME_KEY, name);
+  } catch {
+    // No storage available — the name just will not survive a reload.
+  }
+}
+
+function dropLegacyCookie() {
+  if (document.cookie.includes(`${LEGACY_COOKIE}=`)) {
+    document.cookie = `${LEGACY_COOKIE}=; path=/; max-age=0; samesite=lax`;
+  }
 }
 
 export function RoleMenu({
@@ -29,9 +53,11 @@ export function RoleMenu({
   const [self, setSelf] = useState<Session | null>(null);
   const [target, setTarget] = useState<Session | null>(null);
 
+  // Filled in after mount, so the server-rendered markup and the hydrated
+  // input still match: a random name would differ on every render otherwise.
   useEffect(() => {
-    const saved = readNameCookie();
-    if (saved && input.current) input.current.value = saved;
+    dropLegacyCookie();
+    if (input.current) input.current.value = readName() || randomName();
   }, []);
 
   useEffect(() => {
@@ -57,13 +83,13 @@ export function RoleMenu({
   const join = (role: Role) => {
     if (!destination) return;
     const trimmed = (input.current?.value ?? "").trim().slice(0, 16) || "player";
-    writeNameCookie(trimmed);
+    writeName(trimmed);
     onJoin(trimmed, role, destination);
   };
 
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 overflow-y-auto bg-neutral-950/90 py-10 text-neutral-100 backdrop-blur-sm">
-      <h1 className="text-3xl font-semibold tracking-tight">Meccha Chameleon</h1>
+      <h1 className="text-3xl font-semibold tracking-tight">Meccha Chameleon 2</h1>
 
       <input
         ref={input}

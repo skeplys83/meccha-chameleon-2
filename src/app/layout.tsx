@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Meccha Chameleon",
+  title: "Meccha Chameleon 2",
   description: "A 3D game built with Next.js and Three.js",
 };
 

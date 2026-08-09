@@ -8,15 +8,34 @@ import { controlMap } from "./controls";
 import { Player } from "./Player";
 import { Room } from "./Room";
 import { Marks } from "./Marks";
+import { Graves } from "./Graves";
 import { Viewmodel } from "./Viewmodel";
 import { RemotePlayers } from "./RemotePlayers";
 import type { Mark, Role } from "./types";
-import { onMark } from "@/lib/net";
+import type { Brush } from "./PaintPanel";
+import { onGrave, onMark, type Grave } from "@/lib/net";
 
 const MARK_LIFETIME = 3000;
 
-export default function Scene({ role }: { role: Role | null }) {
+export default function Scene({
+  role,
+  alive,
+  painting,
+  paused,
+  brush,
+  onHoverBody,
+}: {
+  role: Role | null;
+  /** False while the death screen is up: the body leaves the room entirely, so
+   *  respawning mounts a fresh one at the spawn point in the default pose. */
+  alive: boolean;
+  painting: boolean;
+  paused: boolean;
+  brush: Brush;
+  onHoverBody: (hovering: boolean) => void;
+}) {
   const [marks, setMarks] = useState<Mark[]>([]);
+  const [graves, setGraves] = useState<Grave[]>([]);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
@@ -36,6 +55,16 @@ export default function Scene({ role }: { role: Role | null }) {
     };
   }, []);
 
+  // Graves come from room state, so this also receives the ones that were
+  // already there when you joined.
+  useEffect(
+    () =>
+      onGrave((grave) =>
+        setGraves((prev) => (prev.some((g) => g.id === grave.id) ? prev : [...prev, grave])),
+      ),
+    [],
+  );
+
   return (
     <KeyboardControls map={controlMap}>
       <Canvas shadows camera={{ fov: 60, position: [0, 5, 11] }} dpr={[1, 2]}>
@@ -49,11 +78,20 @@ export default function Scene({ role }: { role: Role | null }) {
         />
         <Physics gravity={[0, -20, 0]}>
           <Room />
-          {role && <Player role={role} />}
+          {role && alive && (
+            <Player
+              role={role}
+              painting={painting}
+              paused={paused}
+              brush={brush}
+              onHoverBody={onHoverBody}
+            />
+          )}
         </Physics>
         <RemotePlayers />
         <Marks marks={marks} />
-        {role === "seeker" && <Viewmodel />}
+        <Graves graves={graves} />
+        {role === "seeker" && !painting && <Viewmodel />}
       </Canvas>
     </KeyboardControls>
   );
