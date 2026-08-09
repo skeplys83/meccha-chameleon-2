@@ -1,4 +1,5 @@
 import type { KeyboardControlsEntry } from "@react-three/drei";
+import { POSES } from "./poses";
 
 export type Control =
   | "forward"
@@ -8,8 +9,10 @@ export type Control =
   | "jump"
   | "turnLeft"
   | "turnRight"
-  | "formUpright"
-  | "formFlat";
+  | `pose${number}`;
+
+/** `1`–`8` select a pose; index 0 is the upright stance. */
+export const poseControl = (index: number) => `pose${index}` as Control;
 
 export const controlMap: KeyboardControlsEntry<Control>[] = [
   { name: "forward", keys: ["ArrowUp", "KeyW"] },
@@ -19,6 +22,8 @@ export const controlMap: KeyboardControlsEntry<Control>[] = [
   { name: "jump", keys: ["Space"] },
   { name: "turnLeft", keys: ["KeyQ"] },
   { name: "turnRight", keys: ["KeyE"] },
-  { name: "formUpright", keys: ["Digit1"] },
-  { name: "formFlat", keys: ["Digit2"] },
+  ...POSES.map((_, i) => ({
+    name: poseControl(i),
+    keys: [`Digit${i + 1}`],
+  })),
 ];
