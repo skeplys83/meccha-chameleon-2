@@ -1,5 +1,8 @@
 # Meccha Chameleon
 
+<img width="1914" height="967" alt="image" src="https://github.com/user-attachments/assets/8c62910d-3f56-489e-93d8-7124af27c636" />
+
+
 A LAN-only multiplayer hide-and-seek game. Hiders are stick figures who can lie
 on their side to pass as scenery; seekers hunt them in first person with a
 shotgun. No internet, no accounts — everything runs on machines on the same
