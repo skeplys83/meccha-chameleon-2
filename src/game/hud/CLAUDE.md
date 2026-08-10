@@ -24,7 +24,11 @@ you join.
 2. **`ControlsPanel` holds one legend per role and they are not built from a
    shared base.** If a row is on a card, that role must really have it wired up
    in `players/Player.tsx`. A hider has no shoot; a seeker has no pose, no
-   `Q`/`E`, no zoom and no climb, so none of those may appear on the wrong card. Those two files
+   `Q`/`E`, no zoom and no climb, so none of those may appear on the wrong card.
+   Climbing has **no key of its own** — you attach by walking into a surface — so
+   it is written onto the `W A S D` and `Space` rows rather than given one. A row
+   here is a promise that a key does that thing; inventing one for a mechanic
+   that has no key would be a lie on the card. Those two files
    are the contract.
 3. **The player name is per tab, in `sessionStorage`, not a cookie.** Two tabs on
    one machine is how you test two players locally, and a cookie made them share

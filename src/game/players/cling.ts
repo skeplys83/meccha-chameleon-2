@@ -3,13 +3,15 @@
 import * as THREE from "three";
 
 /**
- * Finding something to climb.
+ * Finding something to climb, and holding onto it.
  *
- * A hider can stick to any surface in the arena — a wall, the side of an
- * obstacle, the ceiling, the underside of the catwalk. All of it is expressed as
- * one vector: the surface normal, pointing *away* from the surface and back at
- * the body. Walls give a horizontal normal, a ceiling gives `(0, −1, 0)`, and
- * everything between falls out of the same maths.
+ * A hider sticks to any surface in the arena — a wall, the side of an obstacle,
+ * the ceiling, the underside of the catwalk. All of it is one vector: the
+ * surface normal, pointing *away* from the surface and back at the body. Walls
+ * give a horizontal normal, a ceiling gives `(0, −1, 0)`.
+ *
+ * **You attach by walking into something.** There is no grab key: press toward a
+ * wall and your feet come off the floor. `Space` is the only way off.
  *
  * **The figure never reorients while clinging.** It stays upright, sliding up a
  * wall face or moving along under a ceiling. That is what keeps this feature
@@ -19,129 +21,174 @@ import * as THREE from "three";
  * so it imports straight into Node for testing. See the root CLAUDE.md.
  */
 
-/** How far from the body centre a surface can be and still be grabbed. */
-export const CLING_REACH = 0.75;
-/** Up and down a wall, in units per second. Deliberately below walking speed. */
+/** How far past the body's own surface still counts as touching. */
+export const CLING_GAP = 0.35;
+/** Across a surface, in units per second. Deliberately below walking speed. */
 export const CLIMB_SPEED = 4;
 /** Constant pull into the surface, so contact is never lost to a bump. */
 export const STICK_SPEED = 2;
 /** After letting go, ignore surfaces for this long or you re-grab instantly. */
-export const RECLING_GRACE = 0.35;
+export const RECLING_GRACE = 0.4;
+/** A nudge away from the surface on release, so you fall clear of it. */
+export const RELEASE_PUSH = 2.5;
 /**
- * A normal this far toward straight down is a ceiling rather than a wall: you
- * are underneath the surface, so `Shift` should drop you off it instead of
- * walking you down it.
+ * A normal this far toward straight down is a ceiling: you are underneath the
+ * surface, so there is no "up the wall" to walk and movement stays camera-relative.
  */
 export const CEILING_DOT = -0.5;
-
 /**
- * How much closer a rival surface must be before it steals you off the one you
- * are already on. Without it, an inside corner flips the normal every frame.
+ * How level a normal has to be to count as a wall you can walk onto. Keeps you
+ * from sticking to the floor or a ramp just by walking across it.
  */
-const PREFER_BIAS = 1.6;
-
-/**
- * Directions probed when looking for something to grab: the six axes, plus the
- * four horizontal diagonals so a wall met at 45° is still found. Down is in the
- * list because the floor is a surface like any other — grabbing it is harmless
- * and it keeps the rule uniform.
- */
-const PROBES: readonly THREE.Vector3[] = [
-  new THREE.Vector3(1, 0, 0),
-  new THREE.Vector3(-1, 0, 0),
-  new THREE.Vector3(0, 0, 1),
-  new THREE.Vector3(0, 0, -1),
-  new THREE.Vector3(0, 1, 0),
-  new THREE.Vector3(0, -1, 0),
-  new THREE.Vector3(1, 0, 1).normalize(),
-  new THREE.Vector3(1, 0, -1).normalize(),
-  new THREE.Vector3(-1, 0, 1).normalize(),
-  new THREE.Vector3(-1, 0, -1).normalize(),
-];
+const WALL_DOT = 0.5;
+/** How squarely you must be moving into a surface to grab it. ~70° either side. */
+const INTO_SURFACE = 0.35;
 
 const ray = new THREE.Raycaster();
 const worldNormal = new THREE.Vector3();
 const quat = new THREE.Quaternion();
 const back = new THREE.Vector3();
+const dirUnit = new THREE.Vector3();
 
 /**
- * The world-space normal of a hit, flipped to face the body.
+ * How far the body's own box extends in a direction — its support function.
  *
- * Face normals are object-local and point whichever way the triangle was wound;
- * a room is built from boxes seen from inside, so half of them point away. What
- * the caller wants is always "which way is out of this surface, from where I am".
+ * The reach has to depend on the direction or nothing works: a hider is 0.26
+ * wide and 1 tall, so a probe upward that used the horizontal reach would never
+ * see the ceiling their head is already touching, and a sideways probe that used
+ * the vertical one would grab walls a body-length away.
  */
-function outwardNormal(hit: THREE.Intersection, towards: THREE.Vector3) {
-  if (!hit.face) return null;
+export function reachFor(dir: THREE.Vector3, half: readonly [number, number, number]) {
+  return (
+    Math.abs(dir.x) * half[0] +
+    Math.abs(dir.y) * half[1] +
+    Math.abs(dir.z) * half[2] +
+    CLING_GAP
+  );
+}
+
+/**
+ * Cast from the body along `dir` and return the surface normal facing back, or
+ * null if nothing is within reach.
+ *
+ * Face normals are object-local and point whichever way the triangle was wound —
+ * a room is built from boxes seen from inside, so half of them face away. What
+ * the caller always wants is "which way is out of this surface, from here".
+ */
+export function probe(
+  origin: THREE.Vector3,
+  dir: THREE.Vector3,
+  half: readonly [number, number, number],
+  solids: THREE.Object3D[],
+): THREE.Vector3 | null {
+  if (!solids.length || dir.lengthSq() === 0) return null;
+  dirUnit.copy(dir).normalize();
+
+  ray.set(origin, dirUnit);
+  ray.far = reachFor(dirUnit, half);
+  const hit = ray.intersectObjects(solids, false)[0];
+  if (!hit?.face) return null;
+
   worldNormal
     .copy(hit.face.normal)
     .applyQuaternion(hit.object.getWorldQuaternion(quat))
     .normalize();
-  if (worldNormal.dot(towards) < 0) worldNormal.negate();
+  // Flip it to face the body rather than away.
+  back.copy(dirUnit).negate();
+  if (worldNormal.dot(back) < 0) worldNormal.negate();
   return worldNormal.clone();
 }
 
 /**
- * The nearest grabbable surface, as a normal pointing back at `origin`, or null.
+ * The surface you just walked into, or null.
  *
- * `prefer` is the normal already being held. A surface pointing the same way
- * counts as nearer than it is, so standing in an inside corner does not flip you
- * between two walls every frame.
+ * Only wall-like faces count, and only when you are moving reasonably squarely
+ * at one — so brushing along a wall does not peel you off the floor, and walking
+ * across the floor or up the ramp never sticks you to it.
  */
 export function findCling(
   origin: THREE.Vector3,
-  reach: number,
+  moveDir: THREE.Vector3,
+  half: readonly [number, number, number],
   solids: THREE.Object3D[],
-  prefer: THREE.Vector3 | null = null,
 ): THREE.Vector3 | null {
-  if (!solids.length) return null;
+  if (moveDir.lengthSq() === 0) return null;
+  const normal = probe(origin, moveDir, half, solids);
+  if (!normal) return null;
+  if (Math.abs(normal.y) > WALL_DOT) return null;
 
-  let best: THREE.Vector3 | null = null;
-  let bestScore = Infinity;
-
-  for (const dir of PROBES) {
-    ray.set(origin, dir);
-    ray.far = reach;
-    const hit = ray.intersectObjects(solids, false)[0];
-    if (!hit) continue;
-
-    // Facing back down the probe is "out of the surface, toward me".
-    back.copy(dir).negate();
-    const normal = outwardNormal(hit, back);
-    if (!normal) continue;
-
-    const score = prefer && normal.dot(prefer) > 0.9 ? hit.distance / PREFER_BIAS : hit.distance;
-    if (score < bestScore) {
-      bestScore = score;
-      best = normal;
-    }
-  }
-
-  return best;
+  dirUnit.copy(moveDir).normalize();
+  return dirUnit.dot(normal) < -INTO_SURFACE ? normal : null;
 }
 
 /**
- * Still on it? One ray straight into the surface. This is the per-frame check —
- * `findCling` is only for grabbing something new.
+ * Still on it? One ray straight into the surface.
  *
- * Returns the refreshed normal, so a curved surface keeps updating as you move
- * across it, or null once the surface is gone (you climbed past the top of a
- * box, or slid off the side of it).
+ * Returns a refreshed normal, so a curved face keeps updating as you cross it,
+ * or null once the surface is gone — climbed past the top of a box, or slid off
+ * the side of it. Losing the surface is the same code path as letting go, which
+ * is why there is no ledge-mantling anywhere.
  */
 export function holdsCling(
   origin: THREE.Vector3,
   normal: THREE.Vector3,
-  reach: number,
+  half: readonly [number, number, number],
   solids: THREE.Object3D[],
 ): THREE.Vector3 | null {
-  if (!solids.length) return null;
   back.copy(normal).negate();
-  ray.set(origin, back);
-  ray.far = reach;
-  const hit = ray.intersectObjects(solids, false)[0];
-  if (!hit) return null;
-  return outwardNormal(hit, normal);
+  return probe(origin, back, half, solids);
 }
 
-/** Underneath the surface rather than beside it — the ceiling case. */
+/**
+ * Wrapping around an edge: whatever you are climbing *toward*, if it is a
+ * different face from the one you are on.
+ *
+ * One rule covers every corner in the game — climbing a wall into the ceiling,
+ * crossing an inside corner between two walls, and stepping off a ceiling back
+ * onto a wall.
+ */
+export function wrapCling(
+  origin: THREE.Vector3,
+  normal: THREE.Vector3,
+  climbDir: THREE.Vector3,
+  half: readonly [number, number, number],
+  solids: THREE.Object3D[],
+): THREE.Vector3 | null {
+  if (climbDir.lengthSq() === 0) return null;
+  const found = probe(origin, climbDir, half, solids);
+  // Within a few degrees of the face already held is the same face.
+  return found && found.dot(normal) < 0.95 ? found : null;
+}
+
+/** Underneath the surface rather than beside it — movement stays camera-relative. */
 export const isCeiling = (normal: THREE.Vector3) => normal.y < CEILING_DOT;
+
+/** Beside it, so there is an "up the wall" to walk. */
+export const isWall = (normal: THREE.Vector3) => Math.abs(normal.y) <= WALL_DOT;
+
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
+
+/**
+ * The wall's own axes: which way is up its face, and which way is across it.
+ *
+ * `W`/`S` run along `up`, `A`/`D` along `right`, so climbing does not depend on
+ * where the camera happens to be pointing. `right = up × normal` also happens to
+ * be screen-right whenever the camera is behind you looking at the wall, which
+ * is the case that matters.
+ *
+ * Returns false for a surface with no meaningful "up" — a ceiling — where the
+ * caller should fall back to ordinary camera-relative movement.
+ */
+export function wallTangents(
+  normal: THREE.Vector3,
+  up: THREE.Vector3,
+  right: THREE.Vector3,
+) {
+  if (!isWall(normal)) return false;
+  // World up flattened into the face.
+  up.copy(WORLD_UP).addScaledVector(normal, -WORLD_UP.dot(normal));
+  if (up.lengthSq() < 1e-6) return false;
+  up.normalize();
+  right.crossVectors(up, normal).normalize();
+  return true;
+}

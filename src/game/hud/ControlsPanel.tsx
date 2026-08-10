@@ -12,9 +12,8 @@ type Row = [key: string, action: string];
  * zoom, so none of those appear on the wrong card.
  */
 const HIDER: Row[] = [
-  ["W A S D", "Move (relative to view)"],
-  ["Space", "Jump · climb up a surface"],
-  ["Shift", "Climb down · drop off a ceiling"],
+  ["W A S D", "Move · climb a surface you walk into"],
+  ["Space", "Jump · let go of a surface"],
   ["Q / E", "Turn your figure"],
   ["Right drag", "Look around"],
   ["Scroll", "Zoom the camera"],

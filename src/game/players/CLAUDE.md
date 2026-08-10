@@ -43,10 +43,11 @@ one role, and **adding a control means deciding whose it is.**
 | Size | half-extents `[0.26, 1, 0.26]` | `[0.52, 1.3, 0.52]` |
 | Look | right-drag (cursor stays free) | mouse (pointer locked) |
 | Turn the figure | `Q`/`E`, independent of the camera | none — the figure faces the aim |
-| Climb | `Space` grabs and goes up, `Shift` goes down | none |
+| Climb | walk into a surface; `W`/`S` up and down it, `A`/`D` across | none |
 | Poses | `1`–`5` | none, always upright |
 | Zoom | scroll | none |
 | Paint | left-drag on your body | pin the palette, drops to third person |
+| Let go | `Space` | — (`Space` is their jump) |
 | Weapon | none | shotgun, left click |
 
 ## Invariants
@@ -106,28 +107,38 @@ one role, and **adding a control means deciding whose it is.**
 12. **The shotgun is rate-limited here as well as on the server.** `lastShot`
     against `FIRE_INTERVAL_MS`, checked before the raycast, so a held button is
     one shot. The client copy is for feel; the server's is what actually binds.
-13. **A hider climbs, and never reorients while doing it.** `Space` next to a
-    surface grabs it; `Space` away from one is still the jump it always was.
-    `Shift` walks back down, or lets go if the surface is overhead. The whole
-    state is one vector — `cling`, the surface normal pointing back at the body —
-    and the figure stays upright throughout. That constraint is what keeps the
-    feature small: the camera, the poses and the `yaw` on the wire are all
+13. **A hider climbs, and never reorients while doing it.** There is no grab
+    key: walking squarely into a wall takes you onto it. `W` and `S` then run up
+    and down the face, `A`/`D` go across it, and `Space` is the only way off. The
+    whole state is one vector — `cling`, the surface normal pointing back at the
+    body — and the figure stays upright throughout. That constraint is what keeps
+    the feature small: the camera, the poses and the `yaw` on the wire are all
     untouched by it. Do not be tempted to rotate the figure onto the surface
     without also rebuilding the camera basis, or `W` walks down the screen.
-14. **Movement while clinging is `move` flattened into the surface.** Walking
-    into a wall projects to nothing, walking along it slides, and on a ceiling
-    the projection is the identity — so ceiling movement is ordinary walking. One
-    formula covers walls, object sides and roofs.
-15. **Gravity is switched off per body, not globally.** `setGravityScale(0)` while
+14. **On a wall, movement uses the wall's own axes, not the camera's.** `W` is up
+    the face wherever you are looking, which is the whole point of `wallTangents`.
+    On a *ceiling* there is no "up the surface", so movement falls back to
+    ordinary camera-relative walking — which for a flat roof is exactly right.
+15. **The probe reach depends on direction.** A hider is 0.26 wide and 1 tall, so
+    one reach cannot serve both: an upward probe using the sideways reach would
+    never see the ceiling their head is already touching, and a sideways probe
+    using the vertical one would grab walls a body-length away. `reachFor` is the
+    box's support function, and getting it wrong is why the first version could
+    not wrap onto the ceiling at all.
+16. **Gravity is switched off per body, not globally.** `setGravityScale(0)` while
     clinging, `1` otherwise, set every frame from one place so the two can never
     disagree. A constant `STICK_SPEED` into the surface holds contact.
-16. **Climbing off the top of something is not a special case.** The per-frame
+17. **Climbing off the top of something is not a special case.** The per-frame
     `holdsCling` ray simply misses, gravity comes back, and you drop the last few
     centimetres onto the top face. Losing the surface is already the "let go"
     path; reusing it is why there is no ledge-mantling code.
-17. **`RECLING_GRACE` after letting go.** Without it, releasing a ceiling
-    re-grabs it on the very next frame and `Shift` appears to do nothing.
-18. **Your own footsteps live in this file**, because it is the only place that
+18. **`RECLING_GRACE` and a push on release.** Without both, `Space` lets go and
+    the next frame walks you straight back into the wall you are still touching,
+    so it appears to do nothing.
+19. **One wrap rule covers every edge.** `wrapCling` probes whatever you are
+    climbing *toward*; a face different from the one you hold becomes the new
+    one. That is wall→ceiling, inside corners, and ceiling→wall, with no cases.
+20. **Your own footsteps live in this file**, because it is the only place that
     knows you are grounded — nobody else's `grounded` is on the wire. They play
     without a position (you are the listener) and a little quieter than everyone
     else's. The `Stepper` is built with `strideFor(role)`, so a hider's cadence is

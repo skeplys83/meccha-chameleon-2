@@ -32,8 +32,9 @@ Click the canvas to lock the cursor, `Esc` to release.
 - **Seeker** — first person with a shotgun, left click to fire (pump-action, so
   there is a delay between shots).
 
-Hiders can climb: walk up to a wall, an object or the ceiling and press `Space`
-to go up it, `Shift` to come back down. `Shift` on a ceiling lets go.
+Hiders can climb: walk into a wall or an object and you go onto it. `W`/`S` run
+up and down the face, `A`/`D` across it, and `Space` lets go. Climb high enough
+and you wrap onto the ceiling.
 
 Sound is positional: footsteps, gunshots and deaths come from where they happen,
 and a hider's lighter footsteps are pitched above a seeker's. Climbing is silent.

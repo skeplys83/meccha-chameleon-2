@@ -15,12 +15,13 @@ import { controlMap, poseControl } from "./controls";
 import { followThirdPerson } from "./camera";
 import {
   CLIMB_SPEED,
-  CLING_REACH,
   RECLING_GRACE,
+  RELEASE_PUSH,
   STICK_SPEED,
   findCling,
   holdsCling,
-  isCeiling,
+  wallTangents,
+  wrapCling,
 } from "./cling";
 import { BODY } from "./body";
 import { FIRE_INTERVAL_MS, type Role } from "@/game/shared/protocol";
@@ -62,8 +63,10 @@ const lookDir = new THREE.Vector3();
 const euler = new THREE.Euler(0, 0, 0, "YXZ");
 const quat = new THREE.Quaternion();
 const groundRay = new THREE.Raycaster();
-/** Scratch for the movement vector projected onto the surface being climbed. */
+/** Scratch for movement across the surface being climbed, and the wall's axes. */
 const alongSurface = new THREE.Vector3();
+const wallUp = new THREE.Vector3();
+const wallRight = new THREE.Vector3();
 const DOWN = new THREE.Vector3(0, -1, 0);
 /** How far below the feet still counts as standing on something. */
 const GROUND_REACH = 0.2;
@@ -140,8 +143,6 @@ export function Player({
   const cling = useRef<THREE.Vector3 | null>(null);
   /** Seconds left before a surface can be grabbed again after letting go. */
   const reclingGrace = useRef(0);
-  /** Shift last frame, so dropping off a ceiling fires once per press. */
-  const descendHeld = useRef(false);
   const ring = useRef<THREE.Mesh>(null);
   const [, getKeys] = useKeyboardControls<Control>();
   const { gl, camera, scene, raycaster } = useThree();
@@ -429,38 +430,72 @@ export function Player({
 
     // ---------------------------------------------------------------- climbing
     //
-    // A hider sticks to any surface in the arena and stays upright on it. Space
-    // grabs and climbs, Shift goes back down — or lets go, if the surface is
-    // overhead. Seekers hunt on the floor and have none of this.
+    // A hider sticks to anything they walk into and stays upright on it. On a
+    // wall W and S run up and down the face and A/D go across it; on a ceiling
+    // movement stays camera-relative, because there is no "up" to a surface you
+    // are hanging from. Space is the only way off. Seekers hunt on the floor and
+    // have none of this.
     if (reclingGrace.current > 0) reclingGrace.current -= delta;
     const spacePressed = keys.jump && !jumpHeld.current;
-    const shiftPressed = keys.descend && !descendHeld.current;
+    let releasing = false;
 
     if (role === "hider") {
       if (cling.current) {
-        // Still on it? A curved surface keeps handing back a fresh normal as you
-        // move across it; a missing one means the surface ran out — climbing
-        // past the top of a box, say — and gravity takes over from here.
-        cling.current = holdsCling(bodyPos, cling.current, CLING_REACH, solids.current);
-
-        // Shift drops you off a ceiling rather than walking you down it.
-        if (cling.current && shiftPressed && isCeiling(cling.current)) cling.current = null;
-        if (!cling.current) reclingGrace.current = RECLING_GRACE;
-      } else if (spacePressed && reclingGrace.current <= 0) {
-        // Space next to something climbable grabs it. Away from a surface it is
-        // still the jump it always was — see the velocity block below.
-        cling.current = findCling(bodyPos, CLING_REACH, solids.current);
+        if (spacePressed) {
+          releasing = true;
+        } else {
+          // Wrap around an edge into whatever we are climbing toward: a wall
+          // into the ceiling, an inside corner, a ceiling back onto a wall.
+          const wrapped = wrapCling(bodyPos, cling.current, alongSurface, [hx, half, hz], solids.current);
+          cling.current =
+            wrapped ?? holdsCling(bodyPos, cling.current, [hx, half, hz], solids.current);
+        }
+      } else if (reclingGrace.current <= 0) {
+        // No grab key: walking squarely into a wall is what takes you onto it.
+        cling.current = findCling(bodyPos, move, [hx, half, hz], solids.current);
       }
     } else {
       cling.current = null;
     }
 
+    // Movement across the surface, and the axes it is measured in. Computed
+    // before the release check so `alongSurface` is the direction we were
+    // heading — which is what the wrap probe above reads on the next frame.
+    if (cling.current && wallTangents(cling.current, wallUp, wallRight)) {
+      alongSurface
+        .copy(wallUp)
+        .multiplyScalar(Number(keys.forward) - Number(keys.backward))
+        .addScaledVector(wallRight, Number(keys.right) - Number(keys.left));
+      if (alongSurface.lengthSq() > 0) alongSurface.normalize().multiplyScalar(CLIMB_SPEED);
+    } else if (cling.current) {
+      // A ceiling: no up to walk, so this is ordinary camera-relative movement
+      // flattened into the surface, which for a flat roof changes nothing.
+      alongSurface.copy(move).addScaledVector(cling.current, -move.dot(cling.current));
+    } else {
+      alongSurface.set(0, 0, 0);
+    }
+
+    if (releasing) {
+      // Push clear so gravity has somewhere to take you, and lock out an
+      // immediate re-grab — otherwise Space looks like it does nothing.
+      const normal = cling.current!;
+      cling.current = null;
+      reclingGrace.current = RECLING_GRACE;
+      rb.setLinvel(
+        {
+          x: normal.x * RELEASE_PUSH,
+          y: normal.y * RELEASE_PUSH,
+          z: normal.z * RELEASE_PUSH,
+        },
+        true,
+      );
+    }
+
     const clinging = cling.current !== null;
     rb.setGravityScale(clinging ? 0 : 1, true);
 
-    const jumping = !clinging && keys.jump && !jumpHeld.current && grounded;
+    const jumping = !clinging && !releasing && keys.jump && !jumpHeld.current && grounded;
     jumpHeld.current = keys.jump;
-    descendHeld.current = keys.descend;
 
     // Footsteps are for walking. Sliding up a wall or hanging off the roof is
     // silent — which is most of the point of being up there.
@@ -476,25 +511,15 @@ export function Player({
     const velocity = rb.linvel();
     if (cling.current) {
       const normal = cling.current;
-      // WASD flattened into the surface: walking into a wall projects to
-      // nothing, walking along it slides. On a ceiling the projection is the
-      // identity, so it is simply normal walking — one formula, both cases.
-      alongSurface.copy(move).addScaledVector(normal, -move.dot(normal));
-
-      // Space and Shift run up and down the wall. On a ceiling Shift has already
-      // let go above, so only the climb-up term can be live here.
-      const climb =
-        (Number(keys.jump) - Number(keys.descend)) * CLIMB_SPEED * (isCeiling(normal) ? 0 : 1);
-
       rb.setLinvel(
         {
           x: alongSurface.x - normal.x * STICK_SPEED,
-          y: alongSurface.y + climb - normal.y * STICK_SPEED,
+          y: alongSurface.y - normal.y * STICK_SPEED,
           z: alongSurface.z - normal.z * STICK_SPEED,
         },
         true,
       );
-    } else {
+    } else if (!releasing) {
       rb.setLinvel(
         { x: move.x, y: jumping ? JUMP_SPEED : velocity.y, z: move.z },
         true,
