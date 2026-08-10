@@ -19,7 +19,7 @@
  * buffers load — see `engine.ts`.
  */
 
-export type SoundName = "shotgun" | "squash" | "step" | "whistle";
+export type SoundName = "shotgun" | "squash" | "step" | "brush" | "whistle";
 
 export type SoundSpec = {
   url: string;
@@ -37,6 +37,13 @@ export const SOUNDS: Record<SoundName, SoundSpec> = {
   squash: { url: "/sounds/squash.wav", gain: 1.0, positional: true },
   /** One footfall. Pitched by body size, see `footsteps.ts`. */
   step: { url: "/sounds/step.wav", gain: 0.6, positional: true },
+  /**
+   * Looped while you are dragging the brush across your own body. Deliberately
+   * the quietest thing in the game: it runs continuously, and a continuous sound
+   * reads far louder than its peak suggests. Not positional — it is your own
+   * hand, at your own ear — so stereo is right for it.
+   */
+  brush: { url: "/sounds/brush.wav", gain: 0.28, positional: false },
   /** Global, stereo, and currently **unwired** — there is no round flow to start
    *  yet. It loads with the rest so hooking it up is a one-line change. */
   whistle: { url: "/sounds/whistle.wav", gain: 0.7, positional: false },

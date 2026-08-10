@@ -19,10 +19,18 @@ const REF_DISTANCE = 6;
 /** Past this, a sound is silent. Just inside the arena's diagonal. */
 const MAX_DISTANCE = 45;
 const ROLLOFF = 1.1;
+/**
+ * Ramp on either end of a loop. Starting or stopping a buffer at full amplitude
+ * puts a step in the waveform, which is a click — and a brush you can click on
+ * and off is worse than no brush at all.
+ */
+const LOOP_FADE = 0.05;
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
 const buffers = new Map<SoundName, AudioBuffer>();
+/** Looping sounds currently running, at most one per name. */
+const loops = new Map<SoundName, { source: AudioBufferSourceNode; gain: GainNode }>();
 let loading: Promise<void> | null = null;
 let unlockBound = false;
 let warnedSuspended = false;
@@ -191,6 +199,12 @@ export type PlayOptions = {
   rate?: number;
   /** Multiplied with the catalogue gain. */
   gain?: number;
+  /**
+   * Seconds to wait before it sounds. Scheduled on the audio clock rather than
+   * with `setTimeout`, so it is sample-accurate and cannot be pushed around by a
+   * busy frame.
+   */
+  delay?: number;
 };
 
 /**
@@ -261,7 +275,78 @@ export function playSound(name: SoundName, options: PlayOptions = {}) {
     gain.disconnect();
     panner?.disconnect();
   };
+  source.start(context.currentTime + Math.max(0, options.delay ?? 0));
+}
+
+/**
+ * Start a sound looping, or do nothing if it already is.
+ *
+ * Loops are keyed by name, so `startLoop` is idempotent and callers can fire it
+ * on every frame of a drag without checking. `stopLoop` is the only way one
+ * ends.
+ *
+ * Unlike `playSound` this does *not* bail when the context is suspended: it
+ * starts anyway and asks for a resume. A suspended context has a frozen clock,
+ * so the sound and its fade simply begin when the context wakes.
+ */
+export function startLoop(name: SoundName, options: { gain?: number; rate?: number } = {}) {
+  const context = ctx;
+  const out = master;
+  const buffer = buffers.get(name);
+  if (!context || !out || !buffer || loops.has(name)) return;
+  if (context.state !== "running") void context.resume();
+
+  const source = context.createBufferSource();
+  source.buffer = buffer;
+  source.loop = true;
+  source.playbackRate.value = options.rate ?? 1;
+
+  const gain = context.createGain();
+  const target = SOUNDS[name].gain * (options.gain ?? 1);
+  const now = context.currentTime;
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(target, now + LOOP_FADE);
+
+  source.connect(gain);
+  gain.connect(out);
   source.start();
+  loops.set(name, { source, gain });
+}
+
+/** Fade a loop out and tear it down. Safe to call when it is not running. */
+export function stopLoop(name: SoundName) {
+  const live = loops.get(name);
+  if (!live) return;
+  loops.delete(name);
+
+  const context = ctx;
+  const done = () => {
+    live.source.disconnect();
+    live.gain.disconnect();
+  };
+
+  if (!context) {
+    try {
+      live.source.stop();
+    } catch {
+      // never started
+    }
+    done();
+    return;
+  }
+
+  const now = context.currentTime;
+  live.gain.gain.cancelScheduledValues(now);
+  live.gain.gain.setValueAtTime(live.gain.gain.value, now);
+  live.gain.gain.linearRampToValueAtTime(0, now + LOOP_FADE);
+  live.source.onended = done;
+  live.source.stop(now + LOOP_FADE);
+}
+
+/** Every loop, silenced. For teardown — a loop outlives the component that
+ *  started it otherwise, because nothing else ever stops one. */
+export function stopAllLoops() {
+  for (const name of [...loops.keys()]) stopLoop(name);
 }
 
 /** Whether anything is actually going to come out. Used by the HUD hint only. */

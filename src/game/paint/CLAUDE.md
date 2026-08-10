@@ -14,7 +14,8 @@ format for a stroke, and the panel that mixes colours.
 - `brush.ts` — `Brush`, `DEFAULT_BRUSH`, `MIN_SIZE`, `MAX_SIZE`.
 - `palette.ts` — `PAINT`, the ten presets, and `SWATCHES`.
 - `brushCursor.ts` — the cursor end: raycast your own figure, place the hover
-  ring, lay strokes down as the mouse drags.
+  ring, lay strokes down as the mouse drags, and report when a drag starts or
+  ends.
 - `PaintPanel.tsx` — colour wheel, brightness slider, brush size, clear, pin.
 
 ## Invariants
@@ -68,6 +69,12 @@ format for a stroke, and the panel that mixes colours.
   builds the ring mesh at `brush.size × hy`; `brushCursor.ts` owns the raycast,
   where the ring goes and when a stroke happens. It hands each encoded stroke
   back through `onStroke` and never talks to `net/` itself.
+- **`onDrawingChange` reports the start and end of a drag, and nothing more.**
+  This folder does not import `sound/` — it says a drag began; `players/Player.tsx`
+  decides that means a looping brush sound. The callback exists rather than
+  leaving the caller to watch `begin`/`end`/`cancel`, because `cancel` is the one
+  that gets forgotten and the symptom is a brush still scrubbing behind the pause
+  menu.
 - `net/` calls `paint`, `clearSkin` and `forgetSkin` for remote players.
 - **`world/Room.tsx` reads `palette.ts` too, and that is the point.** Nine arena
   pieces are painted in exact `PAINT` hexes so a preset is a true match for

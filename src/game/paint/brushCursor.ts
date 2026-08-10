@@ -39,6 +39,7 @@ export function createBrushCursor({
   ring,
   brush,
   onStroke,
+  onDrawingChange,
 }: {
   canvas: HTMLCanvasElement;
   camera: THREE.Camera;
@@ -51,9 +52,24 @@ export function createBrushCursor({
   brush: () => Brush;
   /** Called with the encoded stroke, for the caller to batch and send. */
   onStroke: (encoded: string) => void;
+  /**
+   * Fires when a drag starts and when it ends, and only on the change.
+   *
+   * It exists so the brush *sound* can be driven from one place. Doing it at the
+   * call sites in `Player.tsx` would mean remembering `begin`, `end` *and*
+   * `cancel`, and the one that gets forgotten is `cancel` — which is how you end
+   * up with a brush that keeps scrubbing after the pause menu opens.
+   */
+  onDrawingChange?: (drawing: boolean) => void;
 }) {
   let drawing = false;
   let last: { part: Part; u: number; v: number } | null = null;
+
+  const setDrawing = (next: boolean) => {
+    if (drawing === next) return;
+    drawing = next;
+    onDrawingChange?.(next);
+  };
 
   /**
    * Whatever part of your own body is under the cursor. The raycast hands back
@@ -130,7 +146,7 @@ export function createBrushCursor({
     /** Left button went down on the body. Returns false if it missed. */
     begin(e: MouseEvent) {
       if (!hit(e)) return false;
-      drawing = true;
+      setDrawing(true);
       last = null;
       drawAt(e);
       return true;
@@ -149,7 +165,7 @@ export function createBrushCursor({
     },
 
     end() {
-      drawing = false;
+      setDrawing(false);
       last = null;
     },
 
@@ -157,7 +173,7 @@ export function createBrushCursor({
      *  free cursor. A drag left running would carry on painting when the
      *  handlers woke up again. */
     cancel() {
-      drawing = false;
+      setDrawing(false);
       last = null;
       const mesh = ring();
       if (mesh) mesh.visible = false;

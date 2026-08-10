@@ -122,8 +122,11 @@ one role, and **adding a control means deciding whose it is.**
   `hud/ControlsPanel.tsx` is the other half of this contract: if a row is on a
   card, that role must really have it wired up here.
 - Sends on a 50 ms `setInterval`, not from `useFrame` — see `net/CLAUDE.md`.
-- **Reads `sound/`** for `playSound` and the `Stepper`, and `shared/` for
-  `FIRE_INTERVAL_MS`.
+- **Reads `sound/`** for `playSound`, `startLoop`/`stopLoop` and the `Stepper`,
+  and `shared/` for `FIRE_INTERVAL_MS`.
+- **Owns the brush loop.** `createBrushCursor`'s `onDrawingChange` starts and
+  stops it, and the pointer effect's teardown stops it again — a loop outlives the
+  component that started it otherwise.
 
 ## Not built yet
 

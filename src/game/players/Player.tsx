@@ -24,7 +24,7 @@ import { setLockTarget } from "@/game/players/pointerLock";
 import { SELF } from "@/game/paint/skin";
 import { createBrushCursor, type BrushCursor } from "@/game/paint/brushCursor";
 import type { Brush } from "@/game/paint/brush";
-import { playSound } from "@/game/sound/engine";
+import { playSound, startLoop, stopLoop } from "@/game/sound/engine";
 import { Stepper, jitteredStepRate, strideFor } from "@/game/sound/footsteps";
 
 const SPEED = 6;
@@ -184,6 +184,12 @@ export function Player({
       ring: () => ring.current,
       brush: () => brushRef.current,
       onStroke: (encoded) => outbox.current.push(encoded),
+      // One hook for the whole drag, so the brush cannot keep scrubbing after a
+      // cancel — see the note on `onDrawingChange`.
+      onDrawingChange: (drawing) => {
+        if (drawing) startLoop("brush");
+        else stopLoop("brush");
+      },
     });
     cursor.current = brushCursor;
 
@@ -298,6 +304,7 @@ export function Player({
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("pointerlockchange", onLockChange);
       cursor.current = null;
+      stopLoop("brush");
       setLockTarget(null);
     };
   }, [gl, camera, scene, raycaster, role]);
