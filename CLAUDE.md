@@ -97,15 +97,21 @@ The folder docs hold the rest. These four are project-wide:
 `npx tsc --noEmit` and `npx eslint .` are the fast gates; `npm run build` before
 calling anything done.
 
-**The agent's browser tab reports `visibilityState: "hidden"`,** so Chrome never
-runs `requestAnimationFrame` and **r3f never draws a frame**. Screenshots come
-back black and the canvas may report 300×150. This is a harness limitation, not a
-bug — do not go hunting for it again. What *can* be checked from the browser:
-hydration, DOM/HUD text, console errors, WebGL context health, and click flows.
+**What the agent's browser can and cannot do.** The tab reports
+`visibilityState: "hidden"`. Despite that, r3f *does* draw and screenshots come
+back with the scene in them — so the arena, the figure, poses, paint and the HUD
+can all genuinely be looked at. (An older note here claimed frames never render;
+that was checked and is wrong.)
 
-Anything visual — figure proportions, camera feel, gun placement, obstacle
-layout — **must be confirmed by the user**. Say so plainly instead of implying it
-was seen.
+**Pointer lock is the real limit.** Chrome refuses `requestPointerLock()` while
+the tab is hidden, so **anything gated on the seeker's lock cannot be driven from
+here** — first-person look and, above all, shooting. A click on the canvas as a
+seeker just re-requests the lock forever. Verify hider-side behaviour in the
+browser and hand the seeker's trigger to the user.
+
+Judgement calls are still the user's: figure proportions, camera feel, gun
+placement, whether the layout plays well. Say plainly what was seen and what was
+not, instead of implying it was all checked.
 
 Networking is testable headlessly and should be: drive two `colyseus.js` clients
 from a scratch `.mjs` script in the project root (so `node_modules` resolves)

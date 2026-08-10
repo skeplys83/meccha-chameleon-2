@@ -12,6 +12,8 @@ stroke, and the panel that mixes colours.
 - `skin.ts` — canvases keyed by player id, the draw call, the stroke history and
   its encoding.
 - `brush.ts` — `Brush`, `DEFAULT_BRUSH`, `MIN_SIZE`, `MAX_SIZE`.
+- `brushCursor.ts` — the cursor end: raycast your own figure, place the hover
+  ring, lay strokes down as the mouse drags.
 - `PaintPanel.tsx` — colour wheel, brightness slider, brush size, clear, pin.
 
 ## Invariants
@@ -43,6 +45,13 @@ stroke, and the panel that mixes colours.
 7. **The history is what survives a respawn.** A respawn joins as a brand new
    player, so `net/client.ts` replays `encodedHistory(SELF)`. Trimming the
    history below the server's cap silently loses paint.
+8. **A drag is throttled by UV distance, not by time.** `PAINT_STEP` in
+   `brushCursor.ts` — a smear at 60 fps would otherwise be hundreds of
+   near-identical strokes, all of them sent and stored.
+9. **`createBrushCursor` takes getters, not values.** The figure and the ring
+   mount after the handlers are installed, and the brush changes while they are
+   live; reading them through getters is what lets the pointer handlers be bound
+   exactly once, which is the invariant `Player.tsx` depends on.
 
 ## Contracts
 
@@ -54,8 +63,10 @@ stroke, and the panel that mixes colours.
   currently ~30 characters: `partIndex,u,v,size,rrggbb`, each number to three
   decimals. Adding a field to `Stroke` means checking that budget and updating
   `decodeStroke`, which is the only validation on the way back in.
-- `players/Player.tsx` owns the raycast, the hover ring and the 100 ms batch
-  flush; this folder owns what a stroke *is* and what it draws.
+- `players/Player.tsx` owns the pointer handlers and the 100 ms batch flush, and
+  builds the ring mesh at `brush.size × hy`; `brushCursor.ts` owns the raycast,
+  where the ring goes and when a stroke happens. It hands each encoded stroke
+  back through `onStroke` and never talks to `net/` itself.
 - `net/` calls `paint`, `clearSkin` and `forgetSkin` for remote players.
 - `core/palette.ts` supplies the swatch row.
 

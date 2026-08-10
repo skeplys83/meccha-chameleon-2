@@ -12,10 +12,19 @@ bugs have been fixed; the invariants below are all scars.
 
 ## Files
 
-- `Player.tsx` — the local player.
+- `Player.tsx` — the local player: the pointer handlers, the physics frame loop
+  and the network send timers.
+- `camera.ts` — the third-person follow and its pull-in out of walls.
 - `RemotePlayers.tsx` — everyone else, plus `remoteFigures`, the map
   `combat/` raycasts to hit people.
 - `controls.ts` — the keyboard map and the `Control` union.
+
+**What is deliberately *not* extracted from `Player.tsx`:** the collider resize,
+`NO_KEYS`, every rapier call, the ground ray and the jump edge trigger. Each of
+those is an invariant below with a bug attached, and a mechanical move is exactly
+how they get re-broken. The pieces that did come out — the camera, the brush
+cursor (`paint/brushCursor.ts`) and the shot raycast (`combat/shoot.ts`) — are
+the ones with no physics state in them.
 
 ## The two roles do not share a control scheme
 
@@ -78,9 +87,14 @@ one role, and **adding a control means deciding whose it is.**
    because a seeker's `bodyYaw` *is* their camera yaw — except while they are
    painting, when it is left alone so they can orbit around their own figure.
    Hiders broadcast their `Q`/`E` body yaw and `pitch: 0`.
-9. **The camera never leaves the arena.** The third-person camera raycasts toward
-   its desired position and pulls in to `hit.distance - 0.35`, floored at 1.4.
-10. **Remote transforms are damped, never snapped** — except on the very first
+9. **The camera never leaves the arena.** `camera.ts` raycasts toward the desired
+   position and pulls in to `hit.distance - 0.35`, floored at 1.4. Without it the
+   camera walks through a wall and you find yourself looking at the arena from
+   outside, which reads as the game having broken.
+10. **A stroke in flight outranks every other meaning of the mouse.**
+    `onMouseMove` checks `brushCursor.drawing` first, so pressing the right
+    button mid-drag does not cancel the stroke and start orbiting.
+11. **Remote transforms are damped, never snapped** — except on the very first
     frame, or a joining player flies in from the origin.
 
 ## Contracts

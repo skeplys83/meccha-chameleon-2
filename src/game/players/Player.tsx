@@ -12,15 +12,16 @@ import {
 import * as THREE from "three";
 import type { Control } from "./controls";
 import { controlMap, poseControl } from "./controls";
+import { followThirdPerson } from "./camera";
 import { BODY, type Role } from "@/game/core/types";
 import { POSES, poseExtents } from "@/game/figure/poses";
 import { ROOM_SURFACE } from "@/game/world/Room";
 import { StickFigure } from "@/game/figure/StickFigure";
+import { resolveShot } from "@/game/combat/shoot";
 import { sendKill, sendPaint, sendShoot, sendState } from "@/game/net";
-import { remoteFigures } from "./RemotePlayers";
 import { setLockTarget } from "@/game/core/pointerLock";
-import { encodeStroke, paint, SELF } from "@/game/paint/skin";
-import type { Part } from "@/game/figure/parts";
+import { SELF } from "@/game/paint/skin";
+import { createBrushCursor, type BrushCursor } from "@/game/paint/brushCursor";
 import type { Brush } from "@/game/paint/brush";
 
 const SPEED = 6;
@@ -29,45 +30,36 @@ const SPEED = 6;
 const JUMP_SPEED = 11;
 const TURN_SPEED = 2.6; // rad/s for Q/E
 const CAMERA_DISTANCE = 7;
-const CAMERA_MIN_DISTANCE = 1.4;
 const ZOOM_MIN = 1.2;
 const ZOOM_MAX = 14;
 const ZOOM_STEP = 0.0022; // per wheel pixel
-const CAMERA_SKIN = 0.35; // keep the lens off the surface it would touch
 const MOUSE_SENSITIVITY = 0.0022;
 const PITCH_MIN = -1.0;
 const PITCH_MAX = 0.9;
 const PAINT_FLUSH_MS = 100;
+const STATE_SEND_MS = 50;
 /** Thickness of the hover ring in world units — constant, so the outline does
  *  not thin out or fatten as the brush grows. */
 const RING_BORDER = 0.012;
-/** Minimum UV travel before a drag lays down another dot — a smear at 60 fps
- *  would otherwise be hundreds of near-identical strokes. */
-const PAINT_STEP = 0.012;
 
 const forward = new THREE.Vector3();
 const right = new THREE.Vector3();
 const move = new THREE.Vector3();
 const bodyPos = new THREE.Vector3();
 const lookDir = new THREE.Vector3();
-const camDesired = new THREE.Vector3();
-const lookAt = new THREE.Vector3();
 const euler = new THREE.Euler(0, 0, 0, "YXZ");
 const quat = new THREE.Quaternion();
-const screenCenter = new THREE.Vector2(0, 0);
-const worldNormal = new THREE.Vector3();
-const markOrient = new THREE.Object3D();
-const toCamera = new THREE.Vector3();
-const cameraRay = new THREE.Raycaster();
 const groundRay = new THREE.Raycaster();
 const DOWN = new THREE.Vector3(0, -1, 0);
 /** How far below the feet still counts as standing on something. */
 const GROUND_REACH = 0.2;
-const pointerNdc = new THREE.Vector2();
 /** Module-level so its identity never changes: @react-three/rapier re-applies
  *  `position` whenever the prop changes, and a literal array is a new value on
  *  every render — which teleported the player to spawn on any state change. */
 const SPAWN: [number, number, number] = [0, 4, 0];
+/** Nothing under the floor can recover on its own, so anything below this is
+ *  put back at spawn. */
+const FLOOR_ESCAPE_Y = -3;
 /**
  * Every control held down false — what the frame loop reads while paused.
  *
@@ -75,8 +67,8 @@ const SPAWN: [number, number, number] = [0, 4, 0];
  * `undefined`, `Number(undefined)` is NaN, and a single NaN reaching
  * `setLinvel` or `setRotationWrtParent` panics rapier ("unreachable"), which
  * poisons the wasm module for good ("recursive use of an object…") and throws
- * the body out of the world — where the `y < -3` catch below resets it to
- * SPAWN, i.e. pausing teleported you to the middle of the arena.
+ * the body out of the world — where the catch below resets it to SPAWN, i.e.
+ * pausing teleported you to the middle of the arena.
  */
 const NO_KEYS = Object.freeze(
   Object.fromEntries(controlMap.map((entry) => [entry.name, false])),
@@ -112,13 +104,12 @@ export function Player({
   const [pose, setPose] = useState(0);
   const brushRef = useRef(brush);
   const paintingRef = useRef(painting);
-  const drawing = useRef(false);
   /** Hiders never take the pointer lock, so they look around by dragging. */
   const orbiting = useRef(false);
   const pausedRef = useRef(paused);
   const hoverRef = useRef<((hovering: boolean) => void) | null>(null);
   const hovering = useRef(false);
-  const lastUv = useRef<{ part: Part; u: number; v: number } | null>(null);
+  const cursor = useRef<BrushCursor | null>(null);
   const outbox = useRef<string[]>([]);
   const zoom = useRef(CAMERA_DISTANCE);
   const ring = useRef<THREE.Mesh>(null);
@@ -140,17 +131,15 @@ export function Player({
   }, [brush]);
   useEffect(() => {
     paintingRef.current = painting;
-    if (!painting && ring.current) ring.current.visible = false;
+    if (!painting) cursor.current?.cancel();
   }, [painting]);
   useEffect(() => {
     pausedRef.current = paused;
     // A drag that was in flight when the menu came up must not carry on
     // painting or turning the camera once the pointer handlers wake up again.
     if (!paused) return;
-    drawing.current = false;
+    cursor.current?.cancel();
     orbiting.current = false;
-    lastUv.current = null;
-    if (ring.current) ring.current.visible = false;
     hoverRef.current?.(false);
   }, [paused]);
   useEffect(() => {
@@ -162,8 +151,8 @@ export function Player({
     };
   }, [onHoverBody]);
 
-  // The room is static, so its meshes are collected once and reused for both
-  // the shot raycast and keeping the camera out of walls.
+  // The room is static, so its meshes are collected once and reused for the
+  // shot raycast, the ground test and keeping the camera out of walls.
   useEffect(() => {
     const list: THREE.Object3D[] = [];
     scene.traverse((o) => {
@@ -172,73 +161,22 @@ export function Player({
     solids.current = list;
   }, [scene]);
 
-  // Mouse look + shooting both depend on pointer lock, so they live together.
+  // Mouse look, painting and shooting all depend on the pointer, so they are
+  // installed together and share one teardown.
   useEffect(() => {
     const canvas = gl.domElement;
     setLockTarget(canvas);
 
-    // Paints a dot wherever the cursor is over your own figure. The raycast
-    // hands back a UV, which is exactly the coordinate the part's canvas
-    // texture is drawn in, so no unwrapping is needed.
-    const hitFigure = (e: MouseEvent) => {
-      const group = visual.current;
-      if (!group) return null;
-
-      const rect = canvas.getBoundingClientRect();
-      pointerNdc.set(
-        ((e.clientX - rect.left) / rect.width) * 2 - 1,
-        -((e.clientY - rect.top) / rect.height) * 2 + 1,
-      );
-
-      const meshes: THREE.Object3D[] = [];
-      group.traverse((o) => {
-        if ((o as THREE.Mesh).isMesh && o.userData.part) meshes.push(o);
-      });
-
-      raycaster.setFromCamera(pointerNdc, camera);
-      const hit = raycaster.intersectObjects(meshes, false)[0];
-      return hit?.uv ? hit : null;
-    };
-
-    // Sits the ring on the body under the cursor, at the size the brush will
-    // actually paint, so you can see the dot before committing to it.
-    const showRing = (hit: THREE.Intersection | null) => {
-      const mesh = ring.current;
-      if (!mesh) return;
-      if (!hit || !hit.face) {
-        mesh.visible = false;
-        return;
-      }
-
-      worldNormal
-        .copy(hit.face.normal)
-        .applyQuaternion(hit.object.getWorldQuaternion(quat))
-        .normalize();
-
-      // The brush is an absolute size now, so the ring is built once at the
-      // right radius and only has to be placed.
-      mesh.visible = true;
-      mesh.position.copy(hit.point).addScaledVector(worldNormal, 0.02);
-      mesh.lookAt(lookAt.copy(mesh.position).add(worldNormal));
-    };
-
-    const paintAt = (e: MouseEvent) => {
-      const hit = hitFigure(e);
-      showRing(hit);
-      if (!hit?.uv) return;
-
-      const part = hit.object.userData.part as Part;
-      const { u, v } = { u: hit.uv.x, v: hit.uv.y };
-      const last = lastUv.current;
-      if (last && last.part === part && Math.hypot(last.u - u, last.v - v) < PAINT_STEP) {
-        return;
-      }
-      lastUv.current = { part, u, v };
-
-      const stroke = { part, u, v, size: brushRef.current.size, color: brushRef.current.color };
-      paint(SELF, stroke);
-      outbox.current.push(encodeStroke(stroke));
-    };
+    const brushCursor = createBrushCursor({
+      canvas,
+      camera,
+      raycaster,
+      figure: () => visual.current,
+      ring: () => ring.current,
+      brush: () => brushRef.current,
+      onStroke: (encoded) => outbox.current.push(encoded),
+    });
+    cursor.current = brushCursor;
 
     const onPointerDown = (e: MouseEvent) => {
       // Paused means paused: no painting, no shooting, and above all no
@@ -253,12 +191,7 @@ export function Player({
       if (e.button !== 0) return;
 
       // Left button on your own body draws on it.
-      if (!locked.current && hitFigure(e)) {
-        drawing.current = true;
-        lastUv.current = null;
-        paintAt(e);
-        return;
-      }
+      if (!locked.current && brushCursor.begin(e)) return;
 
       // Only the seeker takes the pointer lock — a hider keeps their cursor so
       // the brush and the palette are always to hand.
@@ -268,59 +201,27 @@ export function Player({
         return;
       }
 
-      raycaster.setFromCamera(screenCenter, camera);
-
-      // People are checked first: whoever is nearer along the ray takes the
-      // shot, so you cannot be killed through a wall.
-      const figures = [...remoteFigures.values()];
-      const person = figures.length ? raycaster.intersectObjects(figures, true)[0] : null;
-      const wall = raycaster.intersectObjects(solids.current, false)[0];
-
-      if (person && (!wall || person.distance < wall.distance)) {
-        let owner: THREE.Object3D | null = person.object;
-        while (owner && !owner.userData.remoteId) owner = owner.parent;
-        const victim = owner?.userData.remoteId as string | undefined;
-        if (victim) {
-          sendKill(victim, [person.point.x, person.point.y, person.point.z]);
-          return;
-        }
-      }
-
-      const hit = wall;
-      if (!hit || !hit.face) return;
-
-      // Room surfaces are axis-aligned and unrotated, so the face normal only
-      // needs the object's world rotation applied to be a world-space normal.
-      worldNormal
-        .copy(hit.face.normal)
-        .applyQuaternion(hit.object.getWorldQuaternion(quat))
-        .normalize();
-
-      markOrient.position.copy(hit.point).addScaledVector(worldNormal, 0.02);
-      markOrient.lookAt(markOrient.position.clone().add(worldNormal));
-
+      const shot = resolveShot(raycaster, camera, solids.current);
+      if (!shot) return;
+      if (shot.kind === "player") sendKill(shot.id, shot.point);
       // The server relays the mark back to everyone, this client included, so
       // every player sees the same patch appear.
-      sendShoot(
-        [markOrient.position.x, markOrient.position.y, markOrient.position.z],
-        [markOrient.rotation.x, markOrient.rotation.y, markOrient.rotation.z],
-      );
+      else sendShoot(shot.position, shot.rotation);
     };
 
     const onPointerUp = () => {
-      drawing.current = false;
+      brushCursor.end();
       orbiting.current = false;
-      lastUv.current = null;
     };
 
-    // Wheel zooms the third-person camera. Painting fine detail needs to get
-    // close, and hiders want to pull back to check their hiding spot.
     // The right-drag look would otherwise raise the browser menu.
     const onContextMenu = (e: MouseEvent) => e.preventDefault();
 
+    // Wheel zooms the third-person camera. Painting fine detail needs to get
+    // close, and hiders want to pull back to check their hiding spot. It is a
+    // third-person control, so it is the hider's — a seeker's camera sits
+    // inside their head and there is nothing to pull back from.
     const onWheel = (e: WheelEvent) => {
-      // Zoom is a third-person control, so it is the hider's. A seeker's camera
-      // sits inside their head — there is nothing to pull back from.
       if (pausedRef.current || role === "seeker") return;
       e.preventDefault();
       zoom.current = THREE.MathUtils.clamp(
@@ -337,19 +238,19 @@ export function Player({
       // to vanish the moment you moved the mouse towards it.
       if (pausedRef.current) return;
 
-      if (drawing.current) {
-        paintAt(e);
+      // A stroke already in flight wins over everything else the mouse could
+      // mean — including a right button pressed mid-drag.
+      if (brushCursor.drawing) {
+        brushCursor.move(e);
         return;
       }
 
       // A free cursor means the body can be painted, so keep the brush ring on
       // whatever it is over and tell the HUD, which pops the palette open.
       if (!locked.current && !orbiting.current) {
-        const hit = hitFigure(e);
-        showRing(hit);
-        hoverRef.current?.(!!hit);
-      } else if (ring.current?.visible) {
-        ring.current.visible = false;
+        hoverRef.current?.(brushCursor.move(e));
+      } else {
+        brushCursor.cancel();
         hoverRef.current?.(false);
       }
 
@@ -379,6 +280,7 @@ export function Player({
       document.removeEventListener("pointerup", onPointerUp);
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("pointerlockchange", onLockChange);
+      cursor.current = null;
       setLockTarget(null);
     };
   }, [gl, camera, scene, raycaster, role]);
@@ -389,7 +291,7 @@ export function Player({
     const send = setInterval(() => {
       const t = netState.current;
       sendState([t.x, t.y, t.z], t.yaw, t.pitch, t.pose);
-    }, 50);
+    }, STATE_SEND_MS);
     return () => clearInterval(send);
   }, []);
 
@@ -426,7 +328,7 @@ export function Player({
     const p = rb.translation();
     // Nothing should reach this, but a player under the floor can never
     // recover on their own and sees nothing but empty background.
-    if (p.y < -3) {
+    if (p.y < FLOOR_ESCAPE_Y) {
       rb.setTranslation({ x: SPAWN[0], y: SPAWN[1], z: SPAWN[2] }, true);
       rb.setLinvel({ x: 0, y: 0, z: 0 }, true);
       return;
@@ -517,24 +419,7 @@ export function Player({
       euler.set(pitch.current, y, 0);
       state.camera.quaternion.setFromEuler(euler);
     } else {
-      lookAt.copy(bodyPos).setY(bodyPos.y + 0.6);
-
-      // Pull the camera in if a wall or obstacle sits between it and the
-      // player, so it never ends up outside the arena.
-      toCamera.copy(lookDir).negate().normalize();
-      let distance = zoom.current;
-      if (solids.current.length) {
-        cameraRay.set(lookAt, toCamera);
-        cameraRay.far = zoom.current;
-        const blocked = cameraRay.intersectObjects(solids.current, false)[0];
-        if (blocked) {
-          distance = Math.max(CAMERA_MIN_DISTANCE, blocked.distance - CAMERA_SKIN);
-        }
-      }
-
-      camDesired.copy(lookAt).addScaledVector(toCamera, distance);
-      state.camera.position.lerp(camDesired, 1 - Math.pow(0.0001, delta));
-      state.camera.lookAt(lookAt);
+      followThirdPerson(state.camera, bodyPos, lookDir, zoom.current, solids.current, delta);
     }
   });
 
@@ -555,24 +440,24 @@ export function Player({
         />
       </mesh>
       <RigidBody
-      ref={body}
-      colliders={false}
-      mass={1}
-      type="dynamic"
-      position={SPAWN}
-      enabledRotations={[false, false, false]}
-      canSleep={false}
-    >
-      <CuboidCollider
-        key={POSES[pose].shape ?? "stand"}
-        ref={collider}
-        args={poseExtents(pose, [hx, hy, hz])}
-      />
-      <group ref={visual}>
-        {/* In first person the camera sits inside the head, so the seeker's own
-            figure is hidden and the viewmodel stands in for it. */}
-        {!firstPerson && <StickFigure scale={hy} pose={pose} skinId={SELF} />}
-      </group>
+        ref={body}
+        colliders={false}
+        mass={1}
+        type="dynamic"
+        position={SPAWN}
+        enabledRotations={[false, false, false]}
+        canSleep={false}
+      >
+        <CuboidCollider
+          key={POSES[pose].shape ?? "stand"}
+          ref={collider}
+          args={poseExtents(pose, [hx, hy, hz])}
+        />
+        <group ref={visual}>
+          {/* In first person the camera sits inside the head, so the seeker's
+              own figure is hidden and the viewmodel stands in for it. */}
+          {!firstPerson && <StickFigure scale={hy} pose={pose} skinId={SELF} />}
+        </group>
       </RigidBody>
     </>
   );
