@@ -69,6 +69,13 @@ the doc for the folder you are changing.
 docker compose up -d --build
 ```
 
+The image has not been built on a machine with registry access yet. What *has*
+been checked is the part that could actually be wrong: a directory holding only
+what the runner stage copies — production dependencies, `.next`, `public`, `src`
+and `next.config.ts` — boots the server, serves the page, serves the map and
+sound assets, and accepts a Colyseus join. No `typescript` and no Tailwind at
+runtime.
+
 Two ports are published, because the browser talks to both: the page comes from
 `PORT` (3000) and the game socket connects straight to `GAME_PORT` (2567). Over
 plain http on an IP that is all you need.
