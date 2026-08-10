@@ -9,7 +9,7 @@
  * `maps.ts` is checked against this list at import time, so adding a map without
  * adding its id here fails the build rather than silently rejecting the id.
  */
-export const MAP_IDS = ["arena"] as const;
+export const MAP_IDS = ["arena", "dungeon"] as const;
 
 export type MapId = (typeof MAP_IDS)[number];
 

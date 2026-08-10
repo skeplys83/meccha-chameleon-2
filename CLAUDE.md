@@ -66,7 +66,8 @@ src/app/icon.svg    the favicon — generated, see below
 src/game/
   Game.tsx          top-level state: role, session, paused, painting, killed
   Scene.tsx         Canvas, lights, Physics, mark and grave lifetimes
-public/sounds/      the four .wav files
+public/sounds/      the five .wav files
+public/maps/        model assets for maps that use them
 scripts/            check-docs.mjs, check-constants.mjs, make-favicon.mjs
 ```
 
@@ -80,18 +81,18 @@ one, then pin it with `npm run favicon <seed>`. The committed one is seed 33.
 Next picks `icon.svg` up automatically — there is no `favicon.ico` and no
 `<link>` tag to maintain.
 
-| folder | owns | read it before touching |
-|---|---|---|
-| `shared/` | `Role` and the constants both halves must agree on | anything the server also reads |
-| `server/` | Colyseus room, schema, UDP discovery, HTTP bootstrap | messages, validation, authority |
-| `net/` | the Colyseus **client**, remotes, LAN session list | joining, remote transforms, events |
-| `world/` | the maps, and the registry that picks one | room layout, collision, cover, adding a map |
-| `figure/` | the stick figure rig, the poses, `PART_SHAPE` | proportions, poses, limb geometry |
-| `paint/` | canvases, brush, palette, the panel | painting, brushes, skins, colours |
-| `players/` | the local player and the remote ones, `BODY` | controls, camera, movement, jumping, climbing |
-| `combat/` | the shotgun, the viewmodel, marks, graves | shooting, death, hit feedback |
-| `sound/` | the audio engine, the catalogue, footsteps | anything that makes a noise |
-| `hud/` | the 2D overlays outside the Canvas | menus, legends, name entry |
+| folder     | owns                                                 | read it before touching                       |
+| ---------- | ---------------------------------------------------- | --------------------------------------------- |
+| `shared/`  | `Role` and the constants both halves must agree on   | anything the server also reads                |
+| `server/`  | Colyseus room, schema, UDP discovery, HTTP bootstrap | messages, validation, authority               |
+| `net/`     | the Colyseus **client**, remotes, LAN session list   | joining, remote transforms, events            |
+| `world/`   | the maps, and the registry that picks one            | room layout, collision, cover, adding a map   |
+| `figure/`  | the stick figure rig, the poses, `PART_SHAPE`        | proportions, poses, limb geometry             |
+| `paint/`   | canvases, brush, palette, the panel                  | painting, brushes, skins, colours             |
+| `players/` | the local player and the remote ones, `BODY`         | controls, camera, movement, jumping, climbing |
+| `combat/`  | the shotgun, the viewmodel, marks, graves            | shooting, death, hit feedback                 |
+| `sound/`   | the audio engine, the catalogue, footsteps           | anything that makes a noise                   |
+| `hud/`     | the 2D overlays outside the Canvas                   | menus, legends, name entry                    |
 
 `Game.tsx` and `Scene.tsx` are the composition roots and belong to no folder.
 `Scene.tsx` also owns the `<Physics>` settings — see trap 4, which is the reason
@@ -226,3 +227,7 @@ hit is instantly fatal. The whistle is a periodic tell **hiders** give off, not 
 round bell: it is heard from wherever its owner is standing, and seekers never
 make one. Paint has no undo and
 no per-part erase. Each folder's doc ends with the gaps specific to it.
+
+# Ignore these links
+https://kenney.nl/assets/category:3D
+https://kaylousberg.itch.io/kaykit-dungeon-pack

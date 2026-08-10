@@ -2,6 +2,7 @@
 
 import type { ComponentType } from "react";
 import { Arena } from "./maps/arena";
+import { Dungeon } from "./maps/dungeon";
 import { DEFAULT_MAP, MAP_IDS, type MapId } from "./mapIds";
 
 export { DEFAULT_MAP, type MapId };
@@ -32,6 +33,12 @@ export const MAPS: Record<MapId, GameMap> = {
     name: "Arena",
     blurb: "40×40, white, twenty-five pieces of cover. Nine painted to match a swatch.",
     Component: Arena,
+  },
+  dungeon: {
+    id: "dungeon",
+    name: "Dungeon",
+    blurb: "One 12×12 chamber, split by a low wall. Very small, very close quarters.",
+    Component: Dungeon,
   },
 };
 

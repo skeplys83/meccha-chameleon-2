@@ -11,9 +11,23 @@ cover, and the `ROOM_SURFACE` name that shots and the camera filter on.
 - `maps.ts` — the registry: every map's id, name, blurb and component.
 - `mapIds.ts` — the ids alone, **import-free on purpose**.
 - `surface.ts` — `ROOM_SURFACE`, alone for the same reason.
-- `maps/arena.tsx` — the 40×40 arena: the `Solid` helper and the twenty-five
-  pieces, written as JSX rather than a position/size table because they are no
-  longer all boxes.
+- `Piece.tsx` — one loaded glTF model, placed. The counterpart of `Solid` for
+  maps built from files.
+- `maps/arena.tsx` — the 40×40 arena, built from primitives via the local `Solid`
+  helper: twenty-five pieces, no downloaded assets, exact palette colours.
+- `maps/dungeon.tsx` — a 12×12 KayKit chamber, built from `Piece` and a layout
+  table. Assets in `public/maps/dungeon/`.
+
+## Two kinds of map, and when to use which
+
+**Primitives** (`arena.tsx`) cost nothing to download, let you pick a collider per
+shape, hit `PAINT` hexes exactly, and give the climb probes clean flat normals.
+Prefer them for anything expressible as boxes and cylinders.
+
+**Loaded models** (`dungeon.tsx`) buy detail that primitives cannot, at the cost
+of bytes in the repo and whatever the artist chose for colours. Use `Piece`,
+which handles the two things a model does not arrive with: the `ROOM_SURFACE`
+name on every mesh, and a collider type you choose per piece.
 
 ## Adding a map
 
@@ -54,7 +68,20 @@ empty menu entry or silently refusing a legitimate choice.
    dead-ends at the slab, and the big drum has a smaller drum beside it as its
    step. The cone, the capsule and the crystal are the deliberate exceptions — a
    hider who cannot reach the high ground has nowhere to hide but the corners.
-7. **Nine pieces are painted in exact `PAINT` hexes.** Same table the swatch row
+7. **A loaded model must be cloned per placement, and named.** One `Object3D`
+   cannot be in two places, and the dungeon uses the same wall two dozen times.
+   `Piece` clones in a `useMemo` — before render, so the `ROOM_SURFACE` names
+   exist by the time `players/Player.tsx` collects them in its mount effect — and
+   `clone(true)` shares geometry and materials, so every piece still draws from
+   the one 17 KB atlas.
+8. **Assets are committed uncompressed, beside their `.bin` and their texture.**
+   No Draco: drei's decoder is fetched from a Google CDN, which a LAN game cannot
+   reach. And `.gltf` rather than `.glb` on purpose here — the pack shares one
+   atlas across every piece, so keeping it external means one download and one
+   GPU texture, where `.glb` would embed a copy per file.
+9. **Only the pieces a map uses are copied in.** KayKit's pack is 6.3 MB across
+   211 models; the dungeon needs seven, which is 204 KB including the atlas.
+10. **Nine pieces are painted in exact `PAINT` hexes.** Same table the swatch row
    renders. Pick the matching swatch, paint yourself, and you can test camouflage
    against a true match instead of eyeballing it. That is the whole point; do not
    "tidy" an arena colour to something off-palette.
