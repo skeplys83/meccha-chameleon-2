@@ -57,16 +57,21 @@ message named here.
    victim is deleted from state, then `leave()` fires 250 ms later. Without the
    delay they disconnect before the message lands and see nothing but a dropped
    connection.
-7. **A schema `boolean` must be coerced, not assigned.** `player.cling =
-   msg.cling === true`, never `= msg.cling`: the encoder will happily take a
-   string or an object and hand it to every client. The same instinct as `clamp`
-   for numbers.
+7. **A schema `boolean` must be coerced, not assigned**, and `cling` is checked
+   against the role besides. `player.cling = player.role === "hider" &&
+   msg.cling === true` — never `= msg.cling`, because the encoder will take a
+   string or an object and hand it to every client, and never without the role,
+   because clinging is what silences your footsteps for everyone else. A seeker
+   who could set it would hunt in silence. Same instinct as `clamp` for numbers,
+   and the same role mirror as the kill and whistle handlers.
 8. **Non-finite input becomes 0, never `NaN`.** That is what `clamp` is for. A
    `NaN` written into schema propagates to every client.
-9. **A whistle is relayed, never stored, and rate-limited like a shot.** It only
-   gives a position away, so it is trusted the way movement is — but *rate*
-   reaches everybody, so `MIN_WHISTLE_GAP_MS` stops a client turning theirs into
-   a siren. A player who has left the room cannot whistle at all.
+9. **A whistle is relayed, never stored, hider-only, and rate-limited like a
+   shot.** It only gives a position away, so it is trusted the way movement is —
+   but *rate* reaches everybody, so `MIN_WHISTLE_GAP_MS` stops a client turning
+   theirs into a siren. The role check mirrors the kill handler's: a kill refuses
+   anyone who is not a seeker, a whistle refuses anyone who is not a hider. A
+   player who has left the room cannot whistle at all.
 10. **One trigger, one clock.** `canFire` rate-limits `shoot` and `kill` together,
    per client, because a trigger-pull sends exactly one of the two — never both.
    The gap is `FIRE_INTERVAL_MS` from `shared/`, times a tolerance, so a shot a

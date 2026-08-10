@@ -64,14 +64,16 @@ export function Game() {
     setAudioSuspended(paused);
   }, [paused]);
 
-  // The whistle, for as long as you are alive in a session. It is *sent*, not
-  // played: the room relays it back positioned at you, so it gives your location
-  // away to anyone near enough to hear it.
+  // The whistle, for as long as a *hider* is alive in a session. It is *sent*,
+  // not played: the room relays it back positioned at you, so it gives your
+  // location away to anyone near enough to hear it. That is a cost only the
+  // hidden should pay — a seeker who announced themselves every 45 seconds would
+  // be handing the advantage to the people they are hunting.
   //
   // `killedBy` is in the deps on purpose. A dead player is out of the room, and a
   // corpse that keeps whistling is both wrong and impossible to explain.
   useEffect(() => {
-    if (!role || !session || killedBy) return;
+    if (role !== "hider" || !session || killedBy) return;
     const whistle = setInterval(sendWhistle, WHISTLE_INTERVAL_MS);
     return () => clearInterval(whistle);
   }, [role, session, killedBy]);

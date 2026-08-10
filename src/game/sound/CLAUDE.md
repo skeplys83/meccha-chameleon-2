@@ -185,8 +185,11 @@ follows your head, and the footstep derivation.
   to hear. `SoundStage` owns everyone else's.
 - **`Game.tsx` calls `unlockAudio()` on join and `setAudioSuspended(paused)`**, so
   a shot fired the instant before Esc does not ring on behind the menu.
-- **`Game.tsx` runs the whistle timer**, and *sends* rather than plays: the room
-  relays it back positioned at you. `killedBy` is in the effect's deps, so a dead
+- **`Game.tsx` runs the whistle timer for hiders only**, and *sends* rather than
+  plays: the room relays it back positioned at you. Giving your position away
+  every 45 seconds is a cost the hidden pay; a seeker who announced themselves
+  would be handing the advantage to the people they are hunting. The server
+  refuses one from a seeker too, the same way it refuses a kill from a hider. `killedBy` is in the effect's deps, so a dead
   player stops whistling — a corpse that keeps piping up is both wrong and
   impossible to explain. `Game.tsx` also calls `stopAllLoops()` on death, on
   leaving and on unmount; the brush loop would otherwise keep scrubbing behind
@@ -239,8 +242,9 @@ would be a fair thing to broadcast, and a good way to be found. Nothing varies
 footstep sound by surface, because every surface in the arena is the same
 material.
 
-**The whistle is a periodic tell, not a round bell.** Each player runs the timer
+**The whistle is a periodic tell, not a round bell.** Each *hider* runs the timer
 on their own clock and tells the room, so whistles arrive at different moments
-for different people and each one gives away roughly where its owner is. A round
+for different people and each one gives away roughly where its owner is. Seekers
+never whistle. A round
 boundary would be the opposite — one broadcast everybody hears at once — and when
 there is a round flow that will be a separate thing, not this.

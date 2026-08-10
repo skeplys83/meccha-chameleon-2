@@ -78,8 +78,10 @@ export class GameRoom extends Room<GameState> {
       player.pitch = Number.isFinite(msg.pitch) ? (msg.pitch as number) : 0;
       player.pose = clamp(Math.trunc(msg.pose as number), 0, POSE_COUNT - 1);
       // Coerced, never stored raw: schema "boolean" will happily encode whatever
-      // truthy junk arrives and hand it to every client.
-      player.cling = msg.cling === true;
+      // truthy junk arrives and hand it to every client. Hiders only, because
+      // clinging is what silences your footsteps for everyone else — a seeker
+      // who could set it would simply hunt without making a sound.
+      player.cling = player.role === "hider" && msg.cling === true;
     });
 
     // Paint is cosmetic and self-applied: it is stored on the painter and
@@ -161,9 +163,11 @@ export class GameRoom extends Room<GameState> {
     });
 
     // A whistle is only a position given away, so it is relayed like a shot:
-    // everyone hears it, at whoever let it out.
+    // everyone hears it, at whoever let it out. Hiders only — the mirror of the
+    // kill check below, which refuses anyone who is not a seeker.
     this.onMessage("whistle", (client: Client) => {
-      if (!this.state.players.has(client.sessionId)) return;
+      const player = this.state.players.get(client.sessionId);
+      if (!player || player.role !== "hider") return;
       const now = Date.now();
       if (now - (this.lastWhistle.get(client.sessionId) ?? 0) < MIN_WHISTLE_GAP_MS) return;
       this.lastWhistle.set(client.sessionId, now);

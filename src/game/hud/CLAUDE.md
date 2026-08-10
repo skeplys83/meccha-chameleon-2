@@ -21,7 +21,11 @@ you join.
    `combat/`.** It renders outside the Canvas and talks to the game through
    `Game.tsx` props and through `net/`. The one exception is reading `POSES` for
    the legend — a label, not behaviour.
-2. **`ControlsPanel` holds one legend per role and they are not built from a
+2. **Not every difference between the roles is a key.** Only hiders whistle, and
+   nothing on either card says so — there is no key for it and nothing to press.
+   The legend is for controls; role asymmetries that are not controls belong in
+   `players/CLAUDE.md` and `sound/CLAUDE.md`, not here.
+3. **`ControlsPanel` holds one legend per role and they are not built from a
    shared base.** If a row is on a card, that role must really have it wired up
    in `players/Player.tsx`. A hider has no shoot; a seeker has no pose, no
    `Q`/`E`, no zoom and no climb, so none of those may appear on the wrong card.
@@ -30,18 +34,18 @@ you join.
    here is a promise that a key does that thing; inventing one for a mechanic
    that has no key would be a lie on the card. Those two files
    are the contract.
-3. **The player name is per tab, in `sessionStorage`, not a cookie.** Two tabs on
+4. **The player name is per tab, in `sessionStorage`, not a cookie.** Two tabs on
    one machine is how you test two players locally, and a cookie made them share
    and clobber one name. `RoleMenu` also expires the old `mc_name` cookie on
    mount. Nothing else is persisted — the session you pick is chosen fresh every
    time.
-4. **Nobody should have to invent a name to play.** A tab with no stored name
+5. **Nobody should have to invent a name to play.** A tab with no stored name
    gets a random reptile plus two digits; the digits are what stop two people
    picking "Gecko" from being indistinguishable.
-5. **The pause menu has no full-screen scrim** — the arena stays visible while
+6. **The pause menu has no full-screen scrim** — the arena stays visible while
    you are paused — but the panel itself needs a solid ground, because it floats
    over a white room and translucent pills left the session name unreadable.
-6. **The session list is polled, not pushed.** `fetchSessions` every 2 s against
+7. **The session list is polled, not pushed.** `fetchSessions` every 2 s against
    the local server, which is the thing actually listening for UDP broadcasts.
 
 ## Contracts

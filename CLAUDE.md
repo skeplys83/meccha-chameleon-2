@@ -209,6 +209,7 @@ was all confirmed.
 ## Not built yet
 
 No round flow (hide phase, win condition), no lobby or ready-up, no health — a
-hit is instantly fatal. The whistle is a periodic tell every player gives off,
-not a round bell: it is heard from wherever its owner is standing. Paint has no undo and
+hit is instantly fatal. The whistle is a periodic tell **hiders** give off, not a
+round bell: it is heard from wherever its owner is standing, and seekers never
+make one. Paint has no undo and
 no per-part erase. Each folder's doc ends with the gaps specific to it.

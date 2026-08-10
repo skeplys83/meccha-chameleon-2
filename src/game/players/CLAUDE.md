@@ -164,6 +164,9 @@ one role, and **adding a control means deciding whose it is.**
   collected once for shooting, the ground ray and the camera. Every surface in
   the arena is therefore climbable for free — walls, ceiling, all 25 obstacles,
   including the curved ones. Nothing had to opt in.
+- **Climbing is hider-only in both places.** `Player.tsx` never sets `cling` for
+  a seeker, and `server/room.ts` refuses the flag from one — the client for
+  behaviour, the server because the flag's *effect* (silence) reaches everybody.
 - **`cling` is broadcast** so other clients can keep a climber's footsteps quiet;
   their stepper only sees a position, and sliding along a wall looks exactly like
   walking. Nothing else about climbing goes on the wire, because the figure does
