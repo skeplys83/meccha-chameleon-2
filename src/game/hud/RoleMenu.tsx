@@ -101,33 +101,37 @@ export function RoleMenu({
         className="w-64 rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-center text-sm outline-none focus:border-neutral-500"
       />
 
-      {MAP_LIST.length > 1 && (
-        <div className="flex flex-col items-center gap-1">
-          <div className="text-[11px] uppercase tracking-widest text-neutral-500">
-            Map
-          </div>
-          <div className="flex gap-2">
-            {MAP_LIST.map((m) => (
-              <button
-                key={m.id}
-                onClick={() => setMap(m.id)}
-                title={m.blurb}
-                className={`rounded-md border px-3 py-1.5 text-xs transition ${
-                  map === m.id
-                    ? "border-neutral-300 bg-neutral-800 text-neutral-100"
-                    : "border-neutral-700 text-neutral-400 hover:border-neutral-500"
-                }`}
-              >
-                {m.name}
-              </button>
-            ))}
-          </div>
-          {/* Only the room's creator chooses; anyone joining takes what is there. */}
-          <div className="text-[10px] text-neutral-600">
-            Applies only if you start the session
-          </div>
+      {/* Always shown, even while there is one map: it is the standing answer to
+          "which map am I about to play", and a picker that appears only once a
+          second map exists is a control nobody knows is there. */}
+      <div className="flex flex-col items-center gap-1.5">
+        <div className="text-[11px] uppercase tracking-widest text-neutral-500">
+          Map
         </div>
-      )}
+        <div className="flex flex-wrap justify-center gap-2">
+          {MAP_LIST.map((m) => (
+            <button
+              key={m.id}
+              onClick={() => setMap(m.id)}
+              title={m.blurb}
+              className={`w-44 rounded-md border px-3 py-2 text-left transition ${
+                map === m.id
+                  ? "border-neutral-300 bg-neutral-800 text-neutral-100"
+                  : "border-neutral-700 text-neutral-400 hover:border-neutral-500"
+              }`}
+            >
+              <div className="text-xs font-medium">{m.name}</div>
+              <div className="mt-0.5 text-[10px] leading-snug text-neutral-500">
+                {m.blurb}
+              </div>
+            </button>
+          ))}
+        </div>
+        {/* Only the room's creator chooses; anyone joining takes what is there. */}
+        <div className="text-[10px] text-neutral-600">
+          Applies only if you start the session
+        </div>
+      </div>
 
       <div className="flex gap-4">
         <button

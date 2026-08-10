@@ -43,11 +43,12 @@ you join.
 5. **Nobody should have to invent a name to play.** A tab with no stored name
    gets a random reptile plus two digits; the digits are what stop two people
    picking "Gecko" from being indistinguishable.
-6. **The map picker hides itself while there is one map.** A chooser with a
-   single option is furniture, and it would be the only control on the menu that
-   does nothing. It appears as soon as `world/maps.ts` has a second entry, with
-   no other change. Its note says the choice applies only if you start the
-   session, because that is the truth: a later joiner takes the room's map.
+6. **The map picker is always shown, even while there is one map.** It is the
+   standing answer to "which map am I about to play", and a control that appears
+   only once a second map exists is one nobody knows is there. It lists whatever
+   `world/maps.ts` holds, so a new map needs no change here. Its note says the
+   choice applies only if you start the session, because that is the truth: a
+   later joiner takes the room's map.
 7. **The pause menu has no full-screen scrim** — the arena stays visible while
    you are paused — but the panel itself needs a solid ground, because it floats
    over a white room and translucent pills left the session name unreadable.

@@ -36,7 +36,9 @@ the pointer-lock state. This folder owns what the shot hits, and the aftermath.
    it draws no line either.
 3. **The tracer is a cylinder, not a `THREE.Line`.** GL line width is capped at
    one pixel on every desktop driver worth naming, so a real line can be neither
-   thickened nor thinned. A cylinder has an honest width in world units.
+   thickened nor thinned. A cylinder has an honest width in world units — it
+   thins with distance and goes sub-pixel far across the arena, which is the
+   trade for being adjustable at all. `TRACER_RADIUS` is the knob.
 4. **`resolveShot` returns the wall hit already oriented** — position nudged off
    the surface along its normal, rotation facing out of it — because that is what
    the mark needs and the caller has no better place to work it out.

@@ -14,8 +14,17 @@ import type { NetMark } from "@/game/net";
  */
 export type Mark = NetMark;
 
-/** Thin enough to read as a line, thick enough to survive perspective. */
-const TRACER_RADIUS = 0.012;
+/**
+ * Hairline. A hider is two units tall, so this is about a four-hundredth of a
+ * body across — read as a drawn line rather than a rod.
+ *
+ * It is a world-space thickness, so it thins with distance and goes sub-pixel
+ * far across the arena. That is the trade for a line that has a real thickness
+ * at all: a `THREE.Line` would be exactly one pixel at every distance, but GL
+ * caps line width at one on every desktop driver, so it could never be anything
+ * else either.
+ */
+const TRACER_RADIUS = 0.004;
 
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -44,7 +53,7 @@ function Tracer({ from, to }: { from: NetMark["origin"]; to: NetMark["position"]
 
   return (
     <mesh position={position} quaternion={quaternion}>
-      <cylinderGeometry args={[TRACER_RADIUS, TRACER_RADIUS, length, 6, 1, true]} />
+      <cylinderGeometry args={[TRACER_RADIUS, TRACER_RADIUS, length, 5, 1, true]} />
       <meshBasicMaterial color="#000000" />
     </mesh>
   );
