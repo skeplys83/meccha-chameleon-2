@@ -13,6 +13,7 @@ export {
   onGrave,
   onKilled,
   onShot,
+  onWhistle,
   type Grave,
   type NetMark,
 } from "./events";
@@ -29,4 +30,5 @@ export {
   sendPaint,
   sendShoot,
   sendState,
+  sendWhistle,
 } from "./send";

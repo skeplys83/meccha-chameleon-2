@@ -15,12 +15,13 @@ import {
   onKilled,
   selfId,
   sendClearSkin,
+  sendWhistle,
   type Session,
 } from "@/game/net";
 import { clearSkin, SELF } from "@/game/paint/skin";
 import { requestLock } from "@/game/players/pointerLock";
-import { playSound, setAudioSuspended, unlockAudio } from "@/game/sound/engine";
-import { WHISTLE_INTERVAL_MS } from "@/game/sound/catalogue";
+import { setAudioSuspended, stopAllLoops, unlockAudio } from "@/game/sound/engine";
+import { WHISTLE_INTERVAL_MS } from "@/game/shared/protocol";
 import type { Role } from "@/game/shared/protocol";
 
 // The renderer touches WebGL/window, so it must never run on the server.
@@ -63,14 +64,17 @@ export function Game() {
     setAudioSuspended(paused);
   }, [paused]);
 
-  // The whistle, from the moment you join until you leave. Keyed on the session
-  // rather than on `killedBy`, so it keeps its rhythm across a death and respawn
-  // — it is marking time in the room, not time alive.
+  // The whistle, for as long as you are alive in a session. It is *sent*, not
+  // played: the room relays it back positioned at you, so it gives your location
+  // away to anyone near enough to hear it.
+  //
+  // `killedBy` is in the deps on purpose. A dead player is out of the room, and a
+  // corpse that keeps whistling is both wrong and impossible to explain.
   useEffect(() => {
-    if (!role || !session) return;
-    const whistle = setInterval(() => playSound("whistle"), WHISTLE_INTERVAL_MS);
+    if (!role || !session || killedBy) return;
+    const whistle = setInterval(sendWhistle, WHISTLE_INTERVAL_MS);
     return () => clearInterval(whistle);
-  }, [role, session]);
+  }, [role, session, killedBy]);
 
   const join = useCallback((who: string, picked: Role, target: Session) => {
     // This runs from the role button's click handler, which is the user gesture
@@ -120,6 +124,7 @@ export function Game() {
   );
 
   const leave = useCallback(() => {
+    stopAllLoops();
     void disconnect();
     setRole(null);
     setSession(null);
@@ -138,6 +143,11 @@ export function Game() {
       setPainting(false);
       setPaused(false);
       document.exitPointerLock();
+      // Anything still running belongs to a player who no longer exists — the
+      // brush loop above all, which would otherwise scrub away behind the death
+      // screen. One-shots already in flight are allowed to finish; the squash
+      // that killed you is one of them.
+      stopAllLoops();
       void disconnect();
     });
   }, [role]);
@@ -184,6 +194,7 @@ export function Game() {
 
   useEffect(() => {
     return () => {
+      stopAllLoops();
       void disconnect();
     };
   }, []);

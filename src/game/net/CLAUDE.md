@@ -15,7 +15,8 @@ The other half is `server/`. Every message named below has a handler there.
 - `client.ts` — `connect` / `disconnect` and all the schema callback wiring.
 - `send.ts` — everything this client tells the room.
 - `remotes.ts` — the `remotes` map and the roster event.
-- `events.ts` — `onShot` / `onMark` / `onGrave` / `onKilled` and their emitters.
+- `events.ts` — `onShot` / `onWhistle` / `onMark` / `onGrave` / `onKilled` and
+  their emitters.
 - `sessions.ts` — `fetchSessions` against `/api/sessions`.
 - `index.ts` — the public surface.
 
@@ -46,8 +47,9 @@ The other half is `server/`. Every message named below has a handler there.
 
 - **Out** (`send.ts` → `server/room.ts`): `state` at 20 Hz — position, yaw,
   pitch, pose and `cling` — plus `paint` batched every 100 ms, `shoot`, `kill`
-  and `clearSkin`.
-- **In** (`client.ts` ← server): `shot`, `mark`, `paint`, `clearSkin`, `killed`,
+  and `clearSkin`, plus `whistle` on its own timer.
+- **In** (`client.ts` ← server): `shot`, `whistle`, `mark`, `paint`, `clearSkin`,
+  `killed`,
   plus the `players` and `graves` schema callbacks.
 - **`shot` carries the shooter's session id, not a position.** Every client
   already knows where that player is, so a coordinate on the wire would only be

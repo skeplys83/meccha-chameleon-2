@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
-import { onKilled, onShot, remotes } from "@/game/net";
+import { onKilled, onShot, onWhistle, remotes } from "@/game/net";
 import { playSound, preloadSounds, updateListener } from "./engine";
 import { Stepper, jitteredStepRate, strideFor } from "./footsteps";
 
@@ -39,6 +39,20 @@ export function SoundStage() {
           position: shooter
             ? [shooter.target.x, shooter.target.y, shooter.target.z]
             : undefined,
+        });
+      }),
+    [],
+  );
+
+  // A whistle comes from whoever let it out, so it gives their position away.
+  // Your own resolves to no position — `remotes` never holds you — which is
+  // right: it is at your own head, and a panner at zero distance behaves badly.
+  useEffect(
+    () =>
+      onWhistle((whistlerId) => {
+        const who = remotes.get(whistlerId);
+        playSound("whistle", {
+          position: who ? [who.target.x, who.target.y, who.target.z] : undefined,
         });
       }),
     [],

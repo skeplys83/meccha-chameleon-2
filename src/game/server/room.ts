@@ -5,6 +5,8 @@ import { setSessionName } from "./discovery.ts";
 import {
   FIRE_INTERVAL_MS,
   FIRE_INTERVAL_TOLERANCE,
+  WHISTLE_INTERVAL_MS,
+  WHISTLE_TOLERANCE,
   MAX_STROKES,
   MAX_STROKE_LENGTH,
   POSE_COUNT,
@@ -34,6 +36,7 @@ const clamp = (n: number, lo: number, hi: number) =>
   Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : 0;
 
 const MIN_FIRE_GAP_MS = FIRE_INTERVAL_MS * FIRE_INTERVAL_TOLERANCE;
+const MIN_WHISTLE_GAP_MS = WHISTLE_INTERVAL_MS * WHISTLE_TOLERANCE;
 
 type StateMsg = { p?: unknown; yaw?: unknown; pitch?: unknown; pose?: unknown; cling?: unknown };
 type PaintMsg = { strokes?: unknown };
@@ -48,6 +51,8 @@ export class GameRoom extends Room<GameState> {
    *  here as well as on the client. Rate is the one property of a shot that
    *  reaches everybody — an unlimited one is a wall of noise for the whole room. */
   private lastShot = new Map<string, number>();
+  /** When each client last whistled, so nobody can turn theirs into a siren. */
+  private lastWhistle = new Map<string, number>();
 
   /** True at most once per FIRE_INTERVAL_MS per client, and records the shot. */
   private canFire(sessionId: string) {
@@ -153,6 +158,16 @@ export class GameRoom extends Room<GameState> {
       });
       this.broadcast("shot", { id: client.sessionId });
     });
+
+    // A whistle is only a position given away, so it is relayed like a shot:
+    // everyone hears it, at whoever let it out.
+    this.onMessage("whistle", (client: Client) => {
+      if (!this.state.players.has(client.sessionId)) return;
+      const now = Date.now();
+      if (now - (this.lastWhistle.get(client.sessionId) ?? 0) < MIN_WHISTLE_GAP_MS) return;
+      this.lastWhistle.set(client.sessionId, now);
+      this.broadcast("whistle", { id: client.sessionId });
+    });
   }
 
   onJoin(client: Client, options?: { name?: string; role?: string }) {
@@ -178,5 +193,6 @@ export class GameRoom extends Room<GameState> {
   onLeave(client: Client) {
     this.state.players.delete(client.sessionId);
     this.lastShot.delete(client.sessionId);
+    this.lastWhistle.delete(client.sessionId);
   }
 }

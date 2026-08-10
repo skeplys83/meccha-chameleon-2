@@ -91,7 +91,10 @@ Next picks `icon.svg` up automatically — there is no `favicon.ico` and no
 | `hud/` | the 2D overlays outside the Canvas | menus, legends, name entry |
 
 `Game.tsx` and `Scene.tsx` are the composition roots and belong to no folder.
-Every mode transition in the game is decided in `Game.tsx`.
+Every mode transition in the game is decided in `Game.tsx` — which also means it
+owns the *teardown* of each: joining unlocks audio, pausing suspends it, and
+dying or leaving stops every looping sound. Anything that outlives its player is
+a bug that lands here.
 
 ## How the folders may depend on each other
 
@@ -203,6 +206,6 @@ was all confirmed.
 ## Not built yet
 
 No round flow (hide phase, win condition), no lobby or ready-up, no health — a
-hit is instantly fatal. The whistle marks 45 s intervals on each client's own
-clock, which stands in for a round timer without being one. Paint has no undo and
+hit is instantly fatal. The whistle is a periodic tell every player gives off,
+not a round bell: it is heard from wherever its owner is standing. Paint has no undo and
 no per-part erase. Each folder's doc ends with the gaps specific to it.

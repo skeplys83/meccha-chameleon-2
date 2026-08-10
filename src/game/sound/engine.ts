@@ -13,12 +13,23 @@ import { SOUNDS, SOUND_NAMES, type SoundName } from "./catalogue";
  * Audio nodes that disconnect themselves when the sound ends.
  */
 
-/** How far a positional sound carries at full volume. Tuned to the 40×40 arena —
- *  the Web Audio default of 1 makes everything inaudible two steps away. */
-const REF_DISTANCE = 6;
-/** Past this, a sound is silent. Just inside the arena's diagonal. */
-const MAX_DISTANCE = 45;
-const ROLLOFF = 1.1;
+/**
+ * How far a positional sound carries before it starts to fade.
+ *
+ * Inside this radius there is *no* attenuation at all, so it doubles as "how big
+ * the room sounds". At 6 it was a quarter of the arena's width at full volume,
+ * which is why distance barely read; 3.5 puts the fade inside normal fighting
+ * range. The Web Audio default of 1 is the other extreme — everything inaudible
+ * two steps away.
+ *
+ * Resulting curve, inverse model: 1.0 at 3.5 units, −7 dB at 7, −13 dB at 14,
+ * −23 dB across the arena.
+ */
+const REF_DISTANCE = 3.5;
+/** Clamps the distance used in the falloff. Just past the arena's diagonal. */
+const MAX_DISTANCE = 60;
+/** How sharply it falls once past `REF_DISTANCE`. Higher is a smaller-sounding room. */
+const ROLLOFF = 1.25;
 /**
  * Ramp on either end of a loop. Starting or stopping a buffer at full amplitude
  * puts a step in the waveform, which is a click — and a brush you can click on

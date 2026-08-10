@@ -45,11 +45,12 @@ export const SOUNDS: Record<SoundName, SoundSpec> = {
    */
   brush: { url: "/sounds/brush.wav", gain: 0.28, positional: false },
   /**
-   * The round marker, on a timer from the moment you join. Global rather than
-   * positional — it is not coming from anywhere in the room, so stereo is right
-   * for it.
+   * Every player's periodic tell, at whoever let it out. Positional, so it is
+   * mono like the rest — a stereo file already carries its own left/right image
+   * and a panner has nothing left to place, which is why this used to sound like
+   * it came from everywhere at once.
    */
-  whistle: { url: "/sounds/whistle.wav", gain: 0.7, positional: false },
+  whistle: { url: "/sounds/whistle.wav", gain: 0.9, positional: true },
 };
 
 export const SOUND_NAMES = Object.keys(SOUNDS) as SoundName[];
@@ -63,4 +64,4 @@ export const SOUND_NAMES = Object.keys(SOUNDS) as SoundName[];
  * broadcast so everyone heard the same one. There is no round flow yet — when
  * there is, this moves to the server.
  */
-export const WHISTLE_INTERVAL_MS = 45_000;
+export const WHISTLE_INTERVAL_MS = 5_000;

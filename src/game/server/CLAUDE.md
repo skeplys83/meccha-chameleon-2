@@ -63,13 +63,17 @@ message named here.
    for numbers.
 8. **Non-finite input becomes 0, never `NaN`.** That is what `clamp` is for. A
    `NaN` written into schema propagates to every client.
-9. **One trigger, one clock.** `canFire` rate-limits `shoot` and `kill` together,
+9. **A whistle is relayed, never stored, and rate-limited like a shot.** It only
+   gives a position away, so it is trusted the way movement is — but *rate*
+   reaches everybody, so `MIN_WHISTLE_GAP_MS` stops a client turning theirs into
+   a siren. A player who has left the room cannot whistle at all.
+10. **One trigger, one clock.** `canFire` rate-limits `shoot` and `kill` together,
    per client, because a trigger-pull sends exactly one of the two — never both.
    The gap is `FIRE_INTERVAL_MS` from `shared/`, times a tolerance, so a shot a
    few milliseconds early is treated as jitter rather than eaten. The client
    enforces the same interval for feel; this is here because fire *rate* is the
    property of a shot that reaches everybody.
-10. **A shot is broadcast separately from its mark.** `mark` is where the pellets
+11. **A shot is broadcast separately from its mark.** `mark` is where the pellets
    landed; `shot` is where the gun was. The kill path relays only `shot`, since
    there is no wall to mark.
 
@@ -80,8 +84,8 @@ message named here.
 - **Reads `../shared/protocol.ts`** for `Role`, `ROOM_LIMIT`, `POSE_COUNT`,
   `MAX_STROKES`, `MAX_STROKE_LENGTH`. Do not re-declare any of them here.
 - **Messages in** (`room.ts` ← `net/send.ts`): `state`, `paint`, `clearSkin`,
-  `shoot`, `kill`.
-- **Messages out** (→ `net/client.ts`): `shot` and `mark` to everyone; `paint`
+  `shoot`, `kill`, `whistle`.
+- **Messages out** (→ `net/client.ts`): `shot`, `whistle` and `mark` to everyone; `paint`
   and `clearSkin` to everyone *except the sender*, who already drew it locally;
   `killed` to everyone, carrying the clamped death position so `sound/` can place
   it.

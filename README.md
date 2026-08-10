@@ -38,7 +38,7 @@ and you wrap onto the ceiling.
 
 Sound is positional: footsteps, gunshots and deaths come from where they happen,
 and a hider's lighter footsteps are pitched above a seeker's. Climbing is silent.
-A whistle marks every 45 seconds.
+Every 45 seconds you whistle, and anyone near enough hears roughly where you are.
 
 ## Stack
 

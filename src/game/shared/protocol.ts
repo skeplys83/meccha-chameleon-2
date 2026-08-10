@@ -61,6 +61,21 @@ export const FIRE_INTERVAL_MS = 800;
 export const FIRE_INTERVAL_TOLERANCE = 0.85;
 
 /**
+ * How often each player whistles, from the moment they join.
+ *
+ * Every player runs this on their own clock and tells the room, so it is a
+ * periodic tell rather than a round bell: whistles arrive at different moments
+ * for different people, and each one gives away roughly where its owner is.
+ *
+ * The server rate-limits against it — a client that whistled continuously would
+ * be a siren in everybody else's ears.
+ */
+export const WHISTLE_INTERVAL_MS = 45_000;
+
+/** Slack on the whistle rate, for the same clock-jitter reason as firing. */
+export const WHISTLE_TOLERANCE = 0.8;
+
+/**
  * Longest encoded stroke the server will accept. `encodeStroke` in
  * `paint/skin.ts` produces about 30 characters; anything longer is not a stroke.
  */

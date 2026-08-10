@@ -24,6 +24,12 @@ export function sendPaint(strokes: string[]) {
   if (strokes.length) getRoom()?.send("paint", { strokes });
 }
 
+/** Tells the room you whistled. The server relays it to everyone, positioned at
+ *  you — see `sound/`. */
+export function sendWhistle() {
+  getRoom()?.send("whistle");
+}
+
 export function sendClearSkin() {
   getRoom()?.send("clearSkin");
 }

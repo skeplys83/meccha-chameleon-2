@@ -12,7 +12,14 @@ import {
 } from "@/game/paint/skin";
 import { getRoom, setRoom } from "./connection";
 import { clearRemotes, emitRoster, remotes } from "./remotes";
-import { emitGrave, emitKilled, emitMark, emitShot, type NetMark } from "./events";
+import {
+  emitGrave,
+  emitKilled,
+  emitMark,
+  emitShot,
+  emitWhistle,
+  type NetMark,
+} from "./events";
 import type { Session } from "./sessions";
 
 /** Mirrors the Player schema declared in server/schema.mjs. */
@@ -120,6 +127,10 @@ export async function connect(name: string, role: Role, target: Session) {
 
   joined.onMessage("shot", (msg: { id: string }) => {
     if (msg?.id) emitShot(msg.id);
+  });
+
+  joined.onMessage("whistle", (msg: { id: string }) => {
+    if (msg?.id) emitWhistle(msg.id);
   });
 
   joined.onMessage(

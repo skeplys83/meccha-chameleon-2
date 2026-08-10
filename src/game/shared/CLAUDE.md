@@ -10,7 +10,7 @@ halves of the app disagreed about them.
 
 - `protocol.ts` — `Role`, `ROOM_HALF`, `ROOM_LIMIT`, `POSE_COUNT`,
   `MAX_STROKES`, `MAX_STROKE_LENGTH`, `FIRE_INTERVAL_MS`,
-  `FIRE_INTERVAL_TOLERANCE`.
+  `FIRE_INTERVAL_TOLERANCE`, `WHISTLE_INTERVAL_MS`, `WHISTLE_TOLERANCE`.
 
 ## Invariants
 
@@ -42,6 +42,9 @@ halves of the app disagreed about them.
   the client so the gun feels like a pump-action, the server because fire rate
   reaches everybody. The server allows `FIRE_INTERVAL_TOLERANCE` of slack for
   clock jitter.
+- `Game.tsx` whistles on `WHISTLE_INTERVAL_MS` and `server/room.ts` rate-limits
+  against it, for the same reason as firing: a client that whistled continuously
+  would be a siren in everybody else's ears.
 - `paint/skin.ts` trims its replay history to `MAX_STROKES`, the same cap the
   server keeps in schema. A smaller client cap would silently lose paint on
   respawn, since the respawn replay is what restores it.

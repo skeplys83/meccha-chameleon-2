@@ -19,11 +19,13 @@ follows your head, and the footstep derivation.
 ## Invariants
 
 1. **Positional sounds must be mono.** A stereo buffer cannot be spatialised —
-   left and right are already baked in, so the panner has nothing to place, and
-   the sound appears to come from everywhere. `step`, `shotgun` and `squash` are
-   mono; `whistle` is global and correctly stereo. `preloadSounds` warns if a
-   positional file arrives with more than one channel, because the symptom
-   otherwise reads as "3D audio is just subtle".
+   left and right are already baked in, so the panner has nothing left to place
+   and the sound appears to come from everywhere at once. That is not a theory:
+   `whistle.wav` shipped stereo and sounded exactly like that until it was
+   converted. Everything positional — `step`, `shotgun`, `squash`, `whistle` —
+   is mono. Only `brush` is not, because it is your own hand at your own ear.
+   `preloadSounds` warns if a positional file arrives with more than one channel,
+   because the symptom otherwise reads as "3D audio is just subtle".
 2. **Loudness is raised by compression, not by a gain above 1.** Every file peaks
    at −1 dBFS, so a catalogue gain over 1.0 clips. When a sound needs to be
    *louder* rather than *hotter*, lift its average level and re-normalise —
@@ -156,6 +158,10 @@ follows your head, and the footstep derivation.
   walking a ceiling is indistinguishable from walking a floor, so the flag has to
   come off the wire. Climbing *straight up* is silent for free, since the stepper
   ignores Y.
+- **`onWhistle` works exactly like `onShot`**, and for the same reason: the id
+  is enough, because every client already knows where that player is. Your own
+  resolves to no position — `remotes` never holds you — which is right, it is at
+  your own head.
 - **`onShot` carries the shooter's session id, not a position.** Every client
   already knows where that player is; a coordinate on the wire would only be
   staler. `remotes` never holds *you*, so your own shot resolves to no position —
@@ -174,10 +180,12 @@ follows your head, and the footstep derivation.
   to hear. `SoundStage` owns everyone else's.
 - **`Game.tsx` calls `unlockAudio()` on join and `setAudioSuspended(paused)`**, so
   a shot fired the instant before Esc does not ring on behind the menu.
-- **`Game.tsx` also runs the whistle**, on a `WHISTLE_INTERVAL_MS` timer that
-  lives while you are in a session. It is keyed on the session rather than on
-  `killedBy`, so the rhythm survives a death and respawn — it marks time in the
-  room, not time alive.
+- **`Game.tsx` runs the whistle timer**, and *sends* rather than plays: the room
+  relays it back positioned at you. `killedBy` is in the effect's deps, so a dead
+  player stops whistling — a corpse that keeps piping up is both wrong and
+  impossible to explain. `Game.tsx` also calls `stopAllLoops()` on death, on
+  leaving and on unmount; the brush loop would otherwise keep scrubbing behind
+  the death screen, since the component that started it is gone.
 - **The brush loop is driven by `paint/brushCursor.ts`'s `onDrawingChange`**, via
   `players/Player.tsx`. `paint/` does not import `sound/` — it reports that a drag
   started or ended and lets the caller decide that makes a noise. One hook rather
@@ -194,6 +202,11 @@ All the knobs, in the order you are likely to want them:
 - how far sound carries — `REF_DISTANCE` (higher = audible further) and `ROLLOFF`
   in `engine.ts`. The Web Audio default `refDistance` of 1 would make everything
   inaudible two steps away in a 40×40 arena.
+- **how far sounds carry** — `REF_DISTANCE` in `engine.ts` is the radius inside
+  which there is *no* attenuation, so it doubles as how big the room sounds. At 6
+  it was a quarter of the arena at full volume and distance barely read; 3.5
+  gives 0 dB up close, −7 at 7 units, −14 at 14 and −23 across the room.
+  `ROLLOFF` sharpens the curve past that point.
 - **the brush loop** — `brush` gain in `catalogue.ts`, and `LOOP_FADE` in
   `engine.ts` for how softly it starts and stops
 - **footstep cadence** — `STRIDE_PER_HALF_HEIGHT` in `footsteps.ts`. Raise it and
@@ -221,8 +234,8 @@ would be a fair thing to broadcast, and a good way to be found. Nothing varies
 footstep sound by surface, because every surface in the arena is the same
 material.
 
-**The whistle runs on each client's own clock**, 45 s from when that player
-joined, so two people who joined a minute apart hear it a minute apart. That is
-right for a marker of elapsed time and wrong for a round boundary, which would
-have to be broadcast so everyone heard the same one. When there is a round flow,
-this moves to the server.
+**The whistle is a periodic tell, not a round bell.** Each player runs the timer
+on their own clock and tells the room, so whistles arrive at different moments
+for different people and each one gives away roughly where its owner is. A round
+boundary would be the opposite — one broadcast everybody hears at once — and when
+there is a round flow that will be a separate thing, not this.

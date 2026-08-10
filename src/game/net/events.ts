@@ -21,6 +21,8 @@ export type Grave = { id: string; position: [number, number, number] };
 /** Where the shot came from — a session id, because every client already knows
  *  where that player is and a position on the wire would only be staler. */
 const shotListeners = new Set<(shooterId: string) => void>();
+/** Who whistled. Like a shot, the position is looked up locally from `remotes`. */
+const whistleListeners = new Set<(whistlerId: string) => void>();
 const markListeners = new Set<(mark: NetMark) => void>();
 const graveListeners = new Set<(grave: Grave) => void>();
 const killListeners = new Set<
@@ -31,6 +33,13 @@ export function onShot(fn: (shooterId: string) => void) {
   shotListeners.add(fn);
   return () => {
     shotListeners.delete(fn);
+  };
+}
+
+export function onWhistle(fn: (whistlerId: string) => void) {
+  whistleListeners.add(fn);
+  return () => {
+    whistleListeners.delete(fn);
   };
 }
 
@@ -59,6 +68,10 @@ export function onKilled(
 
 export function emitShot(shooterId: string) {
   shotListeners.forEach((fn) => fn(shooterId));
+}
+
+export function emitWhistle(whistlerId: string) {
+  whistleListeners.forEach((fn) => fn(whistlerId));
 }
 
 export function emitMark(mark: NetMark) {
