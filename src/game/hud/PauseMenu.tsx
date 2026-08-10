@@ -44,7 +44,10 @@ export function PauseMenu({
           </button>
         </div>
 
-        <div className="text-[10px] text-neutral-500">Esc toggles pause</div>
+        {/* Not "Esc toggles pause" any more: Esc is what released the pointer,
+            and the browser will not give it back for about a second afterwards.
+            Resuming has to be a click. */}
+        <div className="text-[10px] text-neutral-500">Click Resume to continue</div>
       </div>
     </div>
   );

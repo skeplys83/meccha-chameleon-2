@@ -201,21 +201,31 @@ export function Game() {
     join(name, role, session, map);
   }, [join, map, name, role, session]);
 
-  // A hider has no pointer lock to lose, so their Esc has to be read directly.
-  // A seeker's Esc is swallowed by the browser while the lock is held — losing
-  // the lock is what raises the menu (below) — but once the menu is up their
-  // cursor is free and Esc reaches us like anyone else's, so it can close it.
+  /**
+   * Esc opens the pause menu. It deliberately cannot close it.
+   *
+   * Leaving is a click on Resume, and that is a rule about the pointer lock, not
+   * about menus. Esc is *how the lock is released*, and the browser then refuses
+   * to hand it back for about a second — so resuming with the same key asked for
+   * it milliseconds after giving it up, which Chrome answers with a
+   * SecurityError and Next paints over the game as a crash. A click on Resume is
+   * a fresh gesture, far enough after the release to be granted.
+   *
+   * A hider has no lock to lose, so their Esc is read here directly. A seeker's
+   * is swallowed by the browser while the lock is held — losing the lock is what
+   * raises the menu — and once the menu is up their Esc reaches us and is
+   * ignored, like everyone else's.
+   */
   useEffect(() => {
     if (!role) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== "Escape" || e.repeat || killedBy) return;
       if (paintingRef.current) setPaintOpen(false);
-      else if (pausedRef.current) resume();
-      else if (role === "hider") setPaused(true);
+      else if (!pausedRef.current && role === "hider") setPaused(true);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [role, killedBy, resume, setPaintOpen]);
+  }, [role, killedBy, setPaintOpen]);
 
   // For a seeker, Esc releases the pointer lock rather than reaching the app,
   // so losing the lock is what actually means "the player wants out".

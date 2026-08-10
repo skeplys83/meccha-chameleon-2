@@ -41,9 +41,22 @@ export function requestLock() {
   const attempt = () => {
     retry = null;
     if (!target || isLocked()) return;
-    // Newer Chrome returns a promise that rejects while the cooldown is up.
-    // The rejection is expected, and an unhandled one is just console noise.
-    void Promise.resolve(target.requestPointerLock()).catch(() => {});
+
+    // A refusal during the cooldown is expected here, and it arrives two
+    // different ways depending on the browser: older Chrome *throws*
+    // SecurityError synchronously, newer Chrome returns a promise that rejects
+    // with it. Both have to be swallowed. An escaped one is not just console
+    // noise — Next's dev overlay catches it and throws a red modal over the
+    // running game, which is how this was found.
+    try {
+      const pending = target.requestPointerLock() as unknown;
+      if (pending && typeof (pending as Promise<void>).catch === "function") {
+        void (pending as Promise<void>).catch(() => {});
+      }
+    } catch {
+      // Refused for now; the retry below is the whole plan.
+    }
+
     if (--left > 0) retry = setTimeout(attempt, RETRY_MS);
   };
   attempt();

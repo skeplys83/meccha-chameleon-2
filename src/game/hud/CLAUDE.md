@@ -49,10 +49,14 @@ you join.
    `world/maps.ts` holds, so a new map needs no change here. Its note says the
    choice applies only if you start the session, because that is the truth: a
    later joiner takes the room's map.
-7. **The pause menu has no full-screen scrim** — the arena stays visible while
+7. **The pause menu leaves only by its own button**, and says so on the card.
+   Esc raises it and cannot dismiss it — see `players/CLAUDE.md` invariant 1 for
+   why that is a pointer-lock rule rather than a menu one. Do not "fix" the
+   asymmetry by wiring Esc back up.
+8. **The pause menu has no full-screen scrim** — the arena stays visible while
    you are paused — but the panel itself needs a solid ground, because it floats
    over a white room and translucent pills left the session name unreadable.
-8. **The session list is polled, not pushed.** `fetchSessions` every 2 s against
+9. **The session list is polled, not pushed.** `fetchSessions` every 2 s against
    the local server, which is the thing actually listening for UDP broadcasts.
 
 ## Contracts
