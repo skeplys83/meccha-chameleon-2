@@ -1,0 +1,18 @@
+# Keeps the build context small and stops host junk leaking into the image.
+node_modules
+.next
+.git
+.githooks
+.vscode
+npm-debug.log*
+*.log
+
+# Not part of the running game.
+scripts
+MEMORY.md
+README.md
+CLAUDE.md
+**/CLAUDE.md
+Dockerfile
+.dockerignore
+docker-compose.yml

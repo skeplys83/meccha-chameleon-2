@@ -1,9 +1,15 @@
 # Meccha Chameleon
 
-A LAN-only multiplayer hide-and-seek game. Hiders are stick figures who can lie
-on their side to pass as scenery; seekers hunt them in first person with a
-shotgun. No internet, no accounts, **not deployed to Vercel** — everything runs
-on machines on the same Wi-Fi.
+A multiplayer hide-and-seek game. Hiders are stick figures who can lie on their
+side to pass as scenery; seekers hunt them in first person with a shotgun. No
+accounts, no third-party services.
+
+It runs two ways, and both matter. **On a LAN**, every machine runs the whole app
+and UDP discovery lists the games on the Wi-Fi. **On a single hosted server**,
+one container serves everybody and discovery is switched off — see "Hosting it"
+in the README. It is still **not deployed to Vercel**: the game is one long-lived
+process holding a websocket room, which is the opposite of what that platform
+does.
 
 ## How the docs work
 
@@ -50,7 +56,12 @@ through the custom server; verified by requesting a dev chunk with a foreign
 `Origin` and getting a 403.
 
 Useful env vars: `PORT` (web, default 3000), `GAME_PORT` (Colyseus, default 2567),
-`SESSION_NAME` (overrides the auto-generated session title).
+`PUBLIC_GAME_PORT` (what clients are *told* to connect to, when a proxy fronts
+Colyseus), `LAN_DISCOVERY=0` (skip UDP broadcast on a hosted box), `SESSION_NAME`.
+
+`Dockerfile` and `docker-compose.yml` are the hosted path. The image is Node 22
+because the server is TypeScript that Node strips at load — there is no build
+step for it, and an older Node fails to parse rather than misbehaving.
 
 ## Stack
 

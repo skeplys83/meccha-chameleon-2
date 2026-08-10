@@ -1,0 +1,22 @@
+# Enough to run the game on a VPS:  docker compose up -d --build
+#
+# Both ports are published because the browser talks to both — the page comes
+# from PORT and the game socket goes to GAME_PORT directly. That is fine over
+# plain http on an IP. It is *not* enough once there is a domain and HTTPS: a
+# wss:// page cannot open a ws:// socket, so 2567 needs TLS too. See the note in
+# README under "Hosting it".
+services:
+  meccha:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+      - "2567:2567"
+    environment:
+      # Name shown in the session list.
+      SESSION_NAME: "Meccha Chameleon"
+      # No LAN peers on a hosted box, so nothing to broadcast to.
+      LAN_DISCOVERY: "0"
+      # Set this when a proxy terminates TLS in front of Colyseus: the server
+      # keeps listening on GAME_PORT, clients are told to connect here instead.
+      # PUBLIC_GAME_PORT: "443"

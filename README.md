@@ -63,6 +63,29 @@ public/sounds/   four .wav files, all peak-normalised to -1 dBFS
 Start at [CLAUDE.md](CLAUDE.md) for the map and the project-wide traps, then read
 the doc for the folder you are changing.
 
+## Hosting it
+
+```bash
+docker compose up -d --build
+```
+
+Two ports are published, because the browser talks to both: the page comes from
+`PORT` (3000) and the game socket connects straight to `GAME_PORT` (2567). Over
+plain http on an IP that is all you need.
+
+**With a domain and HTTPS it is not enough.** A page served over `https://`
+cannot open a plain `ws://` socket, so 2567 needs TLS as well. Put a reverse
+proxy in front, terminate TLS for both, and tell clients where the socket really
+is:
+
+| variable | what it does |
+|---|---|
+| `PORT` | web port, default 3000 |
+| `GAME_PORT` | Colyseus port the server **listens** on, default 2567 |
+| `PUBLIC_GAME_PORT` | Colyseus port clients are **told** to use — set this when a proxy fronts it |
+| `LAN_DISCOVERY` | `0` turns off UDP broadcast; it finds nothing on a hosted box |
+| `SESSION_NAME` | name shown in the session list |
+
 ## Working on it
 
 ```bash

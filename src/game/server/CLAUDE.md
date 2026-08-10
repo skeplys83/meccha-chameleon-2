@@ -105,8 +105,16 @@ message named here.
 - **`/api/sessions`** returns `{self, sessions}` and is consumed by
   `net/sessions.ts`. The browser rewrites `self.host` to `location.hostname`,
   because a server does not know which of its addresses you reached it by.
-- **Discovery is best-effort.** A failed UDP bind logs a warning and the game runs
-  on regardless — you just have to type the host's address yourself.
+- **Discovery is best-effort, and optional.** A failed UDP bind logs a warning
+  and the game runs on regardless. `LAN_DISCOVERY=0` skips it entirely, which is
+  what a hosted server wants: there are no peers to broadcast to. `/api/sessions`
+  still answers with `self`, and `self` is the entry the menu actually joins, so
+  the game works with discovery off.
+- **`PUBLIC_GAME_PORT` is what clients are told, `GAME_PORT` is what we bind.**
+  They are the same on a LAN. Behind a reverse proxy they are not: TLS is
+  terminated on 443 and forwarded to 2567, so the browser must be handed 443 —
+  both because it cannot reach the internal port, and because a `wss://` page is
+  forbidden from opening a plain `ws://` socket.
 
 ## Testing it
 
