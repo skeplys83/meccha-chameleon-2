@@ -19,6 +19,7 @@ import {
 } from "@/game/net";
 import { clearSkin, SELF } from "@/game/paint/skin";
 import { requestLock } from "@/game/players/pointerLock";
+import { setAudioSuspended, unlockAudio } from "@/game/sound/engine";
 import type { Role } from "@/game/shared/protocol";
 
 // The renderer touches WebGL/window, so it must never run on the server.
@@ -55,7 +56,17 @@ export function Game() {
     if (paused) document.exitPointerLock();
   }, [paused]);
 
+  // Pause silences the room too. Without this a shot fired the instant before
+  // Esc keeps ringing behind the menu.
+  useEffect(() => {
+    setAudioSuspended(paused);
+  }, [paused]);
+
   const join = useCallback((who: string, picked: Role, target: Session) => {
+    // This runs from the role button's click handler, which is the user gesture
+    // the audio context has been waiting for. Unlocking anywhere else — an
+    // effect, a timer — is silently refused and the whole game stays mute.
+    unlockAudio();
     setError(null);
     setName(who);
     setRole(picked);

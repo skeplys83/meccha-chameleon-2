@@ -24,6 +24,24 @@ const DOC = "CLAUDE.md";
 /** Files that are documentation or tooling in their own right. */
 const EXEMPT = new Set(["CLAUDE.md", "AGENTS.md", "README.md", ".gitignore"]);
 
+/**
+ * Paths the root CLAUDE.md does not claim. Everything else that is not inside a
+ * documented folder falls through to it — chiefly Game.tsx, Scene.tsx and
+ * src/app, which are the composition roots and belong to no folder.
+ */
+const UNCLAIMED = [
+  "public/",
+  "scripts/",
+  ".githooks/",
+  "package.json",
+  "package-lock.json",
+  "tsconfig.json",
+  "next.config.ts",
+  "eslint.config.mjs",
+  "postcss.config.mjs",
+  "next-env.d.ts",
+];
+
 const git = (...args) =>
   execFileSync("git", args, { encoding: "utf8" }).split("\n").filter(Boolean);
 
@@ -49,7 +67,7 @@ function findDomains(dir, out = []) {
   } catch {
     return out;
   }
-  if (dir !== "." && entries.some((e) => e.isFile() && e.name === DOC)) out.push(dir);
+  if (entries.some((e) => e.isFile() && e.name === DOC)) out.push(dir);
   for (const e of entries) {
     if (!e.isDirectory() || IGNORED.has(e.name)) continue;
     findDomains(path.join(dir === "." ? "" : dir, e.name), out);
@@ -62,10 +80,16 @@ const domains = findDomains(".");
 const stagedSet = new Set(staged);
 
 /** The most specific domain containing a file — nested docs win over their parents. */
-const domainOf = (file) =>
-  domains
-    .filter((d) => file === d || file.startsWith(`${d}/`))
-    .sort((a, b) => b.length - a.length)[0] ?? null;
+const domainOf = (file) => {
+  const best = domains
+    .filter((d) => d === "." || file === d || file.startsWith(`${d}/`))
+    .sort((a, b) => b.length - a.length)[0];
+  if (!best) return null;
+  // The root doc covers the composition roots and src/app, but not tooling,
+  // assets or config — those have no prose to keep current.
+  if (best === "." && UNCLAIMED.some((u) => file === u || file.startsWith(u))) return null;
+  return best;
+};
 
 const stale = new Map();
 for (const file of staged) {
@@ -81,7 +105,8 @@ if (!stale.size) process.exit(0);
 
 console.error("\n  Documentation is out of date with this commit.\n");
 for (const [domain, files] of stale) {
-  console.error(`  ${domain}/${DOC} was not touched, but you changed:`);
+  const label = domain === "." ? DOC : `${domain}/${DOC}`;
+  console.error(`  ${label} was not touched, but you changed:`);
   for (const f of files.slice(0, 6)) console.error(`      ${f}`);
   if (files.length > 6) console.error(`      … and ${files.length - 6} more`);
   console.error("");

@@ -59,6 +59,15 @@ message named here.
    connection.
 7. **Non-finite input becomes 0, never `NaN`.** That is what `clamp` is for. A
    `NaN` written into schema propagates to every client.
+8. **One trigger, one clock.** `canFire` rate-limits `shoot` and `kill` together,
+   per client, because a trigger-pull sends exactly one of the two — never both.
+   The gap is `FIRE_INTERVAL_MS` from `shared/`, times a tolerance, so a shot a
+   few milliseconds early is treated as jitter rather than eaten. The client
+   enforces the same interval for feel; this is here because fire *rate* is the
+   property of a shot that reaches everybody.
+9. **A shot is broadcast separately from its mark.** `mark` is where the pellets
+   landed; `shot` is where the gun was. The kill path relays only `shot`, since
+   there is no wall to mark.
 
 ## Contracts
 
@@ -66,9 +75,10 @@ message named here.
   `MAX_STROKES`, `MAX_STROKE_LENGTH`. Do not re-declare any of them here.
 - **Messages in** (`room.ts` ← `net/send.ts`): `state`, `paint`, `clearSkin`,
   `shoot`, `kill`.
-- **Messages out** (→ `net/client.ts`): `mark` to everyone; `paint` and
-  `clearSkin` to everyone *except the sender*, who already drew it locally;
-  `killed` to everyone.
+- **Messages out** (→ `net/client.ts`): `shot` and `mark` to everyone; `paint`
+  and `clearSkin` to everyone *except the sender*, who already drew it locally;
+  `killed` to everyone, carrying the clamped death position so `sound/` can place
+  it.
 - **`/api/sessions`** returns `{self, sessions}` and is consumed by
   `net/sessions.ts`. The browser rewrites `self.host` to `location.hostname`,
   because a server does not know which of its addresses you reached it by.

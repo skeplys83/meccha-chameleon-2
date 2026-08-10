@@ -15,7 +15,7 @@ The other half is `server/`. Every message named below has a handler there.
 - `client.ts` — `connect` / `disconnect` and all the schema callback wiring.
 - `send.ts` — everything this client tells the room.
 - `remotes.ts` — the `remotes` map and the roster event.
-- `events.ts` — `onMark` / `onGrave` / `onKilled` and their emitters.
+- `events.ts` — `onShot` / `onMark` / `onGrave` / `onKilled` and their emitters.
 - `sessions.ts` — `fetchSessions` against `/api/sessions`.
 - `index.ts` — the public surface.
 
@@ -46,8 +46,16 @@ The other half is `server/`. Every message named below has a handler there.
 
 - **Out** (`send.ts` → `server/room.ts`): `state` at 20 Hz, `paint` batched
   every 100 ms, `shoot`, `kill`, `clearSkin`.
-- **In** (`client.ts` ← server): `mark`, `paint`, `clearSkin`, `killed`, plus the
-  `players` and `graves` schema callbacks.
+- **In** (`client.ts` ← server): `shot`, `mark`, `paint`, `clearSkin`, `killed`,
+  plus the `players` and `graves` schema callbacks.
+- **`shot` carries the shooter's session id, not a position.** Every client
+  already knows where that player is, so a coordinate on the wire would only be
+  staler. It fires on *both* server paths — a wall shot and a kill — because a
+  kill relays no `mark`, and `sound/` would otherwise be silent on the most
+  dramatic shot in the game.
+- **`killed` carries the death position** as a third argument to `onKilled`, so
+  `sound/` can play the death where it happened. `Game.tsx` ignores it and uses
+  only the first two.
 - **Writes into `paint/skin.ts`** directly — inbound strokes are decoded and
   painted onto the sender's canvas, and a departing player's skin is disposed via
   `forgetSkin`.

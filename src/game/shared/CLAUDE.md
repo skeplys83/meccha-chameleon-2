@@ -9,7 +9,8 @@ halves of the app disagreed about them.
 ## Files
 
 - `protocol.ts` — `Role`, `ROOM_HALF`, `ROOM_LIMIT`, `POSE_COUNT`,
-  `MAX_STROKES`, `MAX_STROKE_LENGTH`.
+  `MAX_STROKES`, `MAX_STROKE_LENGTH`, `FIRE_INTERVAL_MS`,
+  `FIRE_INTERVAL_TOLERANCE`.
 
 ## Invariants
 
@@ -37,6 +38,10 @@ halves of the app disagreed about them.
   explanatory message rather than letting a fifth pose silently never reach
   anyone else's screen. If you add a pose, change `POSE_COUNT` here in the same
   edit — the build will tell you if you forget.
+- `players/Player.tsx` and `server/room.ts` both enforce `FIRE_INTERVAL_MS` —
+  the client so the gun feels like a pump-action, the server because fire rate
+  reaches everybody. The server allows `FIRE_INTERVAL_TOLERANCE` of slack for
+  clock jitter.
 - `paint/skin.ts` trims its replay history to `MAX_STROKES`, the same cap the
   server keeps in schema. A smaller client cap would silently lose paint on
   respawn, since the respawn replay is what restores it.

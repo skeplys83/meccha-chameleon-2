@@ -14,7 +14,7 @@ import type { Control } from "./controls";
 import { controlMap, poseControl } from "./controls";
 import { followThirdPerson } from "./camera";
 import { BODY } from "./body";
-import type { Role } from "@/game/shared/protocol";
+import { FIRE_INTERVAL_MS, type Role } from "@/game/shared/protocol";
 import { POSES, poseExtents } from "@/game/figure/poses";
 import { ROOM_SURFACE } from "@/game/world/Room";
 import { StickFigure } from "@/game/figure/StickFigure";
@@ -24,6 +24,8 @@ import { setLockTarget } from "@/game/players/pointerLock";
 import { SELF } from "@/game/paint/skin";
 import { createBrushCursor, type BrushCursor } from "@/game/paint/brushCursor";
 import type { Brush } from "@/game/paint/brush";
+import { playSound } from "@/game/sound/engine";
+import { Stepper, jitteredStepRate } from "@/game/sound/footsteps";
 
 const SPEED = 6;
 // A velocity, not an impulse: the seeker's collider is bigger and therefore
@@ -113,6 +115,12 @@ export function Player({
   const cursor = useRef<BrushCursor | null>(null);
   const outbox = useRef<string[]>([]);
   const zoom = useRef(CAMERA_DISTANCE);
+  /** Your own footsteps. Remote figures get one of these each in SoundStage;
+   *  yours lives here because this is the only place that knows you are on the
+   *  ground — nobody else's `grounded` is on the wire. */
+  const stepper = useRef(new Stepper());
+  /** When the shotgun last went off, so a held mouse button is one shot. */
+  const lastShot = useRef(0);
   const ring = useRef<THREE.Mesh>(null);
   const [, getKeys] = useKeyboardControls<Control>();
   const { gl, camera, scene, raycaster } = useThree();
@@ -201,6 +209,14 @@ export function Player({
         if (!paintingRef.current) canvas.requestPointerLock();
         return;
       }
+
+      // A pump-action needs pumping. The trigger-pull is what is rate-limited,
+      // not the hit — clicking faster than this simply does nothing, rather than
+      // queueing up. The server enforces the same interval, since fire rate is
+      // the one thing about a shot that reaches everybody else.
+      const now = performance.now();
+      if (now - lastShot.current < FIRE_INTERVAL_MS) return;
+      lastShot.current = now;
 
       const shot = resolveShot(raycaster, camera, solids.current);
       if (!shot) return;
@@ -384,6 +400,15 @@ export function Player({
       groundRay.intersectObjects(solids.current, false).length > 0;
     const jumping = keys.jump && !jumpHeld.current && grounded;
     jumpHeld.current = keys.jump;
+
+    // Your own steps are not positional: you are the listener, and a panner at
+    // zero distance behaves badly. Quieter than everyone else's, because your own
+    // feet are the ones you least need to hear.
+    if (grounded && stepper.current.update(p.x, p.y, p.z, delta)) {
+      playSound("step", { rate: jitteredStepRate(role), gain: 0.8 });
+    } else if (!grounded) {
+      stepper.current.reset();
+    }
 
     const velocity = rb.linvel();
     rb.setLinvel(

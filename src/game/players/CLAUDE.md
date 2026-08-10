@@ -100,6 +100,13 @@ one role, and **adding a control means deciding whose it is.**
     button mid-drag does not cancel the stroke and start orbiting.
 11. **Remote transforms are damped, never snapped** — except on the very first
     frame, or a joining player flies in from the origin.
+12. **The shotgun is rate-limited here as well as on the server.** `lastShot`
+    against `FIRE_INTERVAL_MS`, checked before the raycast, so a held button is
+    one shot. The client copy is for feel; the server's is what actually binds.
+13. **Your own footsteps live in this file**, because it is the only place that
+    knows you are grounded — nobody else's `grounded` is on the wire. They play
+    without a position (you are the listener) and a little quieter than everyone
+    else's. Remote footsteps are `sound/SoundStage.tsx`.
 
 ## Contracts
 
@@ -114,6 +121,8 @@ one role, and **adding a control means deciding whose it is.**
   `hud/ControlsPanel.tsx` is the other half of this contract: if a row is on a
   card, that role must really have it wired up here.
 - Sends on a 50 ms `setInterval`, not from `useFrame` — see `net/CLAUDE.md`.
+- **Reads `sound/`** for `playSound` and the `Stepper`, and `shared/` for
+  `FIRE_INTERVAL_MS`.
 
 ## Not built yet
 

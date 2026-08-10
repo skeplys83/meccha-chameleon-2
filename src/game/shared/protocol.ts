@@ -43,6 +43,24 @@ export const POSE_COUNT = 5;
 export const MAX_STROKES = 800;
 
 /**
+ * Minimum gap between two shots, in milliseconds. A pump-action needs pumping:
+ * without this the shotgun is a machine gun, and one held mouse button is a
+ * wall of noise and a stream of marks.
+ *
+ * The client enforces it so the gun *feels* right, and the server enforces it
+ * because rate is the one thing about a shot that affects everybody else. The
+ * server allows a little less than this — see `FIRE_INTERVAL_TOLERANCE`.
+ */
+export const FIRE_INTERVAL_MS = 800;
+
+/**
+ * How much slack the server gives the client's clock. A shot that arrives a few
+ * milliseconds early is jitter, not cheating, and rejecting it would eat a shot
+ * the player heard themselves take.
+ */
+export const FIRE_INTERVAL_TOLERANCE = 0.85;
+
+/**
  * Longest encoded stroke the server will accept. `encodeStroke` in
  * `paint/skin.ts` produces about 30 characters; anything longer is not a stroke.
  */

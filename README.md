@@ -28,8 +28,12 @@ Env vars: `PORT` (web), `GAME_PORT` (Colyseus), `SESSION_NAME`.
 `WASD` to move, mouse to look, `Q`/`E` to turn the figure, `Space` to jump.
 Click the canvas to lock the cursor, `Esc` to release.
 
-- **Hider** — third-person camera, `1` stands upright and `2` lies flat on your side.
-- **Seeker** — first person with a shotgun, left click to fire.
+- **Hider** — third-person camera, `1`–`5` for poses, left-drag to paint yourself.
+- **Seeker** — first person with a shotgun, left click to fire (pump-action, so
+  there is a delay between shots).
+
+Sound is positional: footsteps, gunshots and deaths come from where they happen,
+and a hider's lighter footsteps are pitched above a seeker's.
 
 ## Stack
 
@@ -46,7 +50,9 @@ prevents, and its contracts with the folders around it.
 src/game/
   shared/   Role + the constants both halves must agree on
   server/   Colyseus room, schema, UDP LAN discovery   <- runs in Node
-  net/ world/ figure/ paint/ players/ combat/ hud/     <- run in the browser
+  net/ world/ figure/ paint/ players/ combat/          <- run in the browser
+  sound/ hud/
+public/sounds/   four .wav files, all peak-normalised to -1 dBFS
 ```
 
 Start at [CLAUDE.md](CLAUDE.md) for the map and the project-wide traps, then read
@@ -72,5 +78,5 @@ git config core.hooksPath .githooks
 
 ## Status
 
-Movement, roles, poses, painting, shooting, kills and LAN discovery all work.
-Health, round flow, a lobby and sound are not built yet.
+Movement, roles, poses, painting, shooting, kills, positional sound and LAN
+discovery all work. Health, round flow and a lobby are not built yet.

@@ -18,9 +18,21 @@ export type NetMark = {
 /** Where somebody died, in world space. Permanent. */
 export type Grave = { id: string; position: [number, number, number] };
 
+/** Where the shot came from — a session id, because every client already knows
+ *  where that player is and a position on the wire would only be staler. */
+const shotListeners = new Set<(shooterId: string) => void>();
 const markListeners = new Set<(mark: NetMark) => void>();
 const graveListeners = new Set<(grave: Grave) => void>();
-const killListeners = new Set<(victimId: string, by: string) => void>();
+const killListeners = new Set<
+  (victimId: string, by: string, position?: [number, number, number]) => void
+>();
+
+export function onShot(fn: (shooterId: string) => void) {
+  shotListeners.add(fn);
+  return () => {
+    shotListeners.delete(fn);
+  };
+}
 
 export function onMark(fn: (mark: NetMark) => void) {
   markListeners.add(fn);
@@ -36,11 +48,17 @@ export function onGrave(fn: (grave: Grave) => void) {
   };
 }
 
-export function onKilled(fn: (victimId: string, by: string) => void) {
+export function onKilled(
+  fn: (victimId: string, by: string, position?: [number, number, number]) => void,
+) {
   killListeners.add(fn);
   return () => {
     killListeners.delete(fn);
   };
+}
+
+export function emitShot(shooterId: string) {
+  shotListeners.forEach((fn) => fn(shooterId));
 }
 
 export function emitMark(mark: NetMark) {
@@ -51,6 +69,10 @@ export function emitGrave(grave: Grave) {
   graveListeners.forEach((fn) => fn(grave));
 }
 
-export function emitKilled(victimId: string, by: string) {
-  killListeners.forEach((fn) => fn(victimId, by));
+export function emitKilled(
+  victimId: string,
+  by: string,
+  position?: [number, number, number],
+) {
+  killListeners.forEach((fn) => fn(victimId, by, position));
 }

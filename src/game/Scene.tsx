@@ -11,6 +11,7 @@ import { Marks } from "@/game/combat/Marks";
 import { Graves } from "@/game/combat/Graves";
 import { Viewmodel } from "@/game/combat/Viewmodel";
 import { RemotePlayers } from "@/game/players/RemotePlayers";
+import { SoundStage } from "@/game/sound/SoundStage";
 import type { Role } from "@/game/shared/protocol";
 import type { Mark } from "@/game/combat/Marks";
 import type { Brush } from "@/game/paint/brush";
@@ -90,6 +91,8 @@ export default function Scene({
           )}
         </Physics>
         <RemotePlayers />
+        {/* Needs the camera every frame to keep the audio listener on your head. */}
+        <SoundStage />
         <Marks marks={marks} />
         <Graves graves={graves} />
         {role === "seeker" && !painting && <Viewmodel />}

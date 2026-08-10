@@ -12,7 +12,7 @@ import {
 } from "@/game/paint/skin";
 import { getRoom, setRoom } from "./connection";
 import { clearRemotes, emitRoster, remotes } from "./remotes";
-import { emitGrave, emitKilled, emitMark, type NetMark } from "./events";
+import { emitGrave, emitKilled, emitMark, emitShot, type NetMark } from "./events";
 import type { Session } from "./sessions";
 
 /** Mirrors the Player schema declared in server/schema.mjs. */
@@ -115,10 +115,17 @@ export async function connect(name: string, role: Role, target: Session) {
     emitGrave({ id: `grave-${index}-${raw}`, position: [x, y, z] });
   });
 
-  joined.onMessage("killed", (msg: { id: string; by: string }) => {
-    if (!msg?.id) return;
-    emitKilled(msg.id, msg.by ?? "the seeker");
+  joined.onMessage("shot", (msg: { id: string }) => {
+    if (msg?.id) emitShot(msg.id);
   });
+
+  joined.onMessage(
+    "killed",
+    (msg: { id: string; by: string; position?: [number, number, number] }) => {
+      if (!msg?.id) return;
+      emitKilled(msg.id, msg.by ?? "the seeker", msg.position);
+    },
+  );
 
   joined.onMessage("clearSkin", (msg: { id: string }) => {
     if (msg?.id) clearSkin(msg.id);

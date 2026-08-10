@@ -3,6 +3,8 @@ import { Room, type Client } from "colyseus";
 import { GameState, Player } from "./schema.ts";
 import { setSessionName } from "./discovery.ts";
 import {
+  FIRE_INTERVAL_MS,
+  FIRE_INTERVAL_TOLERANCE,
   MAX_STROKES,
   MAX_STROKE_LENGTH,
   POSE_COUNT,
@@ -31,6 +33,8 @@ const DEATH_NOTICE_MS = 250;
 const clamp = (n: number, lo: number, hi: number) =>
   Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : 0;
 
+const MIN_FIRE_GAP_MS = FIRE_INTERVAL_MS * FIRE_INTERVAL_TOLERANCE;
+
 type StateMsg = { p?: unknown; yaw?: unknown; pitch?: unknown; pose?: unknown };
 type PaintMsg = { strokes?: unknown };
 type KillMsg = { id?: unknown; position?: unknown };
@@ -40,6 +44,19 @@ type ShootMsg = {
 };
 
 export class GameRoom extends Room<GameState> {
+  /** When each client last got a shot through, so a spammed trigger is dropped
+   *  here as well as on the client. Rate is the one property of a shot that
+   *  reaches everybody — an unlimited one is a wall of noise for the whole room. */
+  private lastShot = new Map<string, number>();
+
+  /** True at most once per FIRE_INTERVAL_MS per client, and records the shot. */
+  private canFire(sessionId: string) {
+    const now = Date.now();
+    if (now - (this.lastShot.get(sessionId) ?? 0) < MIN_FIRE_GAP_MS) return false;
+    this.lastShot.set(sessionId, now);
+    return true;
+  }
+
   onCreate() {
     this.setState(new GameState());
     this.setPatchRate(PATCH_MS);
@@ -84,22 +101,28 @@ export class GameRoom extends Room<GameState> {
       if (!shooter || shooter.role !== "seeker" || !victim || victimId === client.sessionId) {
         return;
       }
+      if (!this.canFire(client.sessionId)) return;
 
-      const [x, y, z] = Array.isArray(msg.position)
+      const [rawX, rawY, rawZ] = Array.isArray(msg.position)
         ? (msg.position as number[])
         : [victim.x, victim.y, victim.z];
-      this.state.graves.push(
-        [
-          clamp(x, -ROOM_LIMIT, ROOM_LIMIT).toFixed(2),
-          clamp(y, -5, 30).toFixed(2),
-          clamp(z, -ROOM_LIMIT, ROOM_LIMIT).toFixed(2),
-        ].join(","),
-      );
+      const x = clamp(rawX, -ROOM_LIMIT, ROOM_LIMIT);
+      const y = clamp(rawY, -5, 30);
+      const z = clamp(rawZ, -ROOM_LIMIT, ROOM_LIMIT);
+
+      this.state.graves.push([x.toFixed(2), y.toFixed(2), z.toFixed(2)].join(","));
       if (this.state.graves.length > MAX_GRAVES) {
         this.state.graves.splice(0, this.state.graves.length - MAX_GRAVES);
       }
 
-      this.broadcast("killed", { id: victimId, by: shooter.name });
+      // A killing shot is still a shot: it makes the same bang as one that hit a
+      // wall, and it is the only bang for it, since this path relays no mark.
+      this.broadcast("shot", { id: client.sessionId });
+      // The position is what lets everyone hear the death where it happened. It
+      // rides on `killed` rather than on the grave, because `graves.onAdd` also
+      // replays the whole backlog to a joining client — who would then hear
+      // every death in the room's history at once.
+      this.broadcast("killed", { id: victimId, by: shooter.name, position: [x, y, z] });
 
       // Give the message a moment to land before the victim is disconnected, or
       // they would be gone before they knew what happened.
@@ -116,14 +139,16 @@ export class GameRoom extends Room<GameState> {
     });
 
     // Marks are cosmetic and expire in three seconds, so they are simply relayed
-    // and never stored.
-    this.onMessage("shoot", (_client: Client, msg: ShootMsg) => {
-      if (!msg) return;
+    // and never stored. The bang is a separate broadcast: a mark is at the wall
+    // the pellets hit, and a gunshot has to come from the gun.
+    this.onMessage("shoot", (client: Client, msg: ShootMsg) => {
+      if (!msg || !this.canFire(client.sessionId)) return;
       this.broadcast("mark", {
         id: randomUUID(),
         position: msg.position,
         rotation: msg.rotation,
       });
+      this.broadcast("shot", { id: client.sessionId });
     });
   }
 
@@ -148,5 +173,6 @@ export class GameRoom extends Room<GameState> {
 
   onLeave(client: Client) {
     this.state.players.delete(client.sessionId);
+    this.lastShot.delete(client.sessionId);
   }
 }

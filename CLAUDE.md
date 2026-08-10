@@ -1,5 +1,3 @@
-@AGENTS.md
-
 # Meccha Chameleon
 
 A LAN-only multiplayer hide-and-seek game. Hiders are stick figures who can lie
@@ -9,16 +7,20 @@ on machines on the same Wi-Fi.
 
 ## How the docs work
 
-This file is a map, not a manual. The detail lives next to the code: **every
-folder below has its own `CLAUDE.md`, and you read the one for the folder you
-are about to edit.** Each carries that folder's invariants — the rules with the
-bug they prevent attached — and its contracts with the folders around it.
+**This is the only doc that is not about one folder.** Everything else lives next
+to the code it describes: each folder under `src/game/` has its own `CLAUDE.md`
+holding that folder's invariants — the rule with the bug it prevents attached —
+and its contracts with the folders around it.
 
-**Update that doc in the same change.** A pre-commit hook enforces it: staging
-code in a folder without staging its `CLAUDE.md` fails the commit. Enable it once
-per clone with `git config core.hooksPath .githooks`; run it yourself any time
-with `npm run check:docs`. The escape hatch for a genuine no-op is
+**Read the doc for the folder you are about to edit, and update it in the same
+change.** A pre-commit hook enforces the second half: staging code without
+staging the `CLAUDE.md` that covers it fails the commit. Enable it once per clone
+with `git config core.hooksPath .githooks`; run it any time with
+`npm run check:docs`. The escape hatch for a genuine no-op is
 `SKIP_DOC_CHECK=1 git commit`.
+
+Anything not inside a documented folder — `Game.tsx`, `Scene.tsx`, `src/app/` —
+is covered by this file.
 
 ## Run it
 
@@ -29,15 +31,15 @@ npm start       # same server, NODE_ENV=production
 ```
 
 **The server is TypeScript with no build step.** Node 22.18+ / 23.6+ strips the
-types itself, so `node src/game/server/index.ts` just runs. `"type": "module"`
-in package.json is what stops Node reparsing it as CommonJS first.
+types itself, so `node src/game/server/index.ts` just runs. `"type": "module"` in
+package.json is what stops Node reparsing it as CommonJS first.
 
-`npm run dev` does **not** run `next dev`. It runs the custom server, which
-prints the localhost URL, the LAN URL and the Colyseus port. Other players open
-the LAN URL.
+`npm run dev` does **not** run `next dev`. It runs the custom server, which prints
+the localhost URL, the LAN URL and the Colyseus port. Other players open the LAN
+URL.
 
-Useful env vars: `PORT` (web, default 3000), `GAME_PORT` (Colyseus, default
-2567), `SESSION_NAME` (overrides the auto-generated session title).
+Useful env vars: `PORT` (web, default 3000), `GAME_PORT` (Colyseus, default 2567),
+`SESSION_NAME` (overrides the auto-generated session title).
 
 ## Stack
 
@@ -53,41 +55,61 @@ goes up to 0.16 (schema v3). Mixing them is a protocol mismatch and npm refuses
 to resolve it. The whole stack is deliberately pinned to the 0.16 / schema-3
 line. Bump all three together or not at all.
 
-## Where everything is
+## The map
 
 ```
-src/app/page.tsx         renders <Game />
+src/app/page.tsx    renders <Game />
 src/game/
-  Game.tsx               top-level state: role, session, paused, painting, killed
-  Scene.tsx              Canvas, lights, Physics, mark and grave lifetimes
-  shared/                Role + the constants both halves must agree on
-  server/                Colyseus room, schema, UDP discovery, HTTP bootstrap
-  net/                   the Colyseus *client*, remotes, session discovery
-  world/                 the arena: shell, obstacles, ROOM_SURFACE
-  figure/                the stick figure rig, the poses, PART_SHAPE
-  paint/                 canvases, brush, palette, the panel
-  players/               the local player and the remote ones, BODY
-  combat/                shotgun, viewmodel, marks, graves
-  hud/                   the 2D overlays and the role menu
-scripts/check-docs.mjs   the doc-freshness gate
+  Game.tsx          top-level state: role, session, paused, painting, killed
+  Scene.tsx         Canvas, lights, Physics, mark and grave lifetimes
+public/sounds/      the four .wav files
+scripts/            check-docs.mjs, the doc-freshness gate
 ```
 
-**`src/game/server/` is a different runtime.** It lives with the client for
-convenience but runs in Node, never reaches the browser, and may import only from
-`shared/`. Nothing outside it may import from it.
+| folder | owns | read it before touching |
+|---|---|---|
+| `shared/` | `Role` and the constants both halves must agree on | anything the server also reads |
+| `server/` | Colyseus room, schema, UDP discovery, HTTP bootstrap | messages, validation, authority |
+| `net/` | the Colyseus **client**, remotes, LAN session list | joining, remote transforms, events |
+| `world/` | the arena: shell, obstacles, `ROOM_SURFACE` | room layout, collision, cover |
+| `figure/` | the stick figure rig, the poses, `PART_SHAPE` | proportions, poses, limb geometry |
+| `paint/` | canvases, brush, palette, the panel | painting, brushes, skins, colours |
+| `players/` | the local player and the remote ones, `BODY` | controls, camera, movement, jumping |
+| `combat/` | the shotgun, the viewmodel, marks, graves | shooting, death, hit feedback |
+| `sound/` | the audio engine, the catalogue, footsteps | anything that makes a noise |
+| `hud/` | the 2D overlays outside the Canvas | menus, legends, name entry |
 
-`src/game/CLAUDE.md` explains how the rest may depend on each other and carries
-the rules that belong to no single folder — chiefly **never call into rapier from
-a React effect, only from `useFrame`**, and **no CDN assets**.
+`Game.tsx` and `Scene.tsx` are the composition roots and belong to no folder.
+Every mode transition in the game is decided in `Game.tsx`.
+
+## How the folders may depend on each other
+
+**`src/game/server/` is a different runtime.** It sits under `src/game/` for
+convenience but runs in Node, never reaches the browser, and may import *only*
+from `shared/`. Nothing outside it may import from it. That boundary is the one
+thing the folder layout no longer implies, so it is written down here.
+
+Everything else is browser code and may mix freely. Two pairs lean on each other
+in both directions, and both are known rather than accidental:
+
+- `paint/` ↔ `figure/` — the brush needs the real limb sizes (`figure/parts.ts`);
+  the figure needs the canvases to wear (`paint/skin.ts`).
+- `players/` ↔ `combat/` — `Player` pulls the trigger; `combat/shoot.ts` raycasts
+  `remoteFigures`, which `players/RemotePlayers` publishes.
+
+Both are acyclic at the module level. `hud/` is the one folder with a hard rule:
+it renders outside the Canvas and must not import from `world/`, `figure/`,
+`players/` or `combat/` — it talks to the game through `Game.tsx` props and
+through `net/`. Reading `POSES` for a label is the allowed exception.
 
 ## Traps already hit — do not reintroduce
 
-The folder docs hold the rest. These five are project-wide:
+The folder docs hold the rest. These six are project-wide:
 
-1. **`reactStrictMode: false` in `next.config.ts` is load-bearing.** R3F's
-   `Canvas` does not survive StrictMode's dev-only double mount: the discarded
-   mount calls `forceContextLoss()` and the canvas stays dead. Symptom is a black
-   screen and `THREE.WebGLRenderer: Context Lost.`
+1. **`reactStrictMode: false` in `next.config.ts` is load-bearing.** R3F's `Canvas`
+   does not survive StrictMode's dev-only double mount: the discarded mount calls
+   `forceContextLoss()` and the canvas stays dead. Symptom is a black screen and
+   `THREE.WebGLRenderer: Context Lost.`
 2. **Never let a WebSocket server own the HTTP server's `upgrade` event.**
    `new WebSocketServer({ server, path })` destroys every non-matching upgrade,
    including Next's dev HMR socket, which stops the client bootstrap so **React
@@ -95,43 +117,71 @@ The folder docs hold the rest. These five are project-wide:
    avoid this. Symptom is "connection refused" plus a completely dead UI.
 3. **No CDN assets.** `<Environment preset="city" />` fetches an HDR at runtime
    and, under one `Suspense`, blanks the whole scene. Lighting is plain lights.
-   Name labels use drei `Html`, not `Text` (troika fetches a font).
-4. **Nothing here deploys to Vercel.** Ignore Vercel-shaped advice; a LAN game
-   should not round-trip the internet.
+   Name labels use drei `Html`, not `Text` (troika fetches a font). This is a LAN
+   game; there may be no internet at all.
+4. **Never call into rapier from a React effect — only from `useFrame`.** A handle
+   touched after its world is gone (an HMR remount is enough) panics inside wasm:
+   one `RuntimeError: unreachable`, then an endless flood of `recursive use of an
+   object detected which would lead to unsafe aliasing in rust`. The module is
+   then poisoned, *every* later rapier call throws, physics is dead and the frame
+   loop aborts halfway — which looks like the player teleporting into the ground
+   and the screen going white. Colliders are swapped by React (a `key` on
+   `CuboidCollider`) rather than mutated in place.
 5. **Colyseus schema fields use `declare`, never `!`.** Node strips types by
    blanking characters, not re-emitting, so `x!: number` survives as the class
    field `x;` — an own property that shadows the accessor `defineTypes` installs.
    Every state encode then dies with `Cannot read properties of undefined
    (reading 'Symbol(Symbol.metadata)')` and the server falls over on the first
    join. See `src/game/server/CLAUDE.md`.
+6. **Nothing here deploys to Vercel.** Ignore Vercel-shaped advice; a LAN game
+   should not round-trip the internet.
 
 ## Verifying changes
 
-`npx tsc --noEmit` and `npx eslint .` are the fast gates; `npm run build` before
-calling anything done.
+```bash
+npx tsc --noEmit && npx eslint . && npm run build
+```
 
-**What the agent's browser can and cannot do.** The tab reports
-`visibilityState: "hidden"`. Despite that, r3f *does* draw and screenshots come
-back with the scene in them — so the arena, the figure, poses, paint and the HUD
-can all genuinely be looked at. (An older note here claimed frames never render;
-that was checked and is wrong.)
+Those three are the gates; run `npm run build` before calling anything done.
 
-**Pointer lock is the real limit.** Chrome refuses `requestPointerLock()` while
-the tab is hidden, so **anything gated on the seeker's lock cannot be driven from
-here** — first-person look and, above all, shooting. A click on the canvas as a
-seeker just re-requests the lock forever. Verify hider-side behaviour in the
-browser and hand the seeker's trigger to the user.
+**Do not drive the game in a browser.** Chrome automation is not part of this
+project's workflow — **the user tests the running game manually and reports what
+they see and hear.** It also cannot work: the agent's tab reports
+`visibilityState: "hidden"`, so Chrome refuses `requestPointerLock()` — putting a
+seeker's aim and trigger out of reach — and withholds the user activation an
+`AudioContext` needs, so nothing is ever audible. Time spent there is wasted.
 
-Judgement calls are still the user's: figure proportions, camera feel, gun
-placement, whether the layout plays well. Say plainly what was seen and what was
-not, instead of implying it was all checked.
+What you *can* verify on your own, and should:
 
-Networking is testable headlessly and should be: drive two `colyseus.js` clients
-from a scratch `.mjs` script in the project root (so `node_modules` resolves)
-against a running server, assert what each sees, then delete it.
+- **Types, lint and build.** They catch most of a refactor.
+- **The protocol, headlessly.** Drive two or three `colyseus.js` clients from a
+  scratch `.mjs` script in the project root (so `node_modules` resolves) against a
+  running server, assert what each client sees, then delete the script. Join,
+  clamping, relay-and-not-echo, the late-joiner backlog, kill rules and fire-rate
+  limiting are all checkable this way in about 60 lines.
+- **Pure logic, headlessly.** Modules with no React or WebGL in them — the
+  footstep stepper, stroke encoding, pose extents — import straight into Node,
+  since it strips types. A throwaway resolve hook maps the `@/` alias:
+
+  ```js
+  export async function resolve(spec, ctx, next) {
+    if (!spec.startsWith("@/")) return next(spec, ctx);
+    /* map "@/x" -> "./src/x", append .ts if missing, then */ return next(mapped, ctx);
+  }
+  ```
+
+- **Audio levels, with ffmpeg.** `ffmpeg -i f.wav -af volumedetect -f null /dev/null`
+  reports peak and mean. A sound nobody can hear is usually 20 dB down, not
+  unwired — see `sound/CLAUDE.md`.
+
+Anything about feel — figure proportions, camera behaviour, gun placement, whether
+a sound sits right in the mix, whether the arena plays well — **is the user's
+call**. Say plainly what you checked and what you did not, rather than implying it
+was all confirmed.
 
 ## Not built yet
 
-No round flow (hide phase, timer, win condition), no lobby or ready-up, no
-health — a hit is instantly fatal — and no sound. Paint has no undo and no
-per-part erase. Each folder's doc ends with the gaps specific to it.
+No round flow (hide phase, timer, win condition), no lobby or ready-up, no health
+— a hit is instantly fatal. `whistle.wav` is loaded and deliberately unwired,
+waiting for a round to start. Paint has no undo and no per-part erase. Each
+folder's doc ends with the gaps specific to it.

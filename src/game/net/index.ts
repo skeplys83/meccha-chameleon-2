@@ -12,6 +12,7 @@ export {
   onMark,
   onGrave,
   onKilled,
+  onShot,
   type Grave,
   type NetMark,
 } from "./events";
