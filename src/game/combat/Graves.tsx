@@ -1,6 +1,6 @@
 "use client";
 
-import type { Grave } from "@/lib/net";
+import type { Grave } from "@/game/net";
 
 /**
  * A red square on the floor where somebody was shot. Unlike a shot mark these

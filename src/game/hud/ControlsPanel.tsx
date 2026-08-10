@@ -1,7 +1,7 @@
 "use client";
 
-import type { Role } from "./types";
-import { POSES } from "./poses";
+import type { Role } from "@/game/core/types";
+import { POSES } from "@/game/figure/poses";
 
 type Row = [key: string, action: string];
 

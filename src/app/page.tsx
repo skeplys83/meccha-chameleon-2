@@ -1,4 +1,4 @@
-import { Game } from "@/components/game/Game";
+import { Game } from "@/game/Game";
 
 export default function Home() {
   return <Game />;

@@ -2,12 +2,13 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { RoleMenu } from "./RoleMenu";
-import { ControlsPanel } from "./ControlsPanel";
-import { PlayerList } from "./PlayerList";
-import { PauseMenu } from "./PauseMenu";
-import { PaintPanel, DEFAULT_BRUSH, type Brush } from "./PaintPanel";
-import { DeathScreen } from "./DeathScreen";
+import { RoleMenu } from "@/game/hud/RoleMenu";
+import { ControlsPanel } from "@/game/hud/ControlsPanel";
+import { PlayerList } from "@/game/hud/PlayerList";
+import { PauseMenu } from "@/game/hud/PauseMenu";
+import { PaintPanel } from "@/game/paint/PaintPanel";
+import { DEFAULT_BRUSH, type Brush } from "@/game/paint/brush";
+import { DeathScreen } from "@/game/hud/DeathScreen";
 import {
   connect,
   disconnect,
@@ -15,10 +16,10 @@ import {
   selfId,
   sendClearSkin,
   type Session,
-} from "@/lib/net";
-import { clearSkin, SELF } from "@/lib/skin";
-import { requestLock } from "@/lib/pointerLock";
-import type { Role } from "./types";
+} from "@/game/net";
+import { clearSkin, SELF } from "@/game/paint/skin";
+import { requestLock } from "@/game/core/pointerLock";
+import type { Role } from "@/game/core/types";
 
 // The renderer touches WebGL/window, so it must never run on the server.
 const Scene = dynamic(() => import("./Scene"), { ssr: false });

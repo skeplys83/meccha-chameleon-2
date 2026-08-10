@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { onRoster, remotes } from "@/lib/net";
+import { onRoster, remotes } from "@/game/net";
 
 export function PlayerList() {
   const [ids, setIds] = useState<string[]>([]);

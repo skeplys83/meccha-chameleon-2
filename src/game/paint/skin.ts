@@ -1,28 +1,18 @@
 "use client";
 
 import * as THREE from "three";
+import { PARTS, PART_SHAPE, type Part } from "@/game/figure/parts";
 
 /**
  * Per-player paint. Every figure part owns a small canvas that is used as its
  * material map, so painting is just drawing a dot into a 2D context at the UV
- * the raycast reported. Like `remotes` in net.ts these live outside React —
- * strokes arrive faster than a render is worth.
+ * the raycast reported. Like `remotes` in net/remotes.ts these live outside
+ * React — strokes arrive faster than a render is worth.
+ *
+ * The part table itself belongs to `figure/parts.ts`: the brush maths here and
+ * the geometry there must be computed from the same radii or the dot lands at
+ * the wrong size.
  */
-
-export const PARTS = [
-  "head",
-  "torso",
-  "armUpperL",
-  "armForeL",
-  "armUpperR",
-  "armForeR",
-  "legUpperL",
-  "legLowerL",
-  "legUpperR",
-  "legLowerR",
-] as const;
-
-export type Part = (typeof PARTS)[number];
 
 export type Skin = Record<Part, THREE.CanvasTexture>;
 
@@ -38,26 +28,6 @@ export type Stroke = {
    */
   size: number;
   color: string;
-};
-
-/**
- * The real size of each part, and the single source of truth for it —
- * `StickFigure` builds its geometry from this table, so a part can never
- * disagree with the brush maths.
- *
- * `length` is the capsule's straight section; 0 means a sphere.
- */
-export const PART_SHAPE: Record<Part, { radius: number; length: number }> = {
-  head: { radius: 0.26, length: 0 },
-  torso: { radius: 0.23, length: 0.5 },
-  armUpperL: { radius: 0.105, length: 0.32 },
-  armForeL: { radius: 0.105, length: 0.32 },
-  armUpperR: { radius: 0.105, length: 0.32 },
-  armForeR: { radius: 0.105, length: 0.32 },
-  legUpperL: { radius: 0.13, length: 0.38 },
-  legLowerL: { radius: 0.13, length: 0.4 },
-  legUpperR: { radius: 0.13, length: 0.38 },
-  legLowerR: { radius: 0.13, length: 0.4 },
 };
 
 /**

@@ -1,7 +1,7 @@
 "use client";
 
 import { DoubleSide } from "three";
-import type { Mark } from "./types";
+import type { Mark } from "@/game/core/types";
 
 /** Yellow patches left where a seeker's shot landed. */
 export function Marks({ marks }: { marks: Mark[] }) {

@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { RigidBody } from "@react-three/rapier";
-import { PAINT } from "./palette";
+import { PAINT } from "@/game/core/palette";
 
 export const ROOM_SURFACE = "room-surface";
 

@@ -4,7 +4,8 @@ import { useRef, type ReactNode } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { POSES, safePose, type Joint } from "./poses";
-import { getSkin, PART_SHAPE, type Part } from "@/lib/skin";
+import { getSkin } from "@/game/paint/skin";
+import { PART_SHAPE, type Part } from "./parts";
 
 /**
  * Thick-limbed stick figure on a small joint rig, built to a half-height of 1

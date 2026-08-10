@@ -12,15 +12,16 @@ import {
 import * as THREE from "three";
 import type { Control } from "./controls";
 import { controlMap, poseControl } from "./controls";
-import { BODY, type Role } from "./types";
-import { POSES, poseExtents } from "./poses";
-import { ROOM_SURFACE } from "./Room";
-import { StickFigure } from "./StickFigure";
-import { sendKill, sendPaint, sendShoot, sendState } from "@/lib/net";
+import { BODY, type Role } from "@/game/core/types";
+import { POSES, poseExtents } from "@/game/figure/poses";
+import { ROOM_SURFACE } from "@/game/world/Room";
+import { StickFigure } from "@/game/figure/StickFigure";
+import { sendKill, sendPaint, sendShoot, sendState } from "@/game/net";
 import { remoteFigures } from "./RemotePlayers";
-import { setLockTarget } from "@/lib/pointerLock";
-import { encodeStroke, paint, SELF, type Part } from "@/lib/skin";
-import type { Brush } from "./PaintPanel";
+import { setLockTarget } from "@/game/core/pointerLock";
+import { encodeStroke, paint, SELF } from "@/game/paint/skin";
+import type { Part } from "@/game/figure/parts";
+import type { Brush } from "@/game/paint/brush";
 
 const SPEED = 6;
 // A velocity, not an impulse: the seeker's collider is bigger and therefore

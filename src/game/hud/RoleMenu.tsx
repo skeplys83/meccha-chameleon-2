@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { fetchSessions, type Session } from "@/lib/net";
-import type { Role } from "./types";
+import { fetchSessions, type Session } from "@/game/net";
+import type { Role } from "@/game/core/types";
 import { randomName } from "./names";
 
 /**

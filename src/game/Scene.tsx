@@ -4,16 +4,16 @@ import { useEffect, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { KeyboardControls } from "@react-three/drei";
 import { Physics } from "@react-three/rapier";
-import { controlMap } from "./controls";
-import { Player } from "./Player";
-import { Room } from "./Room";
-import { Marks } from "./Marks";
-import { Graves } from "./Graves";
-import { Viewmodel } from "./Viewmodel";
-import { RemotePlayers } from "./RemotePlayers";
-import type { Mark, Role } from "./types";
-import type { Brush } from "./PaintPanel";
-import { onGrave, onMark, type Grave } from "@/lib/net";
+import { controlMap } from "@/game/players/controls";
+import { Player } from "@/game/players/Player";
+import { Room } from "@/game/world/Room";
+import { Marks } from "@/game/combat/Marks";
+import { Graves } from "@/game/combat/Graves";
+import { Viewmodel } from "@/game/combat/Viewmodel";
+import { RemotePlayers } from "@/game/players/RemotePlayers";
+import type { Mark, Role } from "@/game/core/types";
+import type { Brush } from "@/game/paint/brush";
+import { onGrave, onMark, type Grave } from "@/game/net";
 
 const MARK_LIFETIME = 3000;
 

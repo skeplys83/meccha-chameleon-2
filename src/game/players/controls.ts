@@ -1,5 +1,5 @@
 import type { KeyboardControlsEntry } from "@react-three/drei";
-import { POSES } from "./poses";
+import { POSES } from "@/game/figure/poses";
 
 export type Control =
   | "forward"
