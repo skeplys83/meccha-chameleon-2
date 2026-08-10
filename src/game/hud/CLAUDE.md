@@ -8,7 +8,8 @@ you join.
 
 ## Files
 
-- `RoleMenu.tsx` — name entry, role buttons, the LAN session list.
+- `RoleMenu.tsx` — name entry, role buttons, the map picker, the LAN session
+  list.
 - `PauseMenu.tsx` — resume / leave.
 - `ControlsPanel.tsx` — the key legend, one per role.
 - `PlayerList.tsx` — who else is connected.
@@ -42,10 +43,15 @@ you join.
 5. **Nobody should have to invent a name to play.** A tab with no stored name
    gets a random reptile plus two digits; the digits are what stop two people
    picking "Gecko" from being indistinguishable.
-6. **The pause menu has no full-screen scrim** — the arena stays visible while
+6. **The map picker hides itself while there is one map.** A chooser with a
+   single option is furniture, and it would be the only control on the menu that
+   does nothing. It appears as soon as `world/maps.ts` has a second entry, with
+   no other change. Its note says the choice applies only if you start the
+   session, because that is the truth: a later joiner takes the room's map.
+7. **The pause menu has no full-screen scrim** — the arena stays visible while
    you are paused — but the panel itself needs a solid ground, because it floats
    over a white room and translucent pills left the session name unreadable.
-7. **The session list is polled, not pushed.** `fetchSessions` every 2 s against
+8. **The session list is polled, not pushed.** `fetchSessions` every 2 s against
    the local server, which is the thing actually listening for UDP broadcasts.
 
 ## Contracts

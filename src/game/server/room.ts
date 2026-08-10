@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Room, type Client } from "colyseus";
 import { GameState, Player } from "./schema.ts";
+import { DEFAULT_MAP, MAP_IDS } from "../world/mapIds.ts";
 import { setSessionName } from "./discovery.ts";
 import {
   FIRE_INTERVAL_MS,
@@ -45,6 +46,7 @@ type KillMsg = { id?: unknown; position?: unknown };
 type ShootMsg = {
   position: [number, number, number];
   rotation: [number, number, number];
+  origin: [number, number, number];
 };
 
 export class GameRoom extends Room<GameState> {
@@ -65,6 +67,7 @@ export class GameRoom extends Room<GameState> {
 
   onCreate() {
     this.setState(new GameState());
+    this.state.map = DEFAULT_MAP;
     this.setPatchRate(PATCH_MS);
 
     this.onMessage("state", (client: Client, msg: StateMsg) => {
@@ -158,6 +161,7 @@ export class GameRoom extends Room<GameState> {
         id: randomUUID(),
         position: msg.position,
         rotation: msg.rotation,
+        origin: msg.origin,
       });
       this.broadcast("shot", { id: client.sessionId });
     });
@@ -175,7 +179,13 @@ export class GameRoom extends Room<GameState> {
     });
   }
 
-  onJoin(client: Client, options?: { name?: string; role?: string }) {
+  onJoin(client: Client, options?: { name?: string; role?: string; map?: string }) {
+    // Whoever opens the room picks the map, and nobody else gets to change it:
+    // the geometry cannot move under players already standing on it.
+    if (this.state.players.size === 0 && typeof options?.map === "string") {
+      if ((MAP_IDS as readonly string[]).includes(options.map)) this.state.map = options.map;
+    }
+
     const player = new Player();
     player.name = String(options?.name ?? "player").slice(0, 16);
     player.role = options?.role === "seeker" ? "seeker" : "hider";

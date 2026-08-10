@@ -17,7 +17,13 @@ import { remoteFigures } from "@/game/players/RemotePlayers";
  */
 export type Shot =
   | { kind: "player"; id: string; point: [number, number, number] }
-  | { kind: "wall"; position: [number, number, number]; rotation: [number, number, number] }
+  | {
+      kind: "wall";
+      position: [number, number, number];
+      rotation: [number, number, number];
+      /** Where the shot started, so the tracer can be drawn along its path. */
+      origin: [number, number, number];
+    }
   | null;
 
 const SCREEN_CENTRE = new THREE.Vector2(0, 0);
@@ -67,5 +73,6 @@ export function resolveShot(
     kind: "wall",
     position: [orient.position.x, orient.position.y, orient.position.z],
     rotation: [orient.rotation.x, orient.rotation.y, orient.rotation.z],
+    origin: [raycaster.ray.origin.x, raycaster.ray.origin.y, raycaster.ray.origin.z],
   };
 }

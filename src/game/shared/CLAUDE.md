@@ -54,10 +54,10 @@ halves of the app disagreed about them.
 - `Game.tsx` whistles on `WHISTLE_INTERVAL_MS` and `server/room.ts` rate-limits
   against it, for the same reason as firing: a client that whistled continuously
   would be a siren in everybody else's ears.
-- `net/client.ts` batches its respawn replay at `MAX_STROKE_BATCH` and
-  `server/room.ts` caps a single message at the same number. They were 50 and 64
-  written separately, which worked only because 50 was the smaller — raising the
-  client's batch past the server's cap would have lost paint silently.
+- `net/send.ts` splits every outgoing `paint` at `MAX_STROKE_BATCH` and
+  `server/room.ts` caps a single message at the same number, so a long drag can
+  never lose its tail. The two were 50 and 64 written separately, which worked
+  only because 50 was the smaller of them.
 - `paint/skin.ts` trims its replay history to `MAX_STROKES`, the same cap the
   server keeps in schema. A smaller client cap would silently lose paint on
   respawn, since the respawn replay is what restores it.

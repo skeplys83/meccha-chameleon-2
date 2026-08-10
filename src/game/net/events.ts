@@ -13,6 +13,8 @@ export type NetMark = {
   id: string;
   position: [number, number, number];
   rotation: [number, number, number];
+  /** Where the shot came from. The tracer is drawn from here to `position`. */
+  origin: [number, number, number];
 };
 
 /** Where somebody died, in world space. Permanent. */

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { fetchSessions, type Session } from "@/game/net";
 import type { Role } from "@/game/shared/protocol";
 import { randomName } from "./names";
+import { DEFAULT_MAP, MAP_LIST, type MapId } from "@/game/world/maps";
 
 /**
  * The name lives in `sessionStorage`, deliberately — it is scoped to the tab,
@@ -44,7 +45,7 @@ function dropLegacyCookie() {
 export function RoleMenu({
   onJoin,
 }: {
-  onJoin: (name: string, role: Role, target: Session) => void;
+  onJoin: (name: string, role: Role, target: Session, map: MapId) => void;
 }) {
   // Uncontrolled: the saved name only exists on the client, and filling it in
   // after mount keeps the server-rendered markup and the hydrated input equal.
@@ -52,6 +53,7 @@ export function RoleMenu({
   const [sessions, setSessions] = useState<Session[]>([]);
   const [self, setSelf] = useState<Session | null>(null);
   const [target, setTarget] = useState<Session | null>(null);
+  const [map, setMap] = useState<MapId>(DEFAULT_MAP);
 
   // Filled in after mount, so the server-rendered markup and the hydrated
   // input still match: a random name would differ on every render otherwise.
@@ -84,7 +86,7 @@ export function RoleMenu({
     if (!destination) return;
     const trimmed = (input.current?.value ?? "").trim().slice(0, 16) || "player";
     writeName(trimmed);
-    onJoin(trimmed, role, destination);
+    onJoin(trimmed, role, destination, map);
   };
 
   return (
@@ -98,6 +100,34 @@ export function RoleMenu({
         maxLength={16}
         className="w-64 rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-center text-sm outline-none focus:border-neutral-500"
       />
+
+      {MAP_LIST.length > 1 && (
+        <div className="flex flex-col items-center gap-1">
+          <div className="text-[11px] uppercase tracking-widest text-neutral-500">
+            Map
+          </div>
+          <div className="flex gap-2">
+            {MAP_LIST.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setMap(m.id)}
+                title={m.blurb}
+                className={`rounded-md border px-3 py-1.5 text-xs transition ${
+                  map === m.id
+                    ? "border-neutral-300 bg-neutral-800 text-neutral-100"
+                    : "border-neutral-700 text-neutral-400 hover:border-neutral-500"
+                }`}
+              >
+                {m.name}
+              </button>
+            ))}
+          </div>
+          {/* Only the room's creator chooses; anyone joining takes what is there. */}
+          <div className="text-[10px] text-neutral-600">
+            Applies only if you start the session
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-4">
         <button

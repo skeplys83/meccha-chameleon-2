@@ -124,6 +124,14 @@ export function Player({
   /** Hiders never take the pointer lock, so they look around by dragging. */
   const orbiting = useRef(false);
   const pausedRef = useRef(paused);
+  /**
+   * Whether this tab still has the keyboard.
+   *
+   * Alt-tabbing away delivers the keydown but never the keyup, so drei keeps the
+   * key "held" and you come back walking into a wall. Treating an unfocused tab
+   * as NO_KEYS is the same trick pause already uses, and it needs no fake events.
+   */
+  const focused = useRef(true);
   const hoverRef = useRef<((hovering: boolean) => void) | null>(null);
   const hovering = useRef(false);
   const cursor = useRef<BrushCursor | null>(null);
@@ -251,7 +259,7 @@ export function Player({
       if (shot.kind === "player") sendKill(shot.id, shot.point);
       // The server relays the mark back to everyone, this client included, so
       // every player sees the same patch appear.
-      else sendShoot(shot.position, shot.rotation);
+      else sendShoot(shot.position, shot.rotation, shot.origin);
     };
 
     const onPointerUp = () => {
@@ -312,12 +320,32 @@ export function Player({
       locked.current = document.pointerLockElement === canvas;
     };
 
+    // Losing the tab drops every key, and anything mid-gesture with it: a drag
+    // that was painting, an orbit, and the brush loop, none of which will ever
+    // see their matching up event.
+    const onBlur = () => {
+      focused.current = false;
+      jumpHeld.current = false;
+      brushCursor.cancel();
+      orbiting.current = false;
+    };
+    const onFocus = () => {
+      focused.current = true;
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") onBlur();
+      else onFocus();
+    };
+
     canvas.addEventListener("pointerdown", onPointerDown);
     canvas.addEventListener("wheel", onWheel, { passive: false });
     canvas.addEventListener("contextmenu", onContextMenu);
     document.addEventListener("pointerup", onPointerUp);
     document.addEventListener("mousemove", onMouseMove);
     document.addEventListener("pointerlockchange", onLockChange);
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("wheel", onWheel);
@@ -325,6 +353,9 @@ export function Player({
       document.removeEventListener("pointerup", onPointerUp);
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("pointerlockchange", onLockChange);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
       cursor.current = null;
       stopLoop("brush");
       setLockTarget(null);
@@ -381,7 +412,8 @@ export function Player({
     }
     bodyPos.set(p.x, p.y, p.z);
 
-    const keys: Readonly<Record<Control, boolean>> = paused ? NO_KEYS : getKeys();
+    const keys: Readonly<Record<Control, boolean>> =
+      paused || !focused.current ? NO_KEYS : getKeys();
 
     // Poses are a hider's whole game. A seeker hunts upright and never leaves
     // POSES[0], so the number keys simply are not theirs.

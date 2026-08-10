@@ -134,10 +134,15 @@ export function clearSkin(id: string) {
 }
 
 
-/** Everything painted on a body, ready to send — used to restore your paint
- *  after a respawn, which joins as a brand new player. */
-export function encodedHistory(id: string) {
-  return (history.get(id) ?? []).map(encodeStroke);
+/**
+ * Drop every body's paint, yours included.
+ *
+ * Joining is a clean slate: you arrive unpainted and so does everyone you can
+ * see. Without this a rejoin showed you the leftover skins of players from the
+ * last session, keyed by session ids that no longer exist.
+ */
+export function forgetAllSkins() {
+  for (const id of [...skins.keys()]) forgetSkin(id);
 }
 
 export function forgetSkin(id: string) {

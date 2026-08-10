@@ -20,6 +20,7 @@ import { onGrave, onMark, type Grave } from "@/game/net";
 const MARK_LIFETIME = 3000;
 
 export default function Scene({
+  map,
   role,
   alive,
   painting,
@@ -27,6 +28,8 @@ export default function Scene({
   brush,
   onHoverBody,
 }: {
+  /** Which map this room is playing, straight from room state. */
+  map: string;
   role: Role | null;
   /** False while the death screen is up: the body leaves the room entirely, so
    *  respawning mounts a fresh one at the spawn point in the default pose. */
@@ -78,8 +81,15 @@ export default function Scene({
           intensity={1.2}
           shadow-mapSize={[2048, 2048]}
         />
-        <Physics gravity={[0, -20, 0]}>
-          <Room />
+        {/* `timeStep="vary"` is load-bearing, not a tuning choice. On the default
+            fixed 1/60 step the library renders each body at an *interpolated*
+            transform every frame while `rb.translation()` — which the camera and
+            every raycast in Player.tsx read — only changes on a step. The two
+            clocks drift apart by up to one step, and the figure jitters against
+            the camera at one-frame intervals. Stepping once per rendered frame
+            makes the interpolation alpha 1, so the two always agree. */}
+        <Physics gravity={[0, -20, 0]} timeStep="vary" interpolate={false}>
+          <Room map={map} />
           {role && alive && (
             <Player
               role={role}

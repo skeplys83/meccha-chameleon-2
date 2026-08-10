@@ -85,7 +85,7 @@ Next picks `icon.svg` up automatically — there is no `favicon.ico` and no
 | `shared/` | `Role` and the constants both halves must agree on | anything the server also reads |
 | `server/` | Colyseus room, schema, UDP discovery, HTTP bootstrap | messages, validation, authority |
 | `net/` | the Colyseus **client**, remotes, LAN session list | joining, remote transforms, events |
-| `world/` | the arena: shell, obstacles, `ROOM_SURFACE` | room layout, collision, cover |
+| `world/` | the maps, and the registry that picks one | room layout, collision, cover, adding a map |
 | `figure/` | the stick figure rig, the poses, `PART_SHAPE` | proportions, poses, limb geometry |
 | `paint/` | canvases, brush, palette, the panel | painting, brushes, skins, colours |
 | `players/` | the local player and the remote ones, `BODY` | controls, camera, movement, jumping, climbing |
@@ -94,6 +94,8 @@ Next picks `icon.svg` up automatically — there is no `favicon.ico` and no
 | `hud/` | the 2D overlays outside the Canvas | menus, legends, name entry |
 
 `Game.tsx` and `Scene.tsx` are the composition roots and belong to no folder.
+`Scene.tsx` also owns the `<Physics>` settings — see trap 4, which is the reason
+the timestep is not the library default.
 Every mode transition in the game is decided in `Game.tsx` — which also means it
 owns the *teardown* of each: joining unlocks audio, pausing suspends it, and
 dying or leaving stops every looping sound. Anything that outlives its player is
@@ -121,7 +123,7 @@ through `net/`. Reading `POSES` for a label is the allowed exception.
 
 ## Traps already hit — do not reintroduce
 
-The folder docs hold the rest. These six are project-wide:
+The folder docs hold the rest. These seven are project-wide:
 
 1. **`reactStrictMode: false` in `next.config.ts` is load-bearing.** R3F's `Canvas`
    does not survive StrictMode's dev-only double mount: the discarded mount calls
@@ -136,7 +138,14 @@ The folder docs hold the rest. These six are project-wide:
    and, under one `Suspense`, blanks the whole scene. Lighting is plain lights.
    Name labels use drei `Html`, not `Text` (troika fetches a font). This is a LAN
    game; there may be no internet at all.
-4. **Never call into rapier from a React effect — only from `useFrame`.** A handle
+4. **`<Physics timeStep="vary">` in `Scene.tsx` is load-bearing.** On the
+   default fixed 1/60 step, @react-three/rapier renders every body at an
+   *interpolated* transform each frame while `rb.translation()` — which the
+   camera and every raycast in `players/Player.tsx` read — only changes on a
+   step. Two clocks, drifting apart by up to one step, which shows as the figure
+   jittering against the camera at one-frame intervals. Stepping once per
+   rendered frame makes the interpolation alpha 1 and the two always agree.
+5. **Never call into rapier from a React effect — only from `useFrame`.** A handle
    touched after its world is gone (an HMR remount is enough) panics inside wasm:
    one `RuntimeError: unreachable`, then an endless flood of `recursive use of an
    object detected which would lead to unsafe aliasing in rust`. The module is
@@ -144,7 +153,7 @@ The folder docs hold the rest. These six are project-wide:
    loop aborts halfway — which looks like the player teleporting into the ground
    and the screen going white. Colliders are swapped by React (a `key` on
    `CuboidCollider`) rather than mutated in place.
-5. **Write TypeScript that Node can strip.** Node blanks type syntax out rather
+6. **Write TypeScript that Node can strip.** Node blanks type syntax out rather
    than re-emitting, which forbids `enum`, `namespace`, decorators and
    `constructor(private x)` parameter properties. It applies to `server/`, which
    Node runs, *and* to any module you want to import into Node for testing.
@@ -156,7 +165,7 @@ The folder docs hold the rest. These six are project-wide:
      server down on the first join.
    - A parameter property throws `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX` the moment
      the module is loaded outside the bundler.
-6. **Nothing here deploys to Vercel.** Ignore Vercel-shaped advice; a LAN game
+7. **Nothing here deploys to Vercel.** Ignore Vercel-shaped advice; a LAN game
    should not round-trip the internet.
 
 ## Verifying changes

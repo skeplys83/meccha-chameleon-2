@@ -2,14 +2,7 @@
 
 import { Client, getStateCallbacks } from "colyseus.js";
 import type { Role } from "@/game/shared/protocol";
-import {
-  clearSkin,
-  decodeStroke,
-  encodedHistory,
-  forgetSkin,
-  paint,
-  SELF,
-} from "@/game/paint/skin";
+import { clearSkin, decodeStroke, forgetSkin, paint } from "@/game/paint/skin";
 import { getRoom, setRoom } from "./connection";
 import { clearRemotes, emitRoster, remotes } from "./remotes";
 import {
@@ -21,7 +14,6 @@ import {
   type NetMark,
 } from "./events";
 import type { Session } from "./sessions";
-import { MAX_STROKE_BATCH } from "@/game/shared/protocol";
 
 /** Mirrors the Player schema declared in server/schema.mjs. */
 type PlayerSchema = {
@@ -48,12 +40,19 @@ type Callbacks = {
   onChange(cb: () => void): void;
 };
 
-export async function connect(name: string, role: Role, target: Session) {
+export async function connect(
+  name: string,
+  role: Role,
+  target: Session,
+  map: string,
+) {
   await disconnect();
 
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const client = new Client(`${proto}//${target.host}:${target.gamePort}`);
-  const joined = await client.joinOrCreate("game", { name, role });
+  // The map only counts if this call is what *creates* the room; the server
+  // ignores it for anyone joining one that already exists.
+  const joined = await client.joinOrCreate("game", { name, role, map });
   setRoom(joined);
 
   // The room is untyped on this side, so the callback proxy is described by
@@ -150,17 +149,20 @@ export async function connect(name: string, role: Role, target: Session) {
     emitMark(mark);
   });
 
-  // A respawn is a new player as far as the server is concerned, so anything
-  // already painted has to be replayed for everyone else to see it.
-  const mine = encodedHistory(SELF);
-  for (let i = 0; i < mine.length; i += MAX_STROKE_BATCH) {
-    joined.send("paint", { strokes: mine.slice(i, i + MAX_STROKE_BATCH) });
-  }
-
   joined.onLeave(() => {
     clearRemotes();
   });
 
+  // Whatever the room actually settled on, which may not be what was asked for.
+  // Waiting for the first patch is the only way to know: state is empty until it
+  // lands, and rendering the wrong geometry for even a frame puts players inside
+  // walls their opponents cannot see.
+  const settled = joined.state as unknown as { map?: string };
+  if (!settled.map) {
+    await new Promise<void>((resolve) => {
+      joined.onStateChange.once(() => resolve());
+    });
+  }
   return joined;
 }
 

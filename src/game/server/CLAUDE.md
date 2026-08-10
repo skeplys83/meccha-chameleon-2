@@ -90,6 +90,12 @@ message named here.
   `MAX_STROKES`, `MAX_STROKE_LENGTH`, `MAX_STROKE_BATCH`, and the fire and
   whistle intervals. Do not re-declare any of them here — a pre-commit gate
   fails the commit if you do.
+- **Reads `../world/mapIds.ts`** to validate a chosen map. That file is
+  import-free precisely so this side can read it: `maps.ts` pulls in React and
+  three.js and would not load here at all.
+- **The map is set by whoever opens the room**, from a join option, and only when
+  the room is empty. Everyone else takes what is already there — geometry cannot
+  move under players standing on it.
 - **Messages in** (`room.ts` ← `net/send.ts`): `state`, `paint`, `clearSkin`,
   `shoot`, `kill`, `whistle`.
 - **Messages out** (→ `net/client.ts`): `shot`, `whistle` and `mark` to everyone; `paint`

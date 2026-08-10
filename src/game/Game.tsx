@@ -8,6 +8,7 @@ import { PlayerList } from "@/game/hud/PlayerList";
 import { PauseMenu } from "@/game/hud/PauseMenu";
 import { PaintPanel } from "@/game/paint/PaintPanel";
 import { DEFAULT_BRUSH, type Brush } from "@/game/paint/brush";
+import { DEFAULT_MAP } from "@/game/world/mapIds";
 import { DeathScreen } from "@/game/hud/DeathScreen";
 import {
   connect,
@@ -18,8 +19,8 @@ import {
   sendWhistle,
   type Session,
 } from "@/game/net";
-import { clearSkin, SELF } from "@/game/paint/skin";
-import { requestLock } from "@/game/players/pointerLock";
+import { clearSkin, forgetAllSkins, SELF } from "@/game/paint/skin";
+import { cancelLock, requestLock } from "@/game/players/pointerLock";
 import { setAudioSuspended, stopAllLoops, unlockAudio } from "@/game/sound/engine";
 import { WHISTLE_INTERVAL_MS } from "@/game/shared/protocol";
 import type { Role } from "@/game/shared/protocol";
@@ -39,6 +40,9 @@ export function Game() {
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("player");
   const [killedBy, setKilledBy] = useState<string | null>(null);
+  /** The map the room settled on, which need not be the one that was asked for
+   *  — you only get your choice if you are the one who opened the room. */
+  const [map, setMap] = useState<string>(DEFAULT_MAP);
   // Paint mode deliberately gives the cursor back, so the pointer-lock handler
   // below must not read that as "the player wants the pause menu".
   const paintingRef = useRef(false);
@@ -55,7 +59,11 @@ export function Game() {
   // them; a seeker usually lost it to Esc already, but not if something else
   // raised the menu.
   useEffect(() => {
-    if (paused) document.exitPointerLock();
+    if (!paused) return;
+    // Cancel first: `requestLock` keeps retrying for about two seconds, and a
+    // retry landing after the menu opened would snatch the cursor back off it.
+    cancelLock();
+    document.exitPointerLock();
   }, [paused]);
 
   // Pause silences the room too. Without this a shot fired the instant before
@@ -78,25 +86,38 @@ export function Game() {
     return () => clearInterval(whistle);
   }, [role, session, killedBy]);
 
-  const join = useCallback((who: string, picked: Role, target: Session) => {
+  const join = useCallback(
+    (who: string, picked: Role, target: Session, wanted: string) => {
     // This runs from the role button's click handler, which is the user gesture
     // the audio context has been waiting for. Unlocking anywhere else — an
     // effect, a timer — is silently refused and the whole game stays mute.
     unlockAudio();
+    // Joining is a clean slate. Paint does not survive it — not yours, and not
+    // the leftover skins of whoever was in the last session, whose session ids
+    // will never be seen again. A respawn goes through here too, so dying costs
+    // you your paint job as well.
+    forgetAllSkins();
+    setBrush(DEFAULT_BRUSH);
     setError(null);
     setName(who);
     setRole(picked);
     setSession(target);
     setPaused(false);
     setKilledBy(null);
-    connect(who, picked, target).catch((e: unknown) => {
-      setError(
-        `Could not reach ${target.name} at ${target.host}:${target.gamePort}. ${
-          e instanceof Error ? e.message : ""
-        }`,
-      );
-    });
-  }, []);
+      connect(who, picked, target, wanted)
+        .then((room) => {
+          setMap((room.state as unknown as { map?: string }).map ?? DEFAULT_MAP);
+        })
+        .catch((e: unknown) => {
+          setError(
+            `Could not reach ${target.name} at ${target.host}:${target.gamePort}. ${
+              e instanceof Error ? e.message : ""
+            }`,
+          );
+        });
+    },
+    [],
+  );
 
   // Opening the panel hands the cursor back so you can draw; collapsing it
   // re-locks the pointer for normal play.
@@ -105,6 +126,7 @@ export function Game() {
       setPainting(open);
       if (open) {
         setPaused(false);
+        cancelLock();
         document.exitPointerLock();
       } else if (role === "seeker") {
         // Hiders never hold the lock, so there is nothing to take back.
@@ -126,6 +148,7 @@ export function Game() {
   );
 
   const leave = useCallback(() => {
+    cancelLock();
     stopAllLoops();
     void disconnect();
     setRole(null);
@@ -149,6 +172,7 @@ export function Game() {
       // brush loop above all, which would otherwise scrub away behind the death
       // screen. One-shots already in flight are allowed to finish; the squash
       // that killed you is one of them.
+      cancelLock();
       stopAllLoops();
       void disconnect();
     });
@@ -162,8 +186,8 @@ export function Game() {
   const respawn = useCallback(() => {
     if (!role || !session) return;
     setKilledBy(null);
-    join(name, role, session);
-  }, [join, name, role, session]);
+    join(name, role, session, map);
+  }, [join, map, name, role, session]);
 
   // A hider has no pointer lock to lose, so their Esc has to be read directly.
   // A seeker's Esc is swallowed by the browser while the lock is held — losing
@@ -206,6 +230,7 @@ export function Game() {
   return (
     <div className="relative h-dvh w-full">
       <Scene
+        map={map}
         role={role}
         alive={!killedBy}
         painting={painting}

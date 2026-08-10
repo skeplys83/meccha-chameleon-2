@@ -1,6 +1,7 @@
 "use client";
 
 import { getRoom } from "./connection";
+import { MAX_STROKE_BATCH } from "@/game/shared/protocol";
 
 /**
  * Everything this client tells the room. Movement is client-simulated and the
@@ -18,10 +19,18 @@ export function sendState(
   getRoom()?.send("state", { p, yaw, pitch, pose, cling });
 }
 
-/** Strokes are batched by the caller — a drag produces far more points than
- *  are worth a message each. */
+/**
+ * Strokes are batched by the caller — a drag produces far more points than are
+ * worth a message each — and split again here so no single message exceeds what
+ * the server will accept. It caps a `paint` at `MAX_STROKE_BATCH` and silently
+ * drops the rest, so a long enough drag would lose its tail with nothing said.
+ */
 export function sendPaint(strokes: string[]) {
-  if (strokes.length) getRoom()?.send("paint", { strokes });
+  const room = getRoom();
+  if (!room) return;
+  for (let i = 0; i < strokes.length; i += MAX_STROKE_BATCH) {
+    room.send("paint", { strokes: strokes.slice(i, i + MAX_STROKE_BATCH) });
+  }
 }
 
 /** Tells the room you whistled. The server relays it to everyone, positioned at
@@ -41,6 +50,7 @@ export function sendKill(id: string, position: [number, number, number]) {
 export function sendShoot(
   position: [number, number, number],
   rotation: [number, number, number],
+  origin: [number, number, number],
 ) {
-  getRoom()?.send("shoot", { position, rotation });
+  getRoom()?.send("shoot", { position, rotation, origin });
 }

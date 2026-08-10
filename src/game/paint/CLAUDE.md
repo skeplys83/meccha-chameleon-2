@@ -3,8 +3,8 @@
 **Owns:** the per-player canvases, the brush, the palette, the compact wire
 format for a stroke, and the panel that mixes colours.
 
-**Entry points:** `getSkin` / `paint` / `clearSkin` / `encodedHistory` /
-`forgetSkin` / `encodeStroke` / `decodeStroke` / `SELF` from `skin.ts`; `Brush` / `DEFAULT_BRUSH` from
+**Entry points:** `getSkin` / `paint` / `clearSkin` / `forgetSkin` /
+`forgetAllSkins` / `encodeStroke` / `decodeStroke` / `SELF` from `skin.ts`; `Brush` / `DEFAULT_BRUSH` from
 `brush.ts`; `PaintPanel`.
 
 ## Files
@@ -44,9 +44,12 @@ format for a stroke, and the panel that mixes colours.
 6. **`SELF` is the local player's key in these maps**, remotes use their Colyseus
    session id. `Viewmodel` draws the seeker's own arms from `SELF`'s canvases, so
    a seeker sees their own paint in first person.
-7. **The history is what survives a respawn.** A respawn joins as a brand new
-   player, so `net/client.ts` replays `encodedHistory(SELF)`. Trimming the
-   history below the server's cap silently loses paint.
+7. **Paint does not survive joining, and that includes respawning.** `Game.tsx`
+   calls `forgetAllSkins()` on every join: yours goes, and so do the leftover
+   skins of whoever was in the last session, keyed by session ids that will never
+   be seen again. There used to be a replay that carried your paint through a
+   respawn; joining is a clean slate now, so it is gone and `encodedHistory` with
+   it. The stroke history remains only as the per-body cap.
 8. **A drag is throttled by UV distance, not by time.** `PAINT_STEP` in
    `brushCursor.ts` — a smear at 60 fps would otherwise be hundreds of
    near-identical strokes, all of them sent and stored.

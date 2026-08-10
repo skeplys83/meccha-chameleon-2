@@ -60,6 +60,12 @@ defineTypes(Player, {
 export class GameState extends Schema {
   declare players: MapSchema<Player>;
   declare graves: ArraySchema<string>;
+  /**
+   * Which map this room is playing. Fixed for the room's life: it is set by
+   * whoever opened it and never changes, because swapping the geometry under
+   * players who are standing on it has no sane outcome.
+   */
+  declare map: string;
 
   constructor() {
     super();
@@ -70,4 +76,8 @@ export class GameState extends Schema {
   }
 }
 
-defineTypes(GameState, { players: { map: Player }, graves: ["string"] });
+defineTypes(GameState, {
+  players: { map: Player },
+  graves: ["string"],
+  map: "string",
+});
