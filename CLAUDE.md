@@ -41,6 +41,14 @@ package.json is what stops Node reparsing it as CommonJS first.
 the localhost URL, the LAN URL and the Colyseus port. Other players open the LAN
 URL.
 
+**`allowedDevOrigins` in `next.config.ts` is what makes that LAN URL work.** Next
+blocks cross-origin requests to `/_next/*` in development — including the HMR
+socket — so without it every guest gets a dead page. It is set to octet-wise
+wildcards for the common private ranges plus this machine's real addresses, read
+at startup, so a DHCP change does not silently break it. The check runs even
+through the custom server; verified by requesting a dev chunk with a foreign
+`Origin` and getting a 403.
+
 Useful env vars: `PORT` (web, default 3000), `GAME_PORT` (Colyseus, default 2567),
 `SESSION_NAME` (overrides the auto-generated session title).
 
