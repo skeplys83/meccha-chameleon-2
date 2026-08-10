@@ -106,7 +106,8 @@ one role, and **adding a control means deciding whose it is.**
 13. **Your own footsteps live in this file**, because it is the only place that
     knows you are grounded — nobody else's `grounded` is on the wire. They play
     without a position (you are the listener) and a little quieter than everyone
-    else's. Remote footsteps are `sound/SoundStage.tsx`.
+    else's. The `Stepper` is built with `strideFor(role)`, so a hider's cadence is
+    quicker than a seeker's. Remote footsteps are `sound/SoundStage.tsx`.
 
 ## Contracts
 

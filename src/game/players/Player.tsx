@@ -25,7 +25,7 @@ import { SELF } from "@/game/paint/skin";
 import { createBrushCursor, type BrushCursor } from "@/game/paint/brushCursor";
 import type { Brush } from "@/game/paint/brush";
 import { playSound } from "@/game/sound/engine";
-import { Stepper, jitteredStepRate } from "@/game/sound/footsteps";
+import { Stepper, jitteredStepRate, strideFor } from "@/game/sound/footsteps";
 
 const SPEED = 6;
 // A velocity, not an impulse: the seeker's collider is bigger and therefore
@@ -118,7 +118,7 @@ export function Player({
   /** Your own footsteps. Remote figures get one of these each in SoundStage;
    *  yours lives here because this is the only place that knows you are on the
    *  ground — nobody else's `grounded` is on the wire. */
-  const stepper = useRef(new Stepper());
+  const stepper = useRef(new Stepper(strideFor(role)));
   /** When the shotgun last went off, so a held mouse button is one shot. */
   const lastShot = useRef(0);
   const ring = useRef<THREE.Mesh>(null);

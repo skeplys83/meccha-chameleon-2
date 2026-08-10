@@ -24,6 +24,47 @@ let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
 const buffers = new Map<SoundName, AudioBuffer>();
 let loading: Promise<void> | null = null;
+let unlockBound = false;
+let warnedSuspended = false;
+
+/**
+ * Anything the browser counts as a user gesture. `keydown` matters most: you
+ * cannot walk without pressing one, so footsteps can never be the first thing
+ * that finds the context still locked.
+ */
+const GESTURES = ["pointerdown", "keydown", "touchstart"] as const;
+
+/**
+ * Keep trying to unlock on any gesture until one works, then stop listening.
+ *
+ * `Game.tsx` already unlocks on the role click, and that is the intended path —
+ * but it is a single point of failure for the entire game's audio, and when it
+ * fails it fails *silently*, which is exactly what happened here. These
+ * listeners are the safety net: they live beside the context they unlock, so
+ * they cannot go looking at the wrong one.
+ */
+function installUnlockListeners() {
+  if (unlockBound || typeof window === "undefined") return;
+  unlockBound = true;
+
+  const stop = () => {
+    for (const type of GESTURES) window.removeEventListener(type, attempt, true);
+  };
+  const attempt = () => {
+    if (!ctx) return;
+    if (ctx.state === "running") {
+      stop();
+      return;
+    }
+    void ctx.resume().then(() => {
+      if (ctx?.state === "running") stop();
+    });
+  };
+
+  for (const type of GESTURES) {
+    window.addEventListener(type, attempt, { capture: true, passive: true });
+  }
+}
 
 /** Sounds that turned out to be unplayable, so the warning is logged once. */
 const broken = new Set<SoundName>();
@@ -43,6 +84,7 @@ function ensureContext() {
   master = ctx.createGain();
   master.gain.value = 1;
   master.connect(ctx.destination);
+  installUnlockListeners();
   return ctx;
 }
 
@@ -160,7 +202,24 @@ export function playSound(name: SoundName, options: PlayOptions = {}) {
   const context = ctx;
   const out = master;
   const buffer = buffers.get(name);
-  if (!context || !out || !buffer || context.state !== "running") return;
+  if (!context || !out || !buffer) return;
+
+  // Still locked. Ask again — a sound being requested at all means the player is
+  // doing something — drop this one, and say so once, because a silent game with
+  // a silent cause is the worst thing this module can do.
+  if (context.state !== "running") {
+    const was = context.state;
+    void context.resume();
+    if (!warnedSuspended) {
+      warnedSuspended = true;
+      console.warn(
+        `sound: "${name}" was dropped because the AudioContext was "${was}". ` +
+          `It unlocks on the first click or keypress; if you see this repeatedly, ` +
+          `unlockAudio() is not reaching the context that playSound() uses.`,
+      );
+    }
+    return;
+  }
 
   const spec = SOUNDS[name];
   const source = context.createBufferSource();

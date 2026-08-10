@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { onKilled, onShot, remotes } from "@/game/net";
 import { playSound, preloadSounds, updateListener } from "./engine";
-import { Stepper, jitteredStepRate } from "./footsteps";
+import { Stepper, jitteredStepRate, strideFor } from "./footsteps";
 
 /**
  * Everything the world makes a noise about. Renders nothing.
@@ -60,7 +60,7 @@ export function SoundStage() {
     for (const [id, remote] of remotes) {
       let stepper = live.get(id);
       if (!stepper) {
-        stepper = new Stepper();
+        stepper = new Stepper(strideFor(remote.role));
         live.set(id, stepper);
       }
       const { x, y, z } = remote.target;

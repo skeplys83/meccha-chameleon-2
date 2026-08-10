@@ -127,12 +127,18 @@ The folder docs hold the rest. These six are project-wide:
    loop aborts halfway — which looks like the player teleporting into the ground
    and the screen going white. Colliders are swapped by React (a `key` on
    `CuboidCollider`) rather than mutated in place.
-5. **Colyseus schema fields use `declare`, never `!`.** Node strips types by
-   blanking characters, not re-emitting, so `x!: number` survives as the class
-   field `x;` — an own property that shadows the accessor `defineTypes` installs.
-   Every state encode then dies with `Cannot read properties of undefined
-   (reading 'Symbol(Symbol.metadata)')` and the server falls over on the first
-   join. See `src/game/server/CLAUDE.md`.
+5. **Write TypeScript that Node can strip.** Node blanks type syntax out rather
+   than re-emitting, which forbids `enum`, `namespace`, decorators and
+   `constructor(private x)` parameter properties. It applies to `server/`, which
+   Node runs, *and* to any module you want to import into Node for testing.
+   Two specific bites, both already paid for:
+   - Colyseus schema fields must be `declare x: T`, never `x!: T` — the latter
+     survives as the class field `x;`, an own property that shadows the accessor
+     `defineTypes` installs, and every state encode then dies with `Cannot read
+     properties of undefined (reading 'Symbol(Symbol.metadata)')`, taking the
+     server down on the first join.
+   - A parameter property throws `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX` the moment
+     the module is loaded outside the bundler.
 6. **Nothing here deploys to Vercel.** Ignore Vercel-shaped advice; a LAN game
    should not round-trip the internet.
 

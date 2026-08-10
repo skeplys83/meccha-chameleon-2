@@ -35,40 +35,61 @@ follows your head, and the footstep derivation.
    ffmpeg -i new.wav -af "volume=<-1 minus that>dB" out.wav
    ```
 
-3. **`unlockAudio()` must be called from a real click.** Browsers start every
-   context suspended and only honour `resume()` from a user gesture. The gesture
-   this game uses is the role button in `RoleMenu`, via `Game.tsx`'s `join`. Move
-   it into an effect or a timer and the whole game is silent with no error.
-4. **The context is created early, resumed late.** Constructing a suspended
+3. **The context unlocks on *any* gesture, not just the join click.** Browsers
+   start every context suspended and only honour `resume()` from a user gesture.
+   `Game.tsx` calls `unlockAudio()` on the role button, and that is the intended
+   path — but it was a single point of failure for the entire game's audio, and
+   when it failed it failed *silently*. `engine.ts` now also binds capture-phase
+   `pointerdown` / `keydown` / `touchstart` listeners beside the context it
+   unlocks, and drops them once it is running. `keydown` is the one that matters:
+   you cannot walk without pressing a key, so footsteps can never be the first
+   thing to discover the context is still locked.
+4. **A dropped sound says why, once.** If `playSound` is called while the context
+   is not running it retries the resume, drops that one sound, and warns to the
+   console — naming the sound and the state. A silent game with a silent cause is
+   the worst thing this module can do, and it cost a full debugging round.
+5. **The context is created early, resumed late.** Constructing a suspended
    `AudioContext` needs no gesture, so `SoundStage` builds it on mount and decodes
    the buffers then — otherwise the first shot of the round would be the one
    waiting on a fetch.
-5. **The listener reads `camera.position` / `camera.quaternion`, never
+6. **The listener reads `camera.position` / `camera.quaternion`, never
    `matrixWorld`.** `players/Player.tsx` drives the camera imperatively from its
    own `useFrame`, and matrices are only refreshed at render time — so a
    world-matrix read here would be a frame stale, and *which* frame would depend
    on `useFrame` ordering. The camera has no parent, so its local transform is its
    world transform.
-6. **One-shots are plain Web Audio nodes, not `THREE.PositionalAudio`.** That is
+7. **One-shots are plain Web Audio nodes, not `THREE.PositionalAudio`.** That is
    an `Object3D` you park in the scene graph, which suits a looping hum but would
    mean mounting and unmounting a node per shot. Each play here is a source, a
    gain and optionally a panner, all disconnected in `onended`.
-7. **A missing sound must never break a frame.** `playSound` drops the call if the
+8. **A missing sound must never break a frame.** `playSound` drops the call if the
    buffer has not decoded, the file 404'd, or the context is not running. It never
    throws and never awaits.
-8. **Footsteps are derived, never networked.** Every client already has everyone's
+9. **Footsteps are derived, never networked.** Every client already has everyone's
    position at 20 Hz, so a step is a function of distance travelled — no message,
    no bandwidth, and it cannot drift out of sync with what you can see because it
    *is* what you can see.
-9. **Only horizontal travel counts as walking.** Falling and jumping move you a
+10. **Only horizontal travel counts as walking.** Falling and jumping move you a
    long way in Y and must not tick the stride. This is also why remote figures
    cannot use the ground ray the local player has: nobody else's `grounded` is on
    the wire, so ignoring Y is the approximation that stands in for it.
-10. **Step pitch is derived from `BODY`, not hard-coded.** Pitch scales inversely
-    with body size, so a hider (smaller) lands 1.3× above a seeker. That is a
-    gameplay signal, not decoration — hearing a step you cannot see and knowing
-    whether it is prey or the hunter is most of what audio contributes to
-    hide-and-seek. Re-proportioning a role re-pitches it automatically.
+11. **Both stride *and* pitch come from `BODY`.** A hider is smaller, so they
+    take shorter, quicker, higher steps than a seeker: stride 1.9 vs 2.47 and
+    pitch 1.3 vs 1.0. At the shared movement speed of 6 that is 3.1 footfalls a
+    second against 2.4. Re-proportioning a role changes both automatically.
+    This is a gameplay signal, not decoration — hearing a step you cannot see and
+    knowing whether it is prey or the hunter is most of what audio contributes to
+    hide-and-seek.
+12. **The stepper carries a remainder, so cadence is frame-rate independent.**
+    Verified at 30 and 60 fps: the same walk produces the same number of steps.
+13. **Warping is not walking.** Anything faster than `WARP_SPEED` (20 u/s, well
+    above the movement speed of 6) is a respawn, the under-the-floor catch, or a
+    remote whose patch arrived after a gap — it resets rather than stepping, or
+    every respawn would land a footfall on arrival. `MIN_STEP_GAP` is the backstop
+    beneath that, capping any pathological input at ~9 steps a second.
+14. **No `constructor(private x)` parameter properties in this folder.** Node's
+    type stripping refuses them outright, and these modules are meant to import
+    straight into Node for testing. `Stepper` writes the field out longhand.
 
 ## Contracts
 
@@ -103,8 +124,19 @@ All the knobs, in the order you are likely to want them:
 - how far sound carries — `REF_DISTANCE` (higher = audible further) and `ROLLOFF`
   in `engine.ts`. The Web Audio default `refDistance` of 1 would make everything
   inaudible two steps away in a 40×40 arena.
-- stride length and the pitch spread — `STRIDE`, `IDLE_SPEED`, `JITTER` in
-  `footsteps.ts`
+- **footstep cadence** — `STRIDE_PER_HALF_HEIGHT` in `footsteps.ts`. Raise it and
+  everyone plods, lower it and everyone scurries; the hider/seeker difference
+  scales with it automatically. Currently 1.9, giving 3.1 and 2.4 steps a second.
+- the pitch spread — `JITTER`; the walk/idle threshold — `IDLE_SPEED`
+
+## Testing it
+
+Both `footsteps.ts` and `engine.ts` import straight into Node — no React, no
+WebGL — with a throwaway resolve hook for the `@/` alias and, for the engine, a
+~30-line Web Audio stub. That covers cadence, the idle/warp guards, frame-rate
+independence, pitch, and the whole unlock path including the gesture listeners.
+It is the only way to check any of this without a browser, and browsers are not
+part of this project's workflow — see the root CLAUDE.md.
 
 ## Not built yet
 
