@@ -24,7 +24,18 @@ follows your head, and the footstep derivation.
    mono; `whistle` is global and correctly stereo. `preloadSounds` warns if a
    positional file arrives with more than one channel, because the symptom
    otherwise reads as "3D audio is just subtle".
-2. **Every file is peak-normalised to −1 dBFS.** A `gain` in the catalogue is
+2. **Loudness is raised by compression, not by a gain above 1.** Every file peaks
+   at −1 dBFS, so a catalogue gain over 1.0 clips. When a sound needs to be
+   *louder* rather than *hotter*, lift its average level and re-normalise —
+   `squash.wav` went from −22.6 dB mean to −18.6 dB that way, +4 dB perceived,
+   with its peak untouched:
+
+   ```bash
+   ffmpeg -i s.wav -af "acompressor=threshold=-20dB:ratio=3:attack=5:release=140" _s.wav
+   # then peak-normalise _s.wav back to -1 dBFS as below
+   ```
+
+3. **Every file is peak-normalised to −1 dBFS.** A `gain` in the catalogue is
    then a real proportion instead of a guess about how hot that export happened
    to be. This is not housekeeping: `step.wav` shipped 21 dB below `shotgun.wav`,
    and multiplied by a cautious gain it sat ~34 dB under the gunshot — perfectly
@@ -36,7 +47,7 @@ follows your head, and the footstep derivation.
    ffmpeg -i new.wav -af "volume=<-1 minus that>dB" out.wav
    ```
 
-3. **A looped file needs its seam closed.** `brush.wav` arrived ending at full
+4. **A looped file needs its seam closed.** `brush.wav` arrived ending at full
    level while starting near silence, so every 0.78 s the loop stepped straight
    down — an audible click, forever, under the one sound that is supposed to sit
    in the background. Check both ends against the middle and fade whichever one
@@ -47,7 +58,7 @@ follows your head, and the footstep derivation.
    ffmpeg -i loop.wav -af "afade=t=in:st=0:d=0.004,afade=t=out:st=<d-0.012>:d=0.012" out.wav
    ```
 
-4. **The context unlocks on *any* gesture, not just the join click.** Browsers
+5. **The context unlocks on *any* gesture, not just the join click.** Browsers
    start every context suspended and only honour `resume()` from a user gesture.
    `Game.tsx` calls `unlockAudio()` on the role button, and that is the intended
    path — but it was a single point of failure for the entire game's audio, and
@@ -56,64 +67,80 @@ follows your head, and the footstep derivation.
    unlocks, and drops them once it is running. `keydown` is the one that matters:
    you cannot walk without pressing a key, so footsteps can never be the first
    thing to discover the context is still locked.
-5. **A dropped sound says why, once.** If `playSound` is called while the context
+6. **A dropped sound says why, once.** If `playSound` is called while the context
    is not running it retries the resume, drops that one sound, and warns to the
    console — naming the sound and the state. A silent game with a silent cause is
    the worst thing this module can do, and it cost a full debugging round.
-6. **The context is created early, resumed late.** Constructing a suspended
+7. **The context is created early, resumed late.** Constructing a suspended
    `AudioContext` needs no gesture, so `SoundStage` builds it on mount and decodes
    the buffers then — otherwise the first shot of the round would be the one
    waiting on a fetch.
-7. **The listener reads `camera.position` / `camera.quaternion`, never
+8. **The listener reads `camera.position` / `camera.quaternion`, never
    `matrixWorld`.** `players/Player.tsx` drives the camera imperatively from its
    own `useFrame`, and matrices are only refreshed at render time — so a
    world-matrix read here would be a frame stale, and *which* frame would depend
    on `useFrame` ordering. The camera has no parent, so its local transform is its
    world transform.
-8. **One-shots are plain Web Audio nodes, not `THREE.PositionalAudio`.** That is
+9. **One-shots are plain Web Audio nodes, not `THREE.PositionalAudio`.** That is
    an `Object3D` you park in the scene graph, which suits a looping hum but would
    mean mounting and unmounting a node per shot. Each play here is a source, a
    gain and optionally a panner, all disconnected in `onended`.
-9. **A missing sound must never break a frame.** `playSound` drops the call if the
+10. **A missing sound must never break a frame.** `playSound` drops the call if the
    buffer has not decoded, the file 404'd, or the context is not running. It never
    throws and never awaits.
-10. **Footsteps are derived, never networked.** Every client already has everyone's
+11. **Footsteps are derived, never networked.** Every client already has everyone's
    position at 20 Hz, so a step is a function of distance travelled — no message,
    no bandwidth, and it cannot drift out of sync with what you can see because it
    *is* what you can see.
-11. **Only horizontal travel counts as walking.** Falling and jumping move you a
+12. **Only horizontal travel counts as walking.** Falling and jumping move you a
    long way in Y and must not tick the stride. This is also why remote figures
    cannot use the ground ray the local player has: nobody else's `grounded` is on
    the wire, so ignoring Y is the approximation that stands in for it.
-12. **Both stride *and* pitch come from `BODY`.** A hider is smaller, so they
+13. **Both stride *and* pitch come from `BODY`.** A hider is smaller, so they
     take shorter, quicker, higher steps than a seeker: stride 1.9 vs 2.47 and
     pitch 1.3 vs 1.0. At the shared movement speed of 6 that is 3.1 footfalls a
     second against 2.4. Re-proportioning a role changes both automatically.
     This is a gameplay signal, not decoration — hearing a step you cannot see and
     knowing whether it is prey or the hunter is most of what audio contributes to
     hide-and-seek.
-13. **The stepper carries a remainder, so cadence is frame-rate independent.**
-    Verified at 30 and 60 fps: the same walk produces the same number of steps.
-14. **Warping is not walking.** Anything faster than `WARP_SPEED` (20 u/s, well
-    above the movement speed of 6) is a respawn, the under-the-floor catch, or a
-    remote whose patch arrived after a gap — it resets rather than stepping, or
-    every respawn would land a footfall on arrival. `MIN_STEP_GAP` is the backstop
-    beneath that, capping any pathological input at ~9 steps a second.
-15. **No `constructor(private x)` parameter properties in this folder.** Node's
+14. **Positions arrive more slowly than frames, and the stepper must not divide
+    by `delta`.** This is the one that cost two rounds of silent footsteps.
+    `<Physics>` steps at a fixed 1/60, so `rb.translation()` is unchanged on any
+    frame that fell between steps — most of them above 60 Hz. Remote players are
+    worse: their target only moves on a 20 Hz patch, so at 60 fps two frames in
+    three see nothing happen. **A stationary frame is completely normal at a dead
+    run.** An earlier version treated one as "stopped" (speed-per-frame below a
+    threshold) and zeroed the accumulated distance, so it could never reach a
+    stride and *no footstep ever played* — while every other sound worked, which
+    is what made it look like a wiring fault.
+
+    So the stepper accumulates **distance**, treats sub-`NOISE` frames as "no news
+    yet", and only drops a part-stride after `IDLE_GRACE` of genuine stillness.
+    Nothing in it divides by `delta`. Measured at 60/144/165 fps against 60 and
+    20 Hz position sources: 3.10 steps a second in every combination. The old
+    version scored 0 in all of them but the artificially aligned one — which is
+    the only case the first test covered. **Any test for this must tick positions
+    slower than frames**, or it proves nothing.
+15. **Warping is not walking.** Further than `WARP_DISTANCE` (3 units) in one
+    frame is a respawn, the under-the-floor catch, or a remote whose patch arrived
+    after a stall — it resets rather than stepping, or every respawn would land a
+    footfall on arrival. A *distance*, not a speed, for the reason above.
+    `MIN_STEP_GAP` is the backstop beneath it.
+16. **No `constructor(private x)` parameter properties in this folder.** Node's
     type stripping refuses them outright, and these modules are meant to import
     straight into Node for testing. `Stepper` writes the field out longhand.
-16. **Loops are keyed by name and at most one runs per name.** `startLoop` is
+17. **Loops are keyed by name and at most one runs per name.** `startLoop` is
     therefore idempotent — a caller can fire it every frame of a drag without
     tracking whether it already did — and `stopLoop` is the only thing that ends
     one. Both fade over `LOOP_FADE`: starting or stopping a buffer at full
     amplitude is a step in the waveform, and a brush you can hear clicking on and
     off is worse than no brush at all.
-17. **`startLoop` does not bail on a suspended context, unlike `playSound`.** A
+18. **`startLoop` does not bail on a suspended context, unlike `playSound`.** A
     suspended context has a frozen clock, so the sound and its fade simply begin
     when it wakes. Dropping the loop instead would mean a player who started
     brushing before the first gesture got silence until they released and pressed
     again.
-18. **Whoever starts a loop must stop it.** Nothing else will. `Player.tsx` stops
+19. **Whoever starts a loop must stop it.** Nothing else will. `Player.tsx` stops
     the brush on `onDrawingChange(false)` *and* in its effect teardown, so a loop
     cannot outlive the component that began it; `stopAllLoops` is there for any
     future caller that needs the blunt version.
@@ -129,11 +156,6 @@ follows your head, and the footstep derivation.
 - **The server broadcasts `shot` on both the `shoot` and the `kill` path.** That
   matters: a killing shot relays no `mark`, so hanging the bang on `mark` would
   have made the most dramatic shot in the game silent.
-- **The death sound is delayed by `DEATH_DELAY` (150 ms).** The server sends
-  `shot` and `killed` in the same tick, so without it the bang and the squash
-  start on the same sample and smear into one noise. The gap separates the two
-  transients and reads as cause and effect. It is scheduled on the audio clock,
-  not with `setTimeout`, so a busy frame cannot shove it around.
 - **`killed` carries a position** so everyone hears the death where it happened.
   It rides on the broadcast rather than on the grave because `graves.onAdd` also
   replays the whole backlog to a joining client, who would otherwise hear every
@@ -163,7 +185,6 @@ All the knobs, in the order you are likely to want them:
   inaudible two steps away in a 40×40 arena.
 - **the brush loop** — `brush` gain in `catalogue.ts`, and `LOOP_FADE` in
   `engine.ts` for how softly it starts and stops
-- **the gap between the shot and the death** — `DEATH_DELAY` in `SoundStage.tsx`
 - **footstep cadence** — `STRIDE_PER_HALF_HEIGHT` in `footsteps.ts`. Raise it and
   everyone plods, lower it and everyone scurries; the hider/seeker difference
   scales with it automatically. Currently 1.9, giving 3.1 and 2.4 steps a second.
@@ -173,7 +194,9 @@ All the knobs, in the order you are likely to want them:
 
 Both `footsteps.ts` and `engine.ts` import straight into Node — no React, no
 WebGL — with a throwaway resolve hook for the `@/` alias and, for the engine, a
-~30-line Web Audio stub. That covers cadence, the idle/warp guards, frame-rate
+~30-line Web Audio stub. **Drive the stepper with positions that tick slower than
+the frames**, at several refresh rates; a smooth position stream hides the only
+bug this module has actually had. That covers cadence, the idle/warp guards, frame-rate
 independence, pitch, and the whole unlock path including the gesture listeners.
 It is the only way to check any of this without a browser, and browsers are not
 part of this project's workflow — see the root CLAUDE.md.

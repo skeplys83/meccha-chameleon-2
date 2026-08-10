@@ -199,12 +199,6 @@ export type PlayOptions = {
   rate?: number;
   /** Multiplied with the catalogue gain. */
   gain?: number;
-  /**
-   * Seconds to wait before it sounds. Scheduled on the audio clock rather than
-   * with `setTimeout`, so it is sample-accurate and cannot be pushed around by a
-   * busy frame.
-   */
-  delay?: number;
 };
 
 /**
@@ -275,7 +269,7 @@ export function playSound(name: SoundName, options: PlayOptions = {}) {
     gain.disconnect();
     panner?.disconnect();
   };
-  source.start(context.currentTime + Math.max(0, options.delay ?? 0));
+  source.start();
 }
 
 /**

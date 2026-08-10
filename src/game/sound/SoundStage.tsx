@@ -6,15 +6,6 @@ import { onKilled, onShot, remotes } from "@/game/net";
 import { playSound, preloadSounds, updateListener } from "./engine";
 import { Stepper, jitteredStepRate, strideFor } from "./footsteps";
 
-/**
- * How long after the shot the body lands.
- *
- * The server sends `shot` and `killed` in the same tick, so without this the
- * bang and the squash start on the same sample and smear into one noise. A short
- * gap separates the two transients and reads as cause and effect — the shot,
- * then the hit — rather than as a single louder shot.
- */
-const DEATH_DELAY = 0.15;
 
 /**
  * Everything the world makes a noise about. Renders nothing.
@@ -58,7 +49,7 @@ export function SoundStage() {
   useEffect(
     () =>
       onKilled((_victimId, _by, position) => {
-        playSound("squash", { position, delay: DEATH_DELAY });
+        playSound("squash", { position });
       }),
     [],
   );
