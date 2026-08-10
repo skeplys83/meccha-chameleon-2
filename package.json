@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "NODE_ENV=production node src/game/server/index.ts",
     "lint": "eslint",
-    "check:docs": "node scripts/check-docs.mjs"
+    "check:docs": "node scripts/check-docs.mjs",
+    "favicon": "node scripts/make-favicon.mjs"
   },
   "dependencies": {
     "@colyseus/schema": "^3.0.76",

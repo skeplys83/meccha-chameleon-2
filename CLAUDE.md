@@ -59,12 +59,23 @@ line. Bump all three together or not at all.
 
 ```
 src/app/page.tsx    renders <Game />
+src/app/icon.svg    the favicon — generated, see below
 src/game/
   Game.tsx          top-level state: role, session, paused, painting, killed
   Scene.tsx         Canvas, lights, Physics, mark and grave lifetimes
 public/sounds/      the four .wav files
-scripts/            check-docs.mjs, the doc-freshness gate
+scripts/            check-docs.mjs (the doc gate), make-favicon.mjs
 ```
+
+**The favicon is generated, not drawn.** `npm run favicon` paints a hider's head
+— a shaded sphere with a few random brush drags — and writes `src/app/icon.svg`.
+It reads the real `PAINT` table from `paint/palette.ts`, so the icon can never
+drift from the game's palette, and it projects each dot onto the sphere (squashed
+along the radial direction by its angle from the viewer) so the paint sits on a
+ball rather than on a sticker. Every run prints its seed; re-roll until you like
+one, then pin it with `npm run favicon <seed>`. The committed one is seed 33.
+Next picks `icon.svg` up automatically — there is no `favicon.ico` and no
+`<link>` tag to maintain.
 
 | folder | owns | read it before touching |
 |---|---|---|
@@ -179,6 +190,10 @@ What you *can* verify on your own, and should:
 - **Audio levels, with ffmpeg.** `ffmpeg -i f.wav -af volumedetect -f null /dev/null`
   reports peak and mean. A sound nobody can hear is usually 20 dB down, not
   unwired — see `sound/CLAUDE.md`.
+- **SVG, with `qlmanage`, never ImageMagick.** `qlmanage -t -s 512 -o outdir
+  file.svg` renders through WebKit and is what a browser will show. ImageMagick's
+  built-in SVG renderer ignores gradients and will report a perfectly good icon as
+  a black circle — it cost a wrong diagnosis once already.
 
 Anything about feel — figure proportions, camera behaviour, gun placement, whether
 a sound sits right in the mix, whether the arena plays well — **is the user's
