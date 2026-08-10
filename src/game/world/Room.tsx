@@ -3,15 +3,15 @@
 import type { ReactNode } from "react";
 import { RigidBody } from "@react-three/rapier";
 import { PAINT } from "@/game/core/palette";
+import { ROOM_HALF } from "@/shared/protocol.mjs";
 
 export const ROOM_SURFACE = "room-surface";
 
-const SIZE = 40; // interior width/depth
+const SIZE = ROOM_HALF * 2; // interior width/depth
 const HEIGHT = 12;
 const THICKNESS = 1;
 
-/** Half-extent players are kept inside. Mirrored by ROOM_LIMIT in server.mjs. */
-export const ROOM_HALF = SIZE / 2;
+export { ROOM_HALF };
 
 /** Anything not painted a palette colour. */
 const ARENA = "#f1f1f1";

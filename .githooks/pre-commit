@@ -1,0 +1,4 @@
+#!/bin/sh
+# Enabled with:  git config core.hooksPath .githooks
+# Tracked in the repo so a fresh clone gets it by running that one command.
+exec node scripts/check-docs.mjs

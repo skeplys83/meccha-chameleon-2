@@ -6,7 +6,8 @@
     "dev": "node server/index.mjs",
     "build": "next build",
     "start": "NODE_ENV=production node server/index.mjs",
-    "lint": "eslint"
+    "lint": "eslint",
+    "check:docs": "node scripts/check-docs.mjs"
   },
   "dependencies": {
     "@colyseus/schema": "^3.0.76",

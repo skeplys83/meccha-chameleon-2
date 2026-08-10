@@ -2,6 +2,7 @@
 
 import * as THREE from "three";
 import { PARTS, PART_SHAPE, type Part } from "@/game/figure/parts";
+import { MAX_STROKES } from "@/shared/protocol.mjs";
 
 /**
  * Per-player paint. Every figure part owns a small canvas that is used as its
@@ -53,7 +54,7 @@ const history = new Map<string, Stroke[]>();
 /** Local player's id in these maps; remotes use their Colyseus session id. */
 export const SELF = "self";
 
-export const MAX_STROKES = 800;
+export { MAX_STROKES };
 
 function blankTexture() {
   const canvas = document.createElement("canvas");

@@ -13,6 +13,8 @@
  * floating. `shape` picks the collider the pose needs — see `poseExtents`.
  */
 
+import { POSE_COUNT } from "@/shared/protocol.mjs";
+
 export type Joint = { x?: number; spread?: number };
 
 export type Pose = {
@@ -85,7 +87,21 @@ export const POSES: Pose[] = [
   },
 ];
 
-export const POSE_COUNT = POSES.length;
+/**
+ * The pose count is part of the protocol — the server clamps an incoming pose
+ * index against it — so it is defined once in `shared/protocol.mjs` and this
+ * table is checked against it at import time. A mismatch is a loud crash on the
+ * first page load and a failed `next build`, rather than a pose that silently
+ * never arrives on anyone else's screen.
+ */
+if (POSES.length !== POSE_COUNT) {
+  throw new Error(
+    `poses.ts defines ${POSES.length} poses but shared/protocol.mjs says POSE_COUNT is ` +
+      `${POSE_COUNT}. Update protocol.mjs — the server clamps against it.`,
+  );
+}
+
+export { POSE_COUNT };
 
 /** Clamps anything arriving off the network to a real pose index. */
 export const safePose = (n: unknown) =>

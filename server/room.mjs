@@ -2,6 +2,12 @@ import { randomUUID } from "node:crypto";
 import { Room } from "colyseus";
 import { GameState, Player } from "./schema.mjs";
 import { setSessionName } from "./discovery.mjs";
+import {
+  MAX_STROKES,
+  MAX_STROKE_LENGTH,
+  POSE_COUNT,
+  ROOM_LIMIT,
+} from "../src/shared/protocol.mjs";
 
 /**
  * The one room, `"game"`.
@@ -13,17 +19,11 @@ import { setSessionName } from "./discovery.mjs";
  * the one message where being wrong is not cosmetic.
  */
 
-// Half-extent players are clamped to; mirrors ROOM_HALF (20) in
-// src/game/world/Room.tsx. It is a cheat bound, not a wall — a hider pressed
-// into a corner sits legitimately at ~19.7, and clamping that to 19 would have
-// shown everyone else a hider floating a metre off the wall they were hiding
-// against.
-const ROOM_LIMIT = 19.9;
+// ROOM_LIMIT, POSE_COUNT, MAX_STROKES and MAX_STROKE_LENGTH are imported above:
+// the client reads the same definitions, and each used to exist here as a
+// second copy with a comment asking the next person to change both.
 const PATCH_MS = 50; // 20 Hz state patches
-const POSE_COUNT = 5; // mirrors POSES in src/game/figure/poses.ts
-const MAX_STROKES = 800; // per player; mirrors MAX_STROKES in src/game/paint/skin.ts
-const MAX_STROKE_LENGTH = 40;
-const MAX_GRAVES = 200;
+const MAX_GRAVES = 200; // server-only: the client just renders what it is sent
 
 /** Anything non-finite off the wire becomes 0 rather than poisoning the state. */
 const clamp = (n, lo, hi) => (Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : 0);
