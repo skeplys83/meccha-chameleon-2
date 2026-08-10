@@ -13,8 +13,11 @@ holding that folder's invariants — the rule with the bug it prevents attached 
 and its contracts with the folders around it.
 
 **Read the doc for the folder you are about to edit, and update it in the same
-change.** A pre-commit hook enforces the second half: staging code without
-staging the `CLAUDE.md` that covers it fails the commit. Enable it once per clone
+change.** The pre-commit hook enforces the second half: staging code without
+staging the `CLAUDE.md` that covers it fails the commit. It also runs
+`scripts/check-constants.mjs`, which fails if a `shared/protocol.ts` constant is
+*defined* a second time anywhere — the one class of bug this layout exists to
+prevent, and one I have already reintroduced once. Enable it once per clone
 with `git config core.hooksPath .githooks`; run it any time with
 `npm run check:docs`. The escape hatch for a genuine no-op is
 `SKIP_DOC_CHECK=1 git commit`.
@@ -64,7 +67,7 @@ src/game/
   Game.tsx          top-level state: role, session, paused, painting, killed
   Scene.tsx         Canvas, lights, Physics, mark and grave lifetimes
 public/sounds/      the four .wav files
-scripts/            check-docs.mjs (the doc gate), make-favicon.mjs
+scripts/            check-docs.mjs, check-constants.mjs, make-favicon.mjs
 ```
 
 **The favicon is generated, not drawn.** `npm run favicon` paints a hider's head

@@ -5,6 +5,7 @@ import { setSessionName } from "./discovery.ts";
 import {
   FIRE_INTERVAL_MS,
   FIRE_INTERVAL_TOLERANCE,
+  MAX_STROKE_BATCH,
   WHISTLE_INTERVAL_MS,
   WHISTLE_TOLERANCE,
   MAX_STROKES,
@@ -89,7 +90,7 @@ export class GameRoom extends Room<GameState> {
 
       const strokes = (msg.strokes as unknown[])
         .filter((s): s is string => typeof s === "string" && s.length <= MAX_STROKE_LENGTH)
-        .slice(0, 64);
+        .slice(0, MAX_STROKE_BATCH);
       if (!strokes.length) return;
 
       for (const stroke of strokes) player.strokes.push(stroke);

@@ -82,7 +82,9 @@ message named here.
 - **`cling` is trusted like movement** — it only decides whether other clients
   play footsteps for you, so a liar makes themselves quiet and nothing else.
 - **Reads `../shared/protocol.ts`** for `Role`, `ROOM_LIMIT`, `POSE_COUNT`,
-  `MAX_STROKES`, `MAX_STROKE_LENGTH`. Do not re-declare any of them here.
+  `MAX_STROKES`, `MAX_STROKE_LENGTH`, `MAX_STROKE_BATCH`, and the fire and
+  whistle intervals. Do not re-declare any of them here — a pre-commit gate
+  fails the commit if you do.
 - **Messages in** (`room.ts` ← `net/send.ts`): `state`, `paint`, `clearSkin`,
   `shoot`, `kill`, `whistle`.
 - **Messages out** (→ `net/client.ts`): `shot`, `whistle` and `mark` to everyone; `paint`

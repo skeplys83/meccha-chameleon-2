@@ -3,8 +3,8 @@
 **Owns:** the per-player canvases, the brush, the palette, the compact wire
 format for a stroke, and the panel that mixes colours.
 
-**Entry points:** `getSkin` / `paint` / `clearSkin` / `encodeStroke` /
-`decodeStroke` / `SELF` from `skin.ts`; `Brush` / `DEFAULT_BRUSH` from
+**Entry points:** `getSkin` / `paint` / `clearSkin` / `encodedHistory` /
+`forgetSkin` / `encodeStroke` / `decodeStroke` / `SELF` from `skin.ts`; `Brush` / `DEFAULT_BRUSH` from
 `brush.ts`; `PaintPanel`.
 
 ## Files

@@ -13,7 +13,3 @@ export function setLockTarget(canvas: HTMLCanvasElement | null) {
 export function requestLock() {
   target?.requestPointerLock();
 }
-
-export function isLocked() {
-  return !!target && document.pointerLockElement === target;
-}

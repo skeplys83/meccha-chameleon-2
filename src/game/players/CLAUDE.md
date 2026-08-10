@@ -17,7 +17,8 @@ bugs have been fixed; the invariants below are all scars.
 - `camera.ts` — the third-person follow and its pull-in out of walls.
 - `cling.ts` — finding a surface to climb, and holding onto it. Pure three.js
   geometry, no React and no rapier, so it imports straight into Node for testing.
-- `body.ts` — `BODY`, the collider half-extents per role.
+- `body.ts` — `BODY`, the collider half-extents per role, derived from the head
+  radius in `figure/parts.ts` rather than repeating it.
 - `pointerLock.ts` — the shared canvas handle. The canvas is created inside the
   r3f tree but `Game.tsx` and the paint panel live outside it, so the element
   both need is kept here.

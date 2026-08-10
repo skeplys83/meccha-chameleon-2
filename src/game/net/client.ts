@@ -21,6 +21,7 @@ import {
   type NetMark,
 } from "./events";
 import type { Session } from "./sessions";
+import { MAX_STROKE_BATCH } from "@/game/shared/protocol";
 
 /** Mirrors the Player schema declared in server/schema.mjs. */
 type PlayerSchema = {
@@ -152,8 +153,8 @@ export async function connect(name: string, role: Role, target: Session) {
   // A respawn is a new player as far as the server is concerned, so anything
   // already painted has to be replayed for everyone else to see it.
   const mine = encodedHistory(SELF);
-  for (let i = 0; i < mine.length; i += 50) {
-    joined.send("paint", { strokes: mine.slice(i, i + 50) });
+  for (let i = 0; i < mine.length; i += MAX_STROKE_BATCH) {
+    joined.send("paint", { strokes: mine.slice(i, i + MAX_STROKE_BATCH) });
   }
 
   joined.onLeave(() => {

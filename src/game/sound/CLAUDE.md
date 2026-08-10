@@ -10,8 +10,13 @@ follows your head, and the footstep derivation.
 ## Files
 
 - `catalogue.ts` — every sound, its file, its gain, and whether it is positional.
+  Nothing else: `WHISTLE_INTERVAL_MS` lives in `shared/`, because the server
+  rate-limits against it. A copy briefly lived here too and was the one people
+  found first, which is why `scripts/check-constants.mjs` exists.
 - `engine.ts` — the context, the master gain, the decoded buffers, the listener,
-  one-shot playback and looping playback.
+  one-shot playback and looping playback. Nothing is exported from it that has no
+  caller; `audioReady` and `brokenSounds` were removed once it was clear the HUD
+  hint and the test seam their comments promised had never been written.
 - `footsteps.ts` — turns a stream of positions into footfalls, and pitches them.
 - `SoundStage.tsx` — mounted in the Canvas; drives the listener and plays the
   networked events. Renders nothing.

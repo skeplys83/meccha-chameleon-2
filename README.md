@@ -66,7 +66,8 @@ the doc for the folder you are changing.
 ## Working on it
 
 ```bash
-npm run check:docs   # are the folder docs current with what's staged?
+npm run check:docs        # are the folder docs current with what's staged?
+npm run check:constants   # is any shared constant defined twice?
 npx tsc --noEmit
 npx eslint .
 npm run build

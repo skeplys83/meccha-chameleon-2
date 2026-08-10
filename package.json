@@ -9,6 +9,7 @@
     "start": "NODE_ENV=production node src/game/server/index.ts",
     "lint": "eslint",
     "check:docs": "node scripts/check-docs.mjs",
+    "check:constants": "node scripts/check-constants.mjs",
     "favicon": "node scripts/make-favicon.mjs"
   },
   "dependencies": {

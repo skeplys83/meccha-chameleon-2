@@ -10,7 +10,8 @@ halves of the app disagreed about them.
 
 - `protocol.ts` — `Role`, `ROOM_HALF`, `ROOM_LIMIT`, `POSE_COUNT`,
   `MAX_STROKES`, `MAX_STROKE_LENGTH`, `FIRE_INTERVAL_MS`,
-  `FIRE_INTERVAL_TOLERANCE`, `WHISTLE_INTERVAL_MS`, `WHISTLE_TOLERANCE`.
+  `FIRE_INTERVAL_TOLERANCE`, `WHISTLE_INTERVAL_MS`, `WHISTLE_TOLERANCE`,
+  `MAX_STROKE_BATCH`.
 
 ## Invariants
 
@@ -21,7 +22,15 @@ halves of the app disagreed about them.
 2. **`ROOM_LIMIT` is deliberately not `ROOM_HALF`.** 19.9 vs 20 is a real
    distinction, not a rounding slip — see the comment on the constant and
    `players/CLAUDE.md` for why the margin is that thin.
-3. **This file must stay import-free.** It is loaded by a Node process with no
+3. **Nothing here may be defined twice.** `scripts/check-constants.mjs` runs in
+   the pre-commit hook and fails if any name exported from this file is also
+   *defined* elsewhere under `src/game`. Re-exports are fine and deliberate —
+   `world/Room.tsx`, `figure/poses.ts` and `paint/skin.ts` all re-export a
+   protocol constant so callers can import it from the folder that owns the
+   concept — but a second definition is a lie. This is not hypothetical:
+   `WHISTLE_INTERVAL_MS` was moved here and the old copy left behind, so for a
+   whole commit the obvious knob was a dead one and editing it did nothing.
+4. **This file must stay import-free.** It is loaded by a Node process with no
    bundler and by the browser bundle; pulling anything else in drags that
    dependency into both. It currently imports nothing, and should not start.
 
@@ -45,6 +54,10 @@ halves of the app disagreed about them.
 - `Game.tsx` whistles on `WHISTLE_INTERVAL_MS` and `server/room.ts` rate-limits
   against it, for the same reason as firing: a client that whistled continuously
   would be a siren in everybody else's ears.
+- `net/client.ts` batches its respawn replay at `MAX_STROKE_BATCH` and
+  `server/room.ts` caps a single message at the same number. They were 50 and 64
+  written separately, which worked only because 50 was the smaller — raising the
+  client's batch past the server's cap would have lost paint silently.
 - `paint/skin.ts` trims its replay history to `MAX_STROKES`, the same cap the
   server keeps in schema. A smaller client cap would silently lose paint on
   respawn, since the respawn replay is what restores it.

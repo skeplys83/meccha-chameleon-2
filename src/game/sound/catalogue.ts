@@ -64,4 +64,3 @@ export const SOUND_NAMES = Object.keys(SOUNDS) as SoundName[];
  * broadcast so everyone heard the same one. There is no round flow yet — when
  * there is, this moves to the server.
  */
-export const WHISTLE_INTERVAL_MS = 5_000;

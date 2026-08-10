@@ -32,11 +32,6 @@ export const RECLING_GRACE = 0.4;
 /** A nudge away from the surface on release, so you fall clear of it. */
 export const RELEASE_PUSH = 2.5;
 /**
- * A normal this far toward straight down is a ceiling: you are underneath the
- * surface, so there is no "up the wall" to walk and movement stays camera-relative.
- */
-export const CEILING_DOT = -0.5;
-/**
  * How level a normal has to be to count as a wall you can walk onto. Keeps you
  * from sticking to the floor or a ramp just by walking across it.
  */
@@ -159,9 +154,6 @@ export function wrapCling(
   // Within a few degrees of the face already held is the same face.
   return found && found.dot(normal) < 0.95 ? found : null;
 }
-
-/** Underneath the surface rather than beside it — movement stays camera-relative. */
-export const isCeiling = (normal: THREE.Vector3) => normal.y < CEILING_DOT;
 
 /** Beside it, so there is an "up the wall" to walk. */
 export const isWall = (normal: THREE.Vector3) => Math.abs(normal.y) <= WALL_DOT;

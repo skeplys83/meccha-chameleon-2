@@ -133,9 +133,6 @@ export function clearSkin(id: string) {
   history.set(id, []);
 }
 
-export function strokeCount(id: string) {
-  return history.get(id)?.length ?? 0;
-}
 
 /** Everything painted on a body, ready to send — used to restore your paint
  *  after a respawn, which joins as a brand new player. */

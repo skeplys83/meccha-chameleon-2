@@ -359,12 +359,3 @@ export function stopAllLoops() {
   for (const name of [...loops.keys()]) stopLoop(name);
 }
 
-/** Whether anything is actually going to come out. Used by the HUD hint only. */
-export function audioReady() {
-  return !!ctx && ctx.state === "running" && buffers.size > 0;
-}
-
-/** Test seam: which sounds failed to load. */
-export function brokenSounds() {
-  return [...broken];
-}

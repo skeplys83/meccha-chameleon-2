@@ -76,6 +76,16 @@ export const WHISTLE_INTERVAL_MS = 45_000;
 export const WHISTLE_TOLERANCE = 0.8;
 
 /**
+ * Most strokes the server will take from a single `paint` message.
+ *
+ * The client batches its respawn replay against the same number. They used to be
+ * 50 and 64 written out separately, which worked only because 50 happened to be
+ * the smaller — raise the client's batch past the server's cap and paint would
+ * vanish silently on respawn, with nothing to say why.
+ */
+export const MAX_STROKE_BATCH = 64;
+
+/**
  * Longest encoded stroke the server will accept. `encodeStroke` in
  * `paint/skin.ts` produces about 30 characters; anything longer is not a stroke.
  */

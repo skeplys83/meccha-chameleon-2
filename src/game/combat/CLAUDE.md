@@ -15,8 +15,10 @@ the pointer-lock state. This folder owns what the shot hits, and the aftermath.
 - `Shotgun.tsx` — the prop, barrel pointing down −Z. Shared by the viewmodel and
   by the figure other players see.
 - `Viewmodel.tsx` — the seeker's own arms and gun, riding the camera.
-- `Marks.tsx` — yellow patches where a shot hit a wall. Three seconds. Also
-  exports the `Mark` type, which `Scene.tsx` holds the list of.
+- `Marks.tsx` — yellow patches where a shot hit a wall. Three seconds. `Mark` is
+  an **alias** of `net/events`'s `NetMark`, not a second declaration: a mark is
+  made by the server and handed to this component without changing shape, so two
+  identical types would only wait to drift apart.
 - `Graves.tsx` — red squares where somebody died. Permanent.
 
 ## Invariants

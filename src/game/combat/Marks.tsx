@@ -1,16 +1,17 @@
 "use client";
 
 import { DoubleSide } from "three";
+import type { NetMark } from "@/game/net";
 
 /**
- * A shot patch, as the scene holds it. Same shape as `NetMark` in `net/events`,
- * which is where one arrives from — this is the render side of it.
+ * A shot patch, as the scene holds it.
+ *
+ * An alias rather than a second declaration: a mark is created by the server,
+ * arrives through `net/events`, and is handed straight to this component without
+ * changing shape. The two used to be identical types written out twice, which is
+ * a mirror waiting to drift the moment one of them gains a field.
  */
-export type Mark = {
-  id: string;
-  position: [number, number, number];
-  rotation: [number, number, number];
-};
+export type Mark = NetMark;
 
 /** Yellow patches left where a seeker's shot landed. */
 export function Marks({ marks }: { marks: Mark[] }) {

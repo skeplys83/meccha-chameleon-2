@@ -40,8 +40,10 @@ The other half is `server/`. Every message named below has a handler there.
    one, so `client.ts` funnels both into `emitGrave` and the scene has exactly
    one way in. Do not add a second path for "existing" graves.
 5. **A respawn is a brand new player to the server**, so `connect` replays your
-   own encoded stroke history in batches of 50 or your paint would vanish for
-   everyone else.
+   own encoded stroke history or your paint would vanish for everyone else. The
+   batch size is `MAX_STROKE_BATCH` from `shared/`, the same number the server
+   caps a single message at — they were 50 and 64 written separately, which only
+   worked because 50 was the smaller of the two.
 
 ## Contracts
 
