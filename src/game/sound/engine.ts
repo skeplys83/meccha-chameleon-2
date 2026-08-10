@@ -34,6 +34,8 @@ const loops = new Map<SoundName, { source: AudioBufferSourceNode; gain: GainNode
 let loading: Promise<void> | null = null;
 let unlockBound = false;
 let warnedSuspended = false;
+/** Suspended by the pause menu rather than by never having been unlocked. */
+let pausedByGame = false;
 
 /**
  * Anything the browser counts as a user gesture. `keydown` matters most: you
@@ -151,6 +153,9 @@ export function unlockAudio() {
 
 /** Pause silences everything rather than letting sounds run on behind the menu. */
 export function setAudioSuspended(suspended: boolean) {
+  // Recorded even without a context, so a sound arriving while paused is never
+  // mistaken for the "we were never unlocked" fault the warning below is for.
+  pausedByGame = suspended;
   if (!ctx) return;
   if (suspended && ctx.state === "running") void ctx.suspend();
   if (!suspended && ctx.state === "suspended") void ctx.resume();
@@ -218,7 +223,7 @@ export function playSound(name: SoundName, options: PlayOptions = {}) {
   if (context.state !== "running") {
     const was = context.state;
     void context.resume();
-    if (!warnedSuspended) {
+    if (!warnedSuspended && !pausedByGame) {
       warnedSuspended = true;
       console.warn(
         `sound: "${name}" was dropped because the AudioContext was "${was}". ` +

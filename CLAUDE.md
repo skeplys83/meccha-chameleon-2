@@ -202,7 +202,7 @@ was all confirmed.
 
 ## Not built yet
 
-No round flow (hide phase, timer, win condition), no lobby or ready-up, no health
-— a hit is instantly fatal. `whistle.wav` is loaded and deliberately unwired,
-waiting for a round to start. Paint has no undo and no per-part erase. Each
-folder's doc ends with the gaps specific to it.
+No round flow (hide phase, win condition), no lobby or ready-up, no health — a
+hit is instantly fatal. The whistle marks 45 s intervals on each client's own
+clock, which stands in for a round timer without being one. Paint has no undo and
+no per-part erase. Each folder's doc ends with the gaps specific to it.

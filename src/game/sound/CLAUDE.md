@@ -67,10 +67,13 @@ follows your head, and the footstep derivation.
    unlocks, and drops them once it is running. `keydown` is the one that matters:
    you cannot walk without pressing a key, so footsteps can never be the first
    thing to discover the context is still locked.
-6. **A dropped sound says why, once.** If `playSound` is called while the context
-   is not running it retries the resume, drops that one sound, and warns to the
-   console — naming the sound and the state. A silent game with a silent cause is
-   the worst thing this module can do, and it cost a full debugging round.
+6. **A dropped sound says why, once — but not when the pause did it.** If
+   `playSound` is called while the context is not running it retries the resume,
+   drops that one sound, and warns to the console, naming the sound and the
+   state. A silent game with a silent cause is the worst thing this module can
+   do, and it cost a full debugging round. `setAudioSuspended(true)` records that
+   the silence is deliberate, so the whistle firing behind the pause menu does
+   not cry wolf — a diagnostic nobody trusts is worse than none.
 7. **The context is created early, resumed late.** Constructing a suspended
    `AudioContext` needs no gesture, so `SoundStage` builds it on mount and decodes
    the buffers then — otherwise the first shot of the round would be the one
@@ -171,6 +174,10 @@ follows your head, and the footstep derivation.
   to hear. `SoundStage` owns everyone else's.
 - **`Game.tsx` calls `unlockAudio()` on join and `setAudioSuspended(paused)`**, so
   a shot fired the instant before Esc does not ring on behind the menu.
+- **`Game.tsx` also runs the whistle**, on a `WHISTLE_INTERVAL_MS` timer that
+  lives while you are in a session. It is keyed on the session rather than on
+  `killedBy`, so the rhythm survives a death and respawn — it marks time in the
+  room, not time alive.
 - **The brush loop is driven by `paint/brushCursor.ts`'s `onDrawingChange`**, via
   `players/Player.tsx`. `paint/` does not import `sound/` — it reports that a drag
   started or ended and lets the caller decide that makes a noise. One hook rather
@@ -210,7 +217,12 @@ part of this project's workflow — see the root CLAUDE.md.
 No music, no ambience, no UI sounds, no volume control or mute in the HUD. No
 reverb, so the arena sounds like open air rather than a room. **Nobody else hears
 you brushing** — the loop is local, because "is painting" is not on the wire. It
-would be a fair thing to broadcast, and a good way to be found. `whistle.wav` is
-loaded and deliberately unwired — it is waiting for a round to start, and there is
-no round flow yet. Nothing varies footstep sound by surface, because every surface
-in the arena is the same material.
+would be a fair thing to broadcast, and a good way to be found. Nothing varies
+footstep sound by surface, because every surface in the arena is the same
+material.
+
+**The whistle runs on each client's own clock**, 45 s from when that player
+joined, so two people who joined a minute apart hear it a minute apart. That is
+right for a marker of elapsed time and wrong for a round boundary, which would
+have to be broadcast so everyone heard the same one. When there is a round flow,
+this moves to the server.

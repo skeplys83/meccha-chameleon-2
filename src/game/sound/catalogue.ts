@@ -44,9 +44,23 @@ export const SOUNDS: Record<SoundName, SoundSpec> = {
    * hand, at your own ear — so stereo is right for it.
    */
   brush: { url: "/sounds/brush.wav", gain: 0.28, positional: false },
-  /** Global, stereo, and currently **unwired** — there is no round flow to start
-   *  yet. It loads with the rest so hooking it up is a one-line change. */
+  /**
+   * The round marker, on a timer from the moment you join. Global rather than
+   * positional — it is not coming from anywhere in the room, so stereo is right
+   * for it.
+   */
   whistle: { url: "/sounds/whistle.wav", gain: 0.7, positional: false },
 };
 
 export const SOUND_NAMES = Object.keys(SOUNDS) as SoundName[];
+
+/**
+ * How often the whistle sounds, from the moment you join.
+ *
+ * It runs on each client's own clock rather than the server's, so two players
+ * who joined a minute apart hear it a minute apart. That is fine for a marker of
+ * elapsed time; it would be wrong for a round boundary, which would have to be
+ * broadcast so everyone heard the same one. There is no round flow yet — when
+ * there is, this moves to the server.
+ */
+export const WHISTLE_INTERVAL_MS = 45_000;

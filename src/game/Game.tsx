@@ -19,7 +19,8 @@ import {
 } from "@/game/net";
 import { clearSkin, SELF } from "@/game/paint/skin";
 import { requestLock } from "@/game/players/pointerLock";
-import { setAudioSuspended, unlockAudio } from "@/game/sound/engine";
+import { playSound, setAudioSuspended, unlockAudio } from "@/game/sound/engine";
+import { WHISTLE_INTERVAL_MS } from "@/game/sound/catalogue";
 import type { Role } from "@/game/shared/protocol";
 
 // The renderer touches WebGL/window, so it must never run on the server.
@@ -61,6 +62,15 @@ export function Game() {
   useEffect(() => {
     setAudioSuspended(paused);
   }, [paused]);
+
+  // The whistle, from the moment you join until you leave. Keyed on the session
+  // rather than on `killedBy`, so it keeps its rhythm across a death and respawn
+  // — it is marking time in the room, not time alive.
+  useEffect(() => {
+    if (!role || !session) return;
+    const whistle = setInterval(() => playSound("whistle"), WHISTLE_INTERVAL_MS);
+    return () => clearInterval(whistle);
+  }, [role, session]);
 
   const join = useCallback((who: string, picked: Role, target: Session) => {
     // This runs from the role button's click handler, which is the user gesture
