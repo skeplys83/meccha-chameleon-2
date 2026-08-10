@@ -1,5 +1,7 @@
 "use client";
 
+import { useGLTF } from "@react-three/drei";
+
 import { Piece, preloadPieces } from "../Piece";
 
 /**
@@ -40,7 +42,8 @@ const BARREL = src("barrel_large");
 const BOX = src("box_large");
 const COLUMN = src("column");
 
-preloadPieces([FLOOR, CEIL, WALL, DOORWAY, BARREL, BOX, COLUMN]);
+const PIECES = [FLOOR, CEIL, WALL, DOORWAY, BARREL, BOX, COLUMN];
+preloadPieces(PIECES);
 
 /** Tile size, and the whole reason the numbers below are round. */
 const TILE = 4;
@@ -126,6 +129,22 @@ const props: Placed[] = [
 const LAYOUT: Placed[] = [...floors, ...ceiling, ...walls, ...divider, ...props];
 
 export function Dungeon() {
+  /**
+   * Load every model here, in one call, before a single `Piece` renders.
+   *
+   * Each `Piece` also calls `useGLTF`, and if the first one to want a file were
+   * the one to fetch it, the map would suspend once per *file*: React discards a
+   * suspended tree, so the rigid bodies of the pieces that had already committed
+   * would be torn down and rebuilt on every one of those rounds. Rapier does not
+   * survive that — it panics inside wasm with `unreachable`, and from then on
+   * every call throws `recursive use of an object`, which kills physics for the
+   * rest of the session.
+   *
+   * One suspension, resolved before any `RigidBody` is created. The per-piece
+   * `useGLTF` calls below then read straight from the cache.
+   */
+  useGLTF(PIECES);
+
   return (
     <>
       {LAYOUT.map((p, i) => (

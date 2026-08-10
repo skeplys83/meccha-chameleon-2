@@ -174,8 +174,11 @@ one role, and **adding a control means deciding whose it is.**
 
 ## Contracts
 
-- **Reads `world/Room.tsx`** for `ROOM_SURFACE`, collected once from the scene
-  graph on mount because the room is static.
+- **Reads `world/Room.tsx`** for `ROOM_SURFACE`, and `world/surface.ts` for the
+  revision counter that says when to look again. The list is rebuilt in the frame
+  loop whenever that counter moves — a map finishing its load, or one map
+  replacing another — because collecting once on mount silently produced an empty
+  list for any map that suspends.
 - **Reads `shared/protocol.ts`** for `Role`, **`figure/`** for `POSES`,
   `poseExtents` and `StickFigure`, **`paint/`** for the brush and the stroke
   encoding, and **`net/`** for the senders.

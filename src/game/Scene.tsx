@@ -72,7 +72,14 @@ export default function Scene({
 
   return (
     <KeyboardControls map={controlMap}>
-      <Canvas shadows camera={{ fov: 60, position: [0, 5, 11] }} dpr={[1, 2]}>
+      {/* "percentage" is PCFShadowMap. Bare `shadows` means PCFSoftShadowMap,
+          which three has deprecated and silently downgrades to exactly this —
+          so naming it changes nothing on screen and drops the warning. */}
+      <Canvas
+        shadows="percentage"
+        camera={{ fov: 60, position: [0, 5, 11] }}
+        dpr={[1, 2]}
+      >
         <color attach="background" args={["#ffffff"]} />
         <ambientLight intensity={1.2} />
         <directionalLight

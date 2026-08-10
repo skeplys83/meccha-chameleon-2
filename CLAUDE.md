@@ -103,8 +103,11 @@ Next picks `icon.svg` up automatically — there is no `favicon.ico` and no
 | `hud/`     | the 2D overlays outside the Canvas                   | menus, legends, name entry                    |
 
 `Game.tsx` and `Scene.tsx` are the composition roots and belong to no folder.
-`Scene.tsx` also owns the `<Physics>` settings — see trap 4, which is the reason
-the timestep is not the library default.
+`Scene.tsx` also owns the `<Physics>` and `<Canvas>` settings — see trap 4 for
+why the timestep is not the library default, and note that `shadows` is spelled
+`"percentage"` rather than left bare, because three has deprecated the
+`PCFSoftShadowMap` that a bare `shadows` selects and downgrades it to exactly
+this anyway.
 Every mode transition in the game is decided in `Game.tsx` — which also means it
 owns the *teardown* of each: joining unlocks audio, pausing suspends it, and
 dying or leaving stops every looping sound. It owns the seeker's pointer lock the

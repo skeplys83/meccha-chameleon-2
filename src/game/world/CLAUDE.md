@@ -68,20 +68,38 @@ empty menu entry or silently refusing a legitimate choice.
    dead-ends at the slab, and the big drum has a smaller drum beside it as its
    step. The cone, the capsule and the crystal are the deliberate exceptions — a
    hider who cannot reach the high ground has nowhere to hide but the corners.
-7. **A loaded model must be cloned per placement, and named.** One `Object3D`
+7. **A map that loads files must suspend exactly once, before any `RigidBody`
+   exists.** Each `Piece` calls `useGLTF`, so if the first piece to want a file
+   were the one to fetch it, the map would suspend once *per file* — and React
+   discards a suspended tree, so pieces that had already committed would have
+   their rigid bodies torn down and rebuilt on every round. Rapier does not
+   survive that: it panics with `unreachable` and every later call throws
+   `recursive use of an object`, killing physics for the session. `dungeon.tsx`
+   loads all seven models in one `useGLTF(PIECES)` at the top of the component;
+   the per-piece calls below then read from cache.
+8. **Anything that changes the set of surfaces must call `bumpSurfaces`.**
+   `players/Player.tsx` collects `ROOM_SURFACE` meshes and reuses the list for
+   the shot raycast, the ground ray, the climb probes and the camera. It used to
+   collect them once in a mount effect, which worked only because the arena is
+   plain JSX and exists by then. A map built from files suspends, so the player
+   mounted first, found nothing, and kept an empty list forever — no floor, no
+   walls, no climbing, no shots, which reads exactly like "the controls are
+   broken". `Room` bumps the counter when a map mounts and again when it
+   unmounts, and the player re-collects on the next frame.
+9. **A loaded model must be cloned per placement, and named.** One `Object3D`
    cannot be in two places, and the dungeon uses the same wall two dozen times.
    `Piece` clones in a `useMemo` — before render, so the `ROOM_SURFACE` names
    exist by the time `players/Player.tsx` collects them in its mount effect — and
    `clone(true)` shares geometry and materials, so every piece still draws from
    the one 17 KB atlas.
-8. **Assets are committed uncompressed, beside their `.bin` and their texture.**
+10. **Assets are committed uncompressed, beside their `.bin` and their texture.**
    No Draco: drei's decoder is fetched from a Google CDN, which a LAN game cannot
    reach. And `.gltf` rather than `.glb` on purpose here — the pack shares one
    atlas across every piece, so keeping it external means one download and one
    GPU texture, where `.glb` would embed a copy per file.
-9. **Only the pieces a map uses are copied in.** KayKit's pack is 6.3 MB across
+11. **Only the pieces a map uses are copied in.** KayKit's pack is 6.3 MB across
    211 models; the dungeon needs seven, which is 204 KB including the atlas.
-10. **Nine pieces are painted in exact `PAINT` hexes.** Same table the swatch row
+12. **Nine pieces are painted in exact `PAINT` hexes.** Same table the swatch row
    renders. Pick the matching swatch, paint yourself, and you can test camouflage
    against a true match instead of eyeballing it. That is the whole point; do not
    "tidy" an arena colour to something off-palette.

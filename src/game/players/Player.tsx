@@ -27,6 +27,7 @@ import { BODY } from "./body";
 import { FIRE_INTERVAL_MS, type Role } from "@/game/shared/protocol";
 import { POSES, poseExtents } from "@/game/figure/poses";
 import { ROOM_SURFACE } from "@/game/world/Room";
+import { surfaceRevision } from "@/game/world/surface";
 import { StickFigure } from "@/game/figure/StickFigure";
 import { resolveShot } from "@/game/combat/shoot";
 import { sendKill, sendPaint, sendShoot, sendState } from "@/game/net";
@@ -118,6 +119,9 @@ export function Player({
   const jumpHeld = useRef(false);
   const netState = useRef({ x: 0, y: 4, z: 0, yaw: 0, pitch: 0, pose: 0, cling: false });
   const solids = useRef<THREE.Object3D[]>([]);
+  /** Which version of the world `solids` was collected from. -1 forces a first
+   *  pass on the very first frame. */
+  const solidsRevision = useRef(-1);
   const [pose, setPose] = useState(0);
   const brushRef = useRef(brush);
   const paintingRef = useRef(painting);
@@ -189,16 +193,6 @@ export function Player({
       onHoverBody(next);
     };
   }, [onHoverBody]);
-
-  // The room is static, so its meshes are collected once and reused for the
-  // shot raycast, the ground test and keeping the camera out of walls.
-  useEffect(() => {
-    const list: THREE.Object3D[] = [];
-    scene.traverse((o) => {
-      if (o.name === ROOM_SURFACE) list.push(o);
-    });
-    solids.current = list;
-  }, [scene]);
 
   // Mouse look, painting and shooting all depend on the pointer, so they are
   // installed together and share one teardown.
@@ -385,6 +379,19 @@ export function Player({
   useFrame((state, delta) => {
     const rb = body.current;
     if (!rb) return;
+
+    // Re-collect the room's surfaces when the world changes — a map finishing
+    // its load, or a different map taking over. Everything below raycasts
+    // against this list, so a stale or empty one is a player who cannot stand
+    // on anything. An integer compare on the frames where nothing changed.
+    if (solidsRevision.current !== surfaceRevision()) {
+      solidsRevision.current = surfaceRevision();
+      const list: THREE.Object3D[] = [];
+      scene.traverse((o) => {
+        if (o.name === ROOM_SURFACE) list.push(o);
+      });
+      solids.current = list;
+    }
 
     // A curled or seated figure gets a smaller collider (see poseExtents). The
     // box grows and shrinks around the body's centre, so the body has to be

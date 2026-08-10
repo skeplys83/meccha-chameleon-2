@@ -1,7 +1,8 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect, type ComponentType } from "react";
 import { MAPS, safeMapId, type MapId } from "./maps";
+import { bumpSurfaces } from "./surface";
 
 export { ROOM_SURFACE } from "./surface";
 export { ROOM_HALF } from "@/game/shared/protocol";
@@ -21,7 +22,23 @@ export function Room({ map }: { map: MapId | string }) {
   // the lights and the player with it — the same trap `<Environment>` set.
   return (
     <Suspense fallback={null}>
-      <Component />
+      <Mounted Component={Component} />
     </Suspense>
   );
+}
+
+/**
+ * Tells the rest of the game the world's surfaces have changed.
+ *
+ * The effect runs after the map's own subtree has mounted — React runs child
+ * effects first — so by the time it fires, every mesh is in the scene and can be
+ * found. It fires again on unmount, so swapping maps does not leave the player
+ * raycasting against geometry that is gone.
+ */
+function Mounted({ Component }: { Component: ComponentType }) {
+  useEffect(() => {
+    bumpSurfaces();
+    return bumpSurfaces;
+  }, [Component]);
+  return <Component />;
 }
