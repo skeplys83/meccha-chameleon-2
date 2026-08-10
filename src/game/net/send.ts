@@ -13,8 +13,9 @@ export function sendState(
   yaw: number,
   pitch: number,
   pose: number,
+  cling: boolean,
 ) {
-  getRoom()?.send("state", { p, yaw, pitch, pose });
+  getRoom()?.send("state", { p, yaw, pitch, pose, cling });
 }
 
 /** Strokes are batched by the caller — a drag produces far more points than

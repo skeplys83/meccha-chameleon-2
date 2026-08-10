@@ -25,6 +25,7 @@ type PlayerSchema = {
   yaw: number;
   pitch: number;
   pose: number;
+  cling: boolean;
   strokes: { forEach(cb: (raw: string) => void): void };
 };
 
@@ -67,6 +68,7 @@ export async function connect(name: string, role: Role, target: Session) {
         yaw: player.yaw,
         pitch: player.pitch,
         pose: player.pose,
+        cling: player.cling,
       },
     });
     emitRoster();
@@ -89,6 +91,7 @@ export async function connect(name: string, role: Role, target: Session) {
       remote.target.yaw = player.yaw;
       remote.target.pitch = player.pitch;
       remote.target.pose = player.pose;
+      remote.target.cling = player.cling;
     });
   });
 

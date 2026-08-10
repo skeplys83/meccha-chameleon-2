@@ -44,8 +44,9 @@ The other half is `server/`. Every message named below has a handler there.
 
 ## Contracts
 
-- **Out** (`send.ts` → `server/room.ts`): `state` at 20 Hz, `paint` batched
-  every 100 ms, `shoot`, `kill`, `clearSkin`.
+- **Out** (`send.ts` → `server/room.ts`): `state` at 20 Hz — position, yaw,
+  pitch, pose and `cling` — plus `paint` batched every 100 ms, `shoot`, `kill`
+  and `clearSkin`.
 - **In** (`client.ts` ← server): `shot`, `mark`, `paint`, `clearSkin`, `killed`,
   plus the `players` and `graves` schema callbacks.
 - **`shot` carries the shooter's session id, not a position.** Every client

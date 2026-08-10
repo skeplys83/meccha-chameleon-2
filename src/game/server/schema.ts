@@ -31,6 +31,9 @@ export class Player extends Schema {
   declare yaw: number;
   declare pitch: number;
   declare pose: number;
+  /** Stuck to a wall or the ceiling. Cosmetic — it keeps other clients from
+   *  playing footsteps for someone sliding along a surface. */
+  declare cling: boolean;
   declare strokes: ArraySchema<string>;
 
   constructor() {
@@ -50,6 +53,7 @@ defineTypes(Player, {
   yaw: "number",
   pitch: "number",
   pose: "number",
+  cling: "boolean",
   strokes: ["string"],
 });
 

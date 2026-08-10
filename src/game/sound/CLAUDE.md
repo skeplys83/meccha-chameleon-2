@@ -148,7 +148,11 @@ follows your head, and the footstep derivation.
 ## Contracts
 
 - **Reads `net/`** for `onShot` and `onKilled`, and reads `remotes` directly each
-  frame for footstep positions.
+  frame for footstep positions — including `cling`, which silences a climber.
+  A remote's stepper only ever sees a position, and sliding along a wall or
+  walking a ceiling is indistinguishable from walking a floor, so the flag has to
+  come off the wire. Climbing *straight up* is silent for free, since the stepper
+  ignores Y.
 - **`onShot` carries the shooter's session id, not a position.** Every client
   already knows where that player is; a coordinate on the wire would only be
   staler. `remotes` never holds *you*, so your own shot resolves to no position —

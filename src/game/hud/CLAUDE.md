@@ -23,8 +23,8 @@ you join.
    the legend — a label, not behaviour.
 2. **`ControlsPanel` holds one legend per role and they are not built from a
    shared base.** If a row is on a card, that role must really have it wired up
-   in `players/Player.tsx`. A hider has no shoot; a seeker has no pose, no `Q`/`E`
-   and no zoom, so none of those may appear on the wrong card. Those two files
+   in `players/Player.tsx`. A hider has no shoot; a seeker has no pose, no
+   `Q`/`E`, no zoom and no climb, so none of those may appear on the wrong card. Those two files
    are the contract.
 3. **The player name is per tab, in `sessionStorage`, not a cookie.** Two tabs on
    one machine is how you test two players locally, and a cookie made them share

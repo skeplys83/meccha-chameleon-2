@@ -13,6 +13,15 @@ import * as THREE from "three";
 import type { Control } from "./controls";
 import { controlMap, poseControl } from "./controls";
 import { followThirdPerson } from "./camera";
+import {
+  CLIMB_SPEED,
+  CLING_REACH,
+  RECLING_GRACE,
+  STICK_SPEED,
+  findCling,
+  holdsCling,
+  isCeiling,
+} from "./cling";
 import { BODY } from "./body";
 import { FIRE_INTERVAL_MS, type Role } from "@/game/shared/protocol";
 import { POSES, poseExtents } from "@/game/figure/poses";
@@ -53,6 +62,8 @@ const lookDir = new THREE.Vector3();
 const euler = new THREE.Euler(0, 0, 0, "YXZ");
 const quat = new THREE.Quaternion();
 const groundRay = new THREE.Raycaster();
+/** Scratch for the movement vector projected onto the surface being climbed. */
+const alongSurface = new THREE.Vector3();
 const DOWN = new THREE.Vector3(0, -1, 0);
 /** How far below the feet still counts as standing on something. */
 const GROUND_REACH = 0.2;
@@ -102,7 +113,7 @@ export function Player({
   /** Space last frame, so a jump fires on the press and not on every frame the
    *  key is held down. */
   const jumpHeld = useRef(false);
-  const netState = useRef({ x: 0, y: 4, z: 0, yaw: 0, pitch: 0, pose: 0 });
+  const netState = useRef({ x: 0, y: 4, z: 0, yaw: 0, pitch: 0, pose: 0, cling: false });
   const solids = useRef<THREE.Object3D[]>([]);
   const [pose, setPose] = useState(0);
   const brushRef = useRef(brush);
@@ -121,6 +132,16 @@ export function Player({
   const stepper = useRef(new Stepper(strideFor(role)));
   /** When the shotgun last went off, so a held mouse button is one shot. */
   const lastShot = useRef(0);
+  /**
+   * The surface a hider is stuck to, as a normal pointing back at them, or null
+   * when free. A wall gives a horizontal normal, a ceiling `(0, −1, 0)`. The
+   * figure never reorients — see `cling.ts`.
+   */
+  const cling = useRef<THREE.Vector3 | null>(null);
+  /** Seconds left before a surface can be grabbed again after letting go. */
+  const reclingGrace = useRef(0);
+  /** Shift last frame, so dropping off a ceiling fires once per press. */
+  const descendHeld = useRef(false);
   const ring = useRef<THREE.Mesh>(null);
   const [, getKeys] = useKeyboardControls<Control>();
   const { gl, camera, scene, raycaster } = useThree();
@@ -314,7 +335,7 @@ export function Player({
   useEffect(() => {
     const send = setInterval(() => {
       const t = netState.current;
-      sendState([t.x, t.y, t.z], t.yaw, t.pitch, t.pose);
+      sendState([t.x, t.y, t.z], t.yaw, t.pitch, t.pose, t.cling);
     }, STATE_SEND_MS);
     return () => clearInterval(send);
   }, []);
@@ -405,23 +426,80 @@ export function Player({
     const grounded =
       solids.current.length > 0 &&
       groundRay.intersectObjects(solids.current, false).length > 0;
-    const jumping = keys.jump && !jumpHeld.current && grounded;
-    jumpHeld.current = keys.jump;
 
-    // Your own steps are not positional: you are the listener, and a panner at
-    // zero distance behaves badly. Quieter than everyone else's, because your own
-    // feet are the ones you least need to hear.
-    if (grounded && stepper.current.update(p.x, p.y, p.z, delta)) {
+    // ---------------------------------------------------------------- climbing
+    //
+    // A hider sticks to any surface in the arena and stays upright on it. Space
+    // grabs and climbs, Shift goes back down — or lets go, if the surface is
+    // overhead. Seekers hunt on the floor and have none of this.
+    if (reclingGrace.current > 0) reclingGrace.current -= delta;
+    const spacePressed = keys.jump && !jumpHeld.current;
+    const shiftPressed = keys.descend && !descendHeld.current;
+
+    if (role === "hider") {
+      if (cling.current) {
+        // Still on it? A curved surface keeps handing back a fresh normal as you
+        // move across it; a missing one means the surface ran out — climbing
+        // past the top of a box, say — and gravity takes over from here.
+        cling.current = holdsCling(bodyPos, cling.current, CLING_REACH, solids.current);
+
+        // Shift drops you off a ceiling rather than walking you down it.
+        if (cling.current && shiftPressed && isCeiling(cling.current)) cling.current = null;
+        if (!cling.current) reclingGrace.current = RECLING_GRACE;
+      } else if (spacePressed && reclingGrace.current <= 0) {
+        // Space next to something climbable grabs it. Away from a surface it is
+        // still the jump it always was — see the velocity block below.
+        cling.current = findCling(bodyPos, CLING_REACH, solids.current);
+      }
+    } else {
+      cling.current = null;
+    }
+
+    const clinging = cling.current !== null;
+    rb.setGravityScale(clinging ? 0 : 1, true);
+
+    const jumping = !clinging && keys.jump && !jumpHeld.current && grounded;
+    jumpHeld.current = keys.jump;
+    descendHeld.current = keys.descend;
+
+    // Footsteps are for walking. Sliding up a wall or hanging off the roof is
+    // silent — which is most of the point of being up there.
+    if (!clinging && grounded && stepper.current.update(p.x, p.y, p.z, delta)) {
+      // Your own steps are not positional: you are the listener, and a panner at
+      // zero distance behaves badly. Quieter than everyone else's, because your
+      // own feet are the ones you least need to hear.
       playSound("step", { rate: jitteredStepRate(role), gain: 0.8 });
-    } else if (!grounded) {
+    } else if (clinging || !grounded) {
       stepper.current.reset();
     }
 
     const velocity = rb.linvel();
-    rb.setLinvel(
-      { x: move.x, y: jumping ? JUMP_SPEED : velocity.y, z: move.z },
-      true,
-    );
+    if (cling.current) {
+      const normal = cling.current;
+      // WASD flattened into the surface: walking into a wall projects to
+      // nothing, walking along it slides. On a ceiling the projection is the
+      // identity, so it is simply normal walking — one formula, both cases.
+      alongSurface.copy(move).addScaledVector(normal, -move.dot(normal));
+
+      // Space and Shift run up and down the wall. On a ceiling Shift has already
+      // let go above, so only the climb-up term can be live here.
+      const climb =
+        (Number(keys.jump) - Number(keys.descend)) * CLIMB_SPEED * (isCeiling(normal) ? 0 : 1);
+
+      rb.setLinvel(
+        {
+          x: alongSurface.x - normal.x * STICK_SPEED,
+          y: alongSurface.y + climb - normal.y * STICK_SPEED,
+          z: alongSurface.z - normal.z * STICK_SPEED,
+        },
+        true,
+      );
+    } else {
+      rb.setLinvel(
+        { x: move.x, y: jumping ? JUMP_SPEED : velocity.y, z: move.z },
+        true,
+      );
+    }
 
     // The body's rotation is frozen, so the figure is turned by rotating the
     // visual group and the collider together. The roll of a lying pose is
@@ -441,6 +519,9 @@ export function Player({
     net.yaw = bodyYaw.current;
     net.pitch = role === "seeker" ? pitch.current : 0;
     net.pose = pose;
+    // Sent so other clients can keep a climber's footsteps quiet — their stepper
+    // only sees a position, and sliding along a wall looks like walking.
+    net.cling = clinging;
 
     const cp = Math.cos(pitch.current);
     lookDir.set(-Math.sin(y) * cp, Math.sin(pitch.current), -Math.cos(y) * cp);

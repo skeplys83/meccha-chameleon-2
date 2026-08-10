@@ -15,6 +15,8 @@ bugs have been fixed; the invariants below are all scars.
 - `Player.tsx` — the local player: the pointer handlers, the physics frame loop
   and the network send timers.
 - `camera.ts` — the third-person follow and its pull-in out of walls.
+- `cling.ts` — finding a surface to climb, and holding onto it. Pure three.js
+  geometry, no React and no rapier, so it imports straight into Node for testing.
 - `body.ts` — `BODY`, the collider half-extents per role.
 - `pointerLock.ts` — the shared canvas handle. The canvas is created inside the
   r3f tree but `Game.tsx` and the paint panel live outside it, so the element
@@ -41,6 +43,7 @@ one role, and **adding a control means deciding whose it is.**
 | Size | half-extents `[0.26, 1, 0.26]` | `[0.52, 1.3, 0.52]` |
 | Look | right-drag (cursor stays free) | mouse (pointer locked) |
 | Turn the figure | `Q`/`E`, independent of the camera | none — the figure faces the aim |
+| Climb | `Space` grabs and goes up, `Shift` goes down | none |
 | Poses | `1`–`5` | none, always upright |
 | Zoom | scroll | none |
 | Paint | left-drag on your body | pin the palette, drops to third person |
@@ -103,7 +106,28 @@ one role, and **adding a control means deciding whose it is.**
 12. **The shotgun is rate-limited here as well as on the server.** `lastShot`
     against `FIRE_INTERVAL_MS`, checked before the raycast, so a held button is
     one shot. The client copy is for feel; the server's is what actually binds.
-13. **Your own footsteps live in this file**, because it is the only place that
+13. **A hider climbs, and never reorients while doing it.** `Space` next to a
+    surface grabs it; `Space` away from one is still the jump it always was.
+    `Shift` walks back down, or lets go if the surface is overhead. The whole
+    state is one vector — `cling`, the surface normal pointing back at the body —
+    and the figure stays upright throughout. That constraint is what keeps the
+    feature small: the camera, the poses and the `yaw` on the wire are all
+    untouched by it. Do not be tempted to rotate the figure onto the surface
+    without also rebuilding the camera basis, or `W` walks down the screen.
+14. **Movement while clinging is `move` flattened into the surface.** Walking
+    into a wall projects to nothing, walking along it slides, and on a ceiling
+    the projection is the identity — so ceiling movement is ordinary walking. One
+    formula covers walls, object sides and roofs.
+15. **Gravity is switched off per body, not globally.** `setGravityScale(0)` while
+    clinging, `1` otherwise, set every frame from one place so the two can never
+    disagree. A constant `STICK_SPEED` into the surface holds contact.
+16. **Climbing off the top of something is not a special case.** The per-frame
+    `holdsCling` ray simply misses, gravity comes back, and you drop the last few
+    centimetres onto the top face. Losing the surface is already the "let go"
+    path; reusing it is why there is no ledge-mantling code.
+17. **`RECLING_GRACE` after letting go.** Without it, releasing a ceiling
+    re-grabs it on the very next frame and `Shift` appears to do nothing.
+18. **Your own footsteps live in this file**, because it is the only place that
     knows you are grounded — nobody else's `grounded` is on the wire. They play
     without a position (you are the listener) and a little quieter than everyone
     else's. The `Stepper` is built with `strideFor(role)`, so a hider's cadence is
@@ -124,6 +148,14 @@ one role, and **adding a control means deciding whose it is.**
 - Sends on a 50 ms `setInterval`, not from `useFrame` — see `net/CLAUDE.md`.
 - **Reads `sound/`** for `playSound`, `startLoop`/`stopLoop` and the `Stepper`,
   and `shared/` for `FIRE_INTERVAL_MS`.
+- **Climbing needs `world/`'s `ROOM_SURFACE` meshes**, the same list already
+  collected once for shooting, the ground ray and the camera. Every surface in
+  the arena is therefore climbable for free — walls, ceiling, all 25 obstacles,
+  including the curved ones. Nothing had to opt in.
+- **`cling` is broadcast** so other clients can keep a climber's footsteps quiet;
+  their stepper only sees a position, and sliding along a wall looks exactly like
+  walking. Nothing else about climbing goes on the wire, because the figure does
+  not reorient — the existing `yaw` still describes it completely.
 - **Owns the brush loop.** `createBrushCursor`'s `onDrawingChange` starts and
   stops it, and the pointer effect's teardown stops it again — a loop outlives the
   component that started it otherwise.

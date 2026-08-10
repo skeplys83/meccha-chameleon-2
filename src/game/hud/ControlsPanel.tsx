@@ -13,7 +13,8 @@ type Row = [key: string, action: string];
  */
 const HIDER: Row[] = [
   ["W A S D", "Move (relative to view)"],
-  ["Space", "Jump"],
+  ["Space", "Jump · climb up a surface"],
+  ["Shift", "Climb down · drop off a ceiling"],
   ["Q / E", "Turn your figure"],
   ["Right drag", "Look around"],
   ["Scroll", "Zoom the camera"],

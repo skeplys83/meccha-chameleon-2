@@ -9,6 +9,7 @@ export type Control =
   | "jump"
   | "turnLeft"
   | "turnRight"
+  | "descend"
   | `pose${number}`;
 
 /** `1`–`8` select a pose; index 0 is the upright stance. */
@@ -22,6 +23,9 @@ export const controlMap: KeyboardControlsEntry<Control>[] = [
   { name: "jump", keys: ["Space"] },
   { name: "turnLeft", keys: ["KeyQ"] },
   { name: "turnRight", keys: ["KeyE"] },
+  // A hider's climb-down. Space is the climb-up, because it is already the key
+  // you press to leave the ground.
+  { name: "descend", keys: ["ShiftLeft", "ShiftRight"] },
   ...POSES.map((_, i) => ({
     name: poseControl(i),
     keys: [`Digit${i + 1}`],

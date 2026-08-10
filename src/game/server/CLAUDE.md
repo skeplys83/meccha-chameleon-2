@@ -57,20 +57,26 @@ message named here.
    victim is deleted from state, then `leave()` fires 250 ms later. Without the
    delay they disconnect before the message lands and see nothing but a dropped
    connection.
-7. **Non-finite input becomes 0, never `NaN`.** That is what `clamp` is for. A
+7. **A schema `boolean` must be coerced, not assigned.** `player.cling =
+   msg.cling === true`, never `= msg.cling`: the encoder will happily take a
+   string or an object and hand it to every client. The same instinct as `clamp`
+   for numbers.
+8. **Non-finite input becomes 0, never `NaN`.** That is what `clamp` is for. A
    `NaN` written into schema propagates to every client.
-8. **One trigger, one clock.** `canFire` rate-limits `shoot` and `kill` together,
+9. **One trigger, one clock.** `canFire` rate-limits `shoot` and `kill` together,
    per client, because a trigger-pull sends exactly one of the two — never both.
    The gap is `FIRE_INTERVAL_MS` from `shared/`, times a tolerance, so a shot a
    few milliseconds early is treated as jitter rather than eaten. The client
    enforces the same interval for feel; this is here because fire *rate* is the
    property of a shot that reaches everybody.
-9. **A shot is broadcast separately from its mark.** `mark` is where the pellets
+10. **A shot is broadcast separately from its mark.** `mark` is where the pellets
    landed; `shot` is where the gun was. The kill path relays only `shot`, since
    there is no wall to mark.
 
 ## Contracts
 
+- **`cling` is trusted like movement** — it only decides whether other clients
+  play footsteps for you, so a liar makes themselves quiet and nothing else.
 - **Reads `../shared/protocol.ts`** for `Role`, `ROOM_LIMIT`, `POSE_COUNT`,
   `MAX_STROKES`, `MAX_STROKE_LENGTH`. Do not re-declare any of them here.
 - **Messages in** (`room.ts` ← `net/send.ts`): `state`, `paint`, `clearSkin`,

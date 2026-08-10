@@ -85,7 +85,7 @@ Next picks `icon.svg` up automatically — there is no `favicon.ico` and no
 | `world/` | the arena: shell, obstacles, `ROOM_SURFACE` | room layout, collision, cover |
 | `figure/` | the stick figure rig, the poses, `PART_SHAPE` | proportions, poses, limb geometry |
 | `paint/` | canvases, brush, palette, the panel | painting, brushes, skins, colours |
-| `players/` | the local player and the remote ones, `BODY` | controls, camera, movement, jumping |
+| `players/` | the local player and the remote ones, `BODY` | controls, camera, movement, jumping, climbing |
 | `combat/` | the shotgun, the viewmodel, marks, graves | shooting, death, hit feedback |
 | `sound/` | the audio engine, the catalogue, footsteps | anything that makes a noise |
 | `hud/` | the 2D overlays outside the Canvas | menus, legends, name entry |

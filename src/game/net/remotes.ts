@@ -10,6 +10,8 @@ export type RemoteTarget = {
   pitch: number;
   /** Index into POSES. */
   pose: number;
+  /** Stuck to a wall or the ceiling: they are climbing, so they are silent. */
+  cling: boolean;
 };
 
 export type Remote = {

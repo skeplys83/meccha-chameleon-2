@@ -65,6 +65,12 @@ export function SoundStage() {
         live.set(id, stepper);
       }
       const { x, y, z } = remote.target;
+      // Climbing is silent. Their stepper only sees a position, and sliding
+      // along a wall or walking a ceiling looks exactly like walking a floor.
+      if (remote.target.cling) {
+        stepper.reset();
+        continue;
+      }
       if (stepper.update(x, y, z, delta)) {
         playSound("step", { position: [x, y, z], rate: jitteredStepRate(remote.role) });
       }

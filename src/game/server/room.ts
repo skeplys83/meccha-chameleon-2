@@ -35,7 +35,7 @@ const clamp = (n: number, lo: number, hi: number) =>
 
 const MIN_FIRE_GAP_MS = FIRE_INTERVAL_MS * FIRE_INTERVAL_TOLERANCE;
 
-type StateMsg = { p?: unknown; yaw?: unknown; pitch?: unknown; pose?: unknown };
+type StateMsg = { p?: unknown; yaw?: unknown; pitch?: unknown; pose?: unknown; cling?: unknown };
 type PaintMsg = { strokes?: unknown };
 type KillMsg = { id?: unknown; position?: unknown };
 type ShootMsg = {
@@ -71,6 +71,9 @@ export class GameRoom extends Room<GameState> {
       player.yaw = Number.isFinite(msg.yaw) ? (msg.yaw as number) : 0;
       player.pitch = Number.isFinite(msg.pitch) ? (msg.pitch as number) : 0;
       player.pose = clamp(Math.trunc(msg.pose as number), 0, POSE_COUNT - 1);
+      // Coerced, never stored raw: schema "boolean" will happily encode whatever
+      // truthy junk arrives and hand it to every client.
+      player.cling = msg.cling === true;
     });
 
     // Paint is cosmetic and self-applied: it is stored on the painter and
@@ -162,6 +165,7 @@ export class GameRoom extends Room<GameState> {
     player.yaw = 0;
     player.pitch = 0;
     player.pose = 0;
+    player.cling = false;
     this.state.players.set(client.sessionId, player);
 
     // The first person to join names the session, so it shows up on the LAN as
