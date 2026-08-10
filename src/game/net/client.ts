@@ -1,7 +1,7 @@
 "use client";
 
 import { Client, getStateCallbacks } from "colyseus.js";
-import type { Role } from "@/game/core/types";
+import type { Role } from "@/game/shared/protocol";
 import {
   clearSkin,
   decodeStroke,

@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { Room } from "colyseus";
-import { GameState, Player } from "./schema.mjs";
-import { setSessionName } from "./discovery.mjs";
+import { Room, type Client } from "colyseus";
+import { GameState, Player } from "./schema.ts";
+import { setSessionName } from "./discovery.ts";
 import {
   MAX_STROKES,
   MAX_STROKE_LENGTH,
   POSE_COUNT,
   ROOM_LIMIT,
-} from "../src/shared/protocol.mjs";
+} from "../shared/protocol.ts";
 
 /**
  * The one room, `"game"`.
@@ -15,44 +15,55 @@ import {
  * The trust model is friends-on-a-couch, not anti-cheat: clients simulate their
  * own movement and simply tell the server where they are, and the server clamps
  * the result into the arena. Everything that affects *someone else* — a kill —
- * is still checked here, because a client asserting another client's death is
- * the one message where being wrong is not cosmetic.
+ * is checked here, because a client asserting another client's death is the one
+ * message where being wrong is not cosmetic.
  */
 
 // ROOM_LIMIT, POSE_COUNT, MAX_STROKES and MAX_STROKE_LENGTH are imported above:
-// the client reads the same definitions, and each used to exist here as a
-// second copy with a comment asking the next person to change both.
+// the client reads the same definitions, and each used to exist here as a second
+// copy with a comment asking the next person to change both.
 const PATCH_MS = 50; // 20 Hz state patches
 const MAX_GRAVES = 200; // server-only: the client just renders what it is sent
+/** A victim is told they died, then dropped. Long enough for the message to land. */
+const DEATH_NOTICE_MS = 250;
 
 /** Anything non-finite off the wire becomes 0 rather than poisoning the state. */
-const clamp = (n, lo, hi) => (Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : 0);
+const clamp = (n: number, lo: number, hi: number) =>
+  Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : 0;
 
-export class GameRoom extends Room {
+type StateMsg = { p?: unknown; yaw?: unknown; pitch?: unknown; pose?: unknown };
+type PaintMsg = { strokes?: unknown };
+type KillMsg = { id?: unknown; position?: unknown };
+type ShootMsg = {
+  position: [number, number, number];
+  rotation: [number, number, number];
+};
+
+export class GameRoom extends Room<GameState> {
   onCreate() {
     this.setState(new GameState());
     this.setPatchRate(PATCH_MS);
 
-    this.onMessage("state", (client, msg) => {
+    this.onMessage("state", (client: Client, msg: StateMsg) => {
       const player = this.state.players.get(client.sessionId);
       if (!player || !msg) return;
-      const [x, y, z] = Array.isArray(msg.p) ? msg.p : [0, 0, 0];
+      const [x, y, z] = Array.isArray(msg.p) ? (msg.p as number[]) : [0, 0, 0];
       player.x = clamp(x, -ROOM_LIMIT, ROOM_LIMIT);
       player.y = clamp(y, -5, 30);
       player.z = clamp(z, -ROOM_LIMIT, ROOM_LIMIT);
-      player.yaw = Number.isFinite(msg.yaw) ? msg.yaw : 0;
-      player.pitch = Number.isFinite(msg.pitch) ? msg.pitch : 0;
-      player.pose = clamp(Math.trunc(msg.pose), 0, POSE_COUNT - 1);
+      player.yaw = Number.isFinite(msg.yaw) ? (msg.yaw as number) : 0;
+      player.pitch = Number.isFinite(msg.pitch) ? (msg.pitch as number) : 0;
+      player.pose = clamp(Math.trunc(msg.pose as number), 0, POSE_COUNT - 1);
     });
 
     // Paint is cosmetic and self-applied: it is stored on the painter and
     // relayed to everyone else, who already have the same brush code.
-    this.onMessage("paint", (client, msg) => {
+    this.onMessage("paint", (client: Client, msg: PaintMsg) => {
       const player = this.state.players.get(client.sessionId);
       if (!player || !Array.isArray(msg?.strokes)) return;
 
-      const strokes = msg.strokes
-        .filter((s) => typeof s === "string" && s.length <= MAX_STROKE_LENGTH)
+      const strokes = (msg.strokes as unknown[])
+        .filter((s): s is string => typeof s === "string" && s.length <= MAX_STROKE_LENGTH)
         .slice(0, 64);
       if (!strokes.length) return;
 
@@ -66,7 +77,7 @@ export class GameRoom extends Room {
     // A hit is called by the shooter — the same trust model as movement. The
     // server still checks the shooter is a seeker and the victim is real, then
     // records the grave and drops the victim from the room.
-    this.onMessage("kill", (client, msg) => {
+    this.onMessage("kill", (client: Client, msg: KillMsg) => {
       const shooter = this.state.players.get(client.sessionId);
       const victimId = String(msg?.id ?? "");
       const victim = this.state.players.get(victimId);
@@ -74,7 +85,9 @@ export class GameRoom extends Room {
         return;
       }
 
-      const [x, y, z] = Array.isArray(msg.position) ? msg.position : [victim.x, victim.y, victim.z];
+      const [x, y, z] = Array.isArray(msg.position)
+        ? (msg.position as number[])
+        : [victim.x, victim.y, victim.z];
       this.state.graves.push(
         [
           clamp(x, -ROOM_LIMIT, ROOM_LIMIT).toFixed(2),
@@ -88,23 +101,23 @@ export class GameRoom extends Room {
 
       this.broadcast("killed", { id: victimId, by: shooter.name });
 
-      // Give the message a moment to land before the victim is disconnected,
-      // or they would be gone before they knew what happened.
+      // Give the message a moment to land before the victim is disconnected, or
+      // they would be gone before they knew what happened.
       const doomed = this.clients.find((c) => c.sessionId === victimId);
       this.state.players.delete(victimId);
-      if (doomed) setTimeout(() => doomed.leave(4000), 250);
+      if (doomed) setTimeout(() => doomed.leave(4000), DEATH_NOTICE_MS);
     });
 
-    this.onMessage("clearSkin", (client) => {
+    this.onMessage("clearSkin", (client: Client) => {
       const player = this.state.players.get(client.sessionId);
       if (!player) return;
       player.strokes.clear();
       this.broadcast("clearSkin", { id: client.sessionId }, { except: client });
     });
 
-    // Marks are cosmetic and expire in three seconds, so they are simply
-    // relayed and never stored.
-    this.onMessage("shoot", (_client, msg) => {
+    // Marks are cosmetic and expire in three seconds, so they are simply relayed
+    // and never stored.
+    this.onMessage("shoot", (_client: Client, msg: ShootMsg) => {
       if (!msg) return;
       this.broadcast("mark", {
         id: randomUUID(),
@@ -114,7 +127,7 @@ export class GameRoom extends Room {
     });
   }
 
-  onJoin(client, options) {
+  onJoin(client: Client, options?: { name?: string; role?: string }) {
     const player = new Player();
     player.name = String(options?.name ?? "player").slice(0, 16);
     player.role = options?.role === "seeker" ? "seeker" : "hider";
@@ -126,14 +139,14 @@ export class GameRoom extends Room {
     player.pose = 0;
     this.state.players.set(client.sessionId, player);
 
-    // The first person to join names the session, so it shows up on the LAN
-    // as "Martin's Session" rather than the OS account name.
+    // The first person to join names the session, so it shows up on the LAN as
+    // "Martin's Session" rather than the OS account name.
     if (this.state.players.size === 1 && !process.env.SESSION_NAME) {
       setSessionName(player.name);
     }
   }
 
-  onLeave(client) {
+  onLeave(client: Client) {
     this.state.players.delete(client.sessionId);
   }
 }

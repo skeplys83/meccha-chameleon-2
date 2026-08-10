@@ -1,17 +1,18 @@
 import { createServer } from "node:http";
 import next from "next";
 import { Server } from "colyseus";
-import { GameRoom } from "./room.mjs";
+import { GameRoom } from "./room.ts";
 import {
   getSessionName,
   lanAddress,
   peers,
   sessionId,
   startDiscovery,
-} from "./discovery.mjs";
+} from "./discovery.ts";
 
 /**
- * The entry point: `npm run dev` and `npm start` both run this file.
+ * The entry point: `npm run dev` and `npm start` both run this file. Node strips
+ * the types itself — there is no build step for the server.
  *
  * It is deliberately *two* servers. Next keeps its own HTTP server, including
  * its dev HMR websocket upgrades; Colyseus listens on its own port. Handing a

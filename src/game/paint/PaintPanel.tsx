@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { SWATCHES } from "@/game/core/palette";
+import { SWATCHES } from "@/game/paint/palette";
 import { MAX_SIZE, MIN_SIZE, type Brush } from "./brush";
 
 const WHEEL = 118;

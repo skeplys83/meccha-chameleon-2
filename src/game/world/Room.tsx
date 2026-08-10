@@ -2,8 +2,8 @@
 
 import type { ReactNode } from "react";
 import { RigidBody } from "@react-three/rapier";
-import { PAINT } from "@/game/core/palette";
-import { ROOM_HALF } from "@/shared/protocol.mjs";
+import { PAINT } from "@/game/paint/palette";
+import { ROOM_HALF } from "@/game/shared/protocol";
 
 export const ROOM_SURFACE = "room-surface";
 

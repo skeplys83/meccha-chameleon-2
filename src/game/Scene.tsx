@@ -11,7 +11,8 @@ import { Marks } from "@/game/combat/Marks";
 import { Graves } from "@/game/combat/Graves";
 import { Viewmodel } from "@/game/combat/Viewmodel";
 import { RemotePlayers } from "@/game/players/RemotePlayers";
-import type { Mark, Role } from "@/game/core/types";
+import type { Role } from "@/game/shared/protocol";
+import type { Mark } from "@/game/combat/Marks";
 import type { Brush } from "@/game/paint/brush";
 import { onGrave, onMark, type Grave } from "@/game/net";
 

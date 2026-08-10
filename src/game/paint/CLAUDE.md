@@ -1,7 +1,7 @@
 # paint — drawing on yourself
 
-**Owns:** the per-player canvases, the brush, the compact wire format for a
-stroke, and the panel that mixes colours.
+**Owns:** the per-player canvases, the brush, the palette, the compact wire
+format for a stroke, and the panel that mixes colours.
 
 **Entry points:** `getSkin` / `paint` / `clearSkin` / `encodeStroke` /
 `decodeStroke` / `SELF` from `skin.ts`; `Brush` / `DEFAULT_BRUSH` from
@@ -12,6 +12,7 @@ stroke, and the panel that mixes colours.
 - `skin.ts` — canvases keyed by player id, the draw call, the stroke history and
   its encoding.
 - `brush.ts` — `Brush`, `DEFAULT_BRUSH`, `MIN_SIZE`, `MAX_SIZE`.
+- `palette.ts` — `PAINT`, the ten presets, and `SWATCHES`.
 - `brushCursor.ts` — the cursor end: raycast your own figure, place the hover
   ring, lay strokes down as the mouse drags.
 - `PaintPanel.tsx` — colour wheel, brightness slider, brush size, clear, pin.
@@ -57,7 +58,7 @@ stroke, and the panel that mixes colours.
 
 - **Reads `figure/parts.ts`** for `PARTS` and `PART_SHAPE`. The brush maths and
   the capsule geometry must come from the same radii — see `figure/CLAUDE.md`.
-- **Reads `MAX_STROKES` from `shared/protocol.mjs`**, the same cap the server
+- **Reads `MAX_STROKES` from `shared/protocol.ts`**, the same cap the server
   keeps in schema.
 - **`encodeStroke` output must stay under `MAX_STROKE_LENGTH` (40).** It is
   currently ~30 characters: `partIndex,u,v,size,rrggbb`, each number to three
@@ -68,7 +69,10 @@ stroke, and the panel that mixes colours.
   where the ring goes and when a stroke happens. It hands each encoded stroke
   back through `onStroke` and never talks to `net/` itself.
 - `net/` calls `paint`, `clearSkin` and `forgetSkin` for remote players.
-- `core/palette.ts` supplies the swatch row.
+- **`world/Room.tsx` reads `palette.ts` too, and that is the point.** Nine arena
+  pieces are painted in exact `PAINT` hexes so a preset is a true match for
+  something you can lie against — camouflage is not testable otherwise. Never
+  "tidy" a preset without checking the room.
 
 ## Not built yet
 

@@ -45,7 +45,7 @@ dimensions of every limb.
 
 ## Contracts
 
-- **`POSE_COUNT` comes from `shared/protocol.mjs`** and `poses.ts` **throws at
+- **`POSE_COUNT` comes from `shared/protocol.ts`** and `poses.ts` **throws at
   import time** if the table's length disagrees with it. Adding a pose means
   editing both in the same change — the build will stop you otherwise. The
   server clamps incoming pose indices against the same number, and

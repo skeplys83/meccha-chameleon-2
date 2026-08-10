@@ -15,6 +15,10 @@ bugs have been fixed; the invariants below are all scars.
 - `Player.tsx` — the local player: the pointer handlers, the physics frame loop
   and the network send timers.
 - `camera.ts` — the third-person follow and its pull-in out of walls.
+- `body.ts` — `BODY`, the collider half-extents per role.
+- `pointerLock.ts` — the shared canvas handle. The canvas is created inside the
+  r3f tree but `Game.tsx` and the paint panel live outside it, so the element
+  both need is kept here.
 - `RemotePlayers.tsx` — everyone else, plus `remoteFigures`, the map
   `combat/` raycasts to hit people.
 - `controls.ts` — the keyboard map and the `Control` union.
@@ -101,7 +105,7 @@ one role, and **adding a control means deciding whose it is.**
 
 - **Reads `world/Room.tsx`** for `ROOM_SURFACE`, collected once from the scene
   graph on mount because the room is static.
-- **Reads `core/types.ts`** for `BODY` and `Role`, **`figure/`** for `POSES`,
+- **Reads `shared/protocol.ts`** for `Role`, **`figure/`** for `POSES`,
   `poseExtents` and `StickFigure`, **`paint/`** for the brush and the stroke
   encoding, and **`net/`** for the senders.
 - **Publishes `remoteFigures`**, keyed by session id with the id also stamped on

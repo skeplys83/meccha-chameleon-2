@@ -15,7 +15,8 @@ npm install
 npm run dev
 ```
 
-This starts a custom server (`server/index.mjs`): Next.js on `:3000` and a Colyseus
+This starts a custom server (`src/game/server/index.ts`, TypeScript run
+directly by Node — no build step): Next.js on `:3000` and a Colyseus
 game server on `:2567`. It prints a LAN URL — other players on the same Wi-Fi
 open that. Sessions on the network are discovered automatically via UDP
 broadcast and listed in the menu.
@@ -42,10 +43,10 @@ The code is grouped by feature, and **each folder documents itself** in a
 prevents, and its contracts with the folders around it.
 
 ```
-server/        Colyseus room, schema, UDP LAN discovery
-src/shared/    the constants both halves must agree on
 src/game/
-  core/  net/  world/  figure/  paint/  players/  combat/  hud/
+  shared/   Role + the constants both halves must agree on
+  server/   Colyseus room, schema, UDP LAN discovery   <- runs in Node
+  net/ world/ figure/ paint/ players/ combat/ hud/     <- run in the browser
 ```
 
 Start at [CLAUDE.md](CLAUDE.md) for the map and the project-wide traps, then read

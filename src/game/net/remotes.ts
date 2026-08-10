@@ -1,6 +1,6 @@
 "use client";
 
-import type { Role } from "@/game/core/types";
+import type { Role } from "@/game/shared/protocol";
 
 export type RemoteTarget = {
   x: number;

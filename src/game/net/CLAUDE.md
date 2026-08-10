@@ -44,14 +44,14 @@ The other half is `server/`. Every message named below has a handler there.
 
 ## Contracts
 
-- **Out** (`send.ts` → `server/room.mjs`): `state` at 20 Hz, `paint` batched
+- **Out** (`send.ts` → `server/room.ts`): `state` at 20 Hz, `paint` batched
   every 100 ms, `shoot`, `kill`, `clearSkin`.
 - **In** (`client.ts` ← server): `mark`, `paint`, `clearSkin`, `killed`, plus the
   `players` and `graves` schema callbacks.
 - **Writes into `paint/skin.ts`** directly — inbound strokes are decoded and
   painted onto the sender's canvas, and a departing player's skin is disposed via
   `forgetSkin`.
-- **`PlayerSchema` in `client.ts` mirrors `server/schema.mjs` by hand.** The room
+- **`PlayerSchema` in `client.ts` mirrors `server/schema.ts` by hand.** The room
   is untyped on this side. Adding a field to the schema means adding it here or
   it simply will not exist for the client.
 - `hud/RoleMenu` polls `fetchSessions` every 2 s; `Game.tsx` calls `connect` and

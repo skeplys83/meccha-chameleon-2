@@ -18,8 +18,8 @@ import {
   type Session,
 } from "@/game/net";
 import { clearSkin, SELF } from "@/game/paint/skin";
-import { requestLock } from "@/game/core/pointerLock";
-import type { Role } from "@/game/core/types";
+import { requestLock } from "@/game/players/pointerLock";
+import type { Role } from "@/game/shared/protocol";
 
 // The renderer touches WebGL/window, so it must never run on the server.
 const Scene = dynamic(() => import("./Scene"), { ssr: false });

@@ -1,19 +1,20 @@
 # src/game — the map
 
-Everything the browser runs. Each folder below owns one thing and carries its
-own `CLAUDE.md`; **read the doc for the folder you are about to edit, and update
-it in the same change.** A pre-commit hook enforces the second half of that.
+Everything the game is, both halves of it. Each folder below owns one thing and
+carries its own `CLAUDE.md`; **read the doc for the folder you are about to edit,
+and update it in the same change.** A pre-commit hook enforces the second half.
 
 ## The folders
 
 | folder | owns | read it before touching |
 |---|---|---|
-| `core/` | `Role`, `BODY`, the paint palette, the pointer-lock handle | anything that needs a role or a colour |
-| `net/` | the Colyseus client, LAN session list | messages, remote transforms, joining |
-| `world/` | the arena: shell, obstacles, `ROOM_SURFACE` | the room layout, collision, cover |
+| `shared/` | `Role` and the constants both halves must agree on | anything the server also reads |
+| `server/` | the Colyseus room, schema, UDP discovery, the HTTP bootstrap | messages, validation, authority |
+| `net/` | the Colyseus **client**, remotes, LAN session list | joining, remote transforms |
+| `world/` | the arena: shell, obstacles, `ROOM_SURFACE` | room layout, collision, cover |
 | `figure/` | the stick figure rig, the poses, `PART_SHAPE` | proportions, poses, limb geometry |
-| `paint/` | per-body canvases, the wire format, the panel | painting, brushes, skins |
-| `players/` | the local player and the remote ones | controls, camera, movement, jumping |
+| `paint/` | per-body canvases, the brush, the palette, the panel | painting, brushes, skins, colours |
+| `players/` | the local player and the remote ones, `BODY` | controls, camera, movement, jumping |
 | `combat/` | the shotgun, the viewmodel, marks, graves | shooting, death, hit feedback |
 | `hud/` | the 2D overlays outside the Canvas | menus, legends, name entry |
 
@@ -25,21 +26,25 @@ no single folder:
 - `Scene.tsx` — the `Canvas`, the lights, the `Physics` world, and the mark and
   grave lifetimes.
 
-## How the folders may depend on each other
+## The one hard boundary
 
-`core/` depends on nothing and everything may use it. Otherwise the rule is that
-a dependency should be obvious from the game, not from the file tree:
+**`server/` is a different runtime.** It sits here for convenience, but it runs in
+Node, never reaches the browser, and may import *only* from `shared/`. Nothing
+outside `server/` may import from it either. Everything else in this tree is
+browser code and may mix freely.
 
-- `paint/` reads `figure/parts.ts` — the brush has to know the real size of the
-  limb it is drawing on.
-- `players/` is the busiest importer: it composes `figure/`, `world/`, `paint/`
-  and `net/`, because the local player *is* where input, physics and the network
-  meet.
-- `combat/` reads `players/RemotePlayers` for `remoteFigures`, the raycast
-  targets a shot can hit.
-- `hud/` renders outside the Canvas and must never import from `world/`,
-  `figure/` or `players/`. It talks to the game through `Game.tsx` props and
-  through `net/`.
+The client folders do lean on each other in both directions in two places, and
+that is known rather than accidental:
+
+- `paint/` ↔ `figure/` — the brush needs the real limb sizes (`figure/parts.ts`);
+  the figure needs the canvases to wear (`paint/skin.ts`).
+- `players/` ↔ `combat/` — `Player` fires the shot; `combat/shoot.ts` raycasts
+  `remoteFigures`, which `players/RemotePlayers` publishes.
+
+Both are acyclic at the module level. `hud/` is the one folder with a real rule:
+it renders outside the Canvas and must not import from `world/`, `figure/`,
+`players/` or `combat/` — it talks to the game through `Game.tsx` props and
+through `net/`. Reading `POSES` for a label is the allowed exception.
 
 ## Cross-cutting rules that live nowhere else
 

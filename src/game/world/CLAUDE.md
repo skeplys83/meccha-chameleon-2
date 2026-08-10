@@ -37,11 +37,11 @@ cover, and the `ROOM_SURFACE` name that shots and the camera filter on.
 
 ## Contracts
 
-- **Reads `ROOM_HALF` from `shared/protocol.mjs`**, which `server/room.mjs` also
+- **Reads `ROOM_HALF` from `shared/protocol.ts`**, which `server/room.ts` also
   reads as `ROOM_LIMIT`. They describe the same bound and are no longer two
   constants — but they are deliberately *different numbers* (20 vs 19.9); see
   `shared/CLAUDE.md`.
-- **Reads `PAINT` from `core/palette.ts`.**
+- **Reads `PAINT` from `paint/palette.ts`.**
 - `players/Player.tsx` collects `ROOM_SURFACE` meshes once from the scene graph
   on mount, because the room is static. If the arena ever gains pieces that
   appear or move at runtime, that collection has to become dynamic.

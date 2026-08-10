@@ -13,7 +13,7 @@
  * floating. `shape` picks the collider the pose needs — see `poseExtents`.
  */
 
-import { POSE_COUNT } from "@/shared/protocol.mjs";
+import { POSE_COUNT } from "@/game/shared/protocol";
 
 export type Joint = { x?: number; spread?: number };
 

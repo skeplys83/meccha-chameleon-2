@@ -15,7 +15,8 @@ the pointer-lock state. This folder owns what the shot hits, and the aftermath.
 - `Shotgun.tsx` — the prop, barrel pointing down −Z. Shared by the viewmodel and
   by the figure other players see.
 - `Viewmodel.tsx` — the seeker's own arms and gun, riding the camera.
-- `Marks.tsx` — yellow patches where a shot hit a wall. Three seconds.
+- `Marks.tsx` — yellow patches where a shot hit a wall. Three seconds. Also
+  exports the `Mark` type, which `Scene.tsx` holds the list of.
 - `Graves.tsx` — red squares where somebody died. Permanent.
 
 ## Invariants
@@ -29,7 +30,7 @@ the pointer-lock state. This folder owns what the shot hits, and the aftermath.
    the mark needs and the caller has no better place to work it out.
 3. **A kill is called by the shooter and checked by the server.** Same trust
    model as movement. The client does not decide the victim dies — it asserts a
-   hit, and `server/room.mjs` verifies the caller is a seeker and the victim
+   hit, and `server/room.ts` verifies the caller is a seeker and the victim
    exists.
 4. **Graves are permanent and marks are not**, and that difference decides how
    each travels: graves are server *state* so a player joining an hour later

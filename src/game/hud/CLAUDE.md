@@ -49,7 +49,7 @@ you join.
   guards hover reporting while the menu is up.
 - **Reads `net/`** for `fetchSessions`, `onRoster` and `remotes` (the player
   list) — never the senders.
-- **Reads `core/types.ts`** for `Role` and `figure/poses.ts` for pose labels.
+- **Reads `shared/protocol.ts`** for `Role` and `figure/poses.ts` for pose labels.
 
 ## Not built yet
 

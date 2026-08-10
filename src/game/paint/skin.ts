@@ -2,7 +2,7 @@
 
 import * as THREE from "three";
 import { PARTS, PART_SHAPE, type Part } from "@/game/figure/parts";
-import { MAX_STROKES } from "@/shared/protocol.mjs";
+import { MAX_STROKES } from "@/game/shared/protocol";
 
 /**
  * Per-player paint. Every figure part owns a small canvas that is used as its

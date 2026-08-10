@@ -23,10 +23,14 @@ with `npm run check:docs`. The escape hatch for a genuine no-op is
 ## Run it
 
 ```bash
-npm run dev     # node server/index.mjs — Next on :3000, Colyseus on :2567
+npm run dev     # node src/game/server/index.ts — Next on :3000, Colyseus on :2567
 npm run build   # next build
 npm start       # same server, NODE_ENV=production
 ```
+
+**The server is TypeScript with no build step.** Node 22.18+ / 23.6+ strips the
+types itself, so `node src/game/server/index.ts` just runs. `"type": "module"`
+in package.json is what stops Node reparsing it as CommonJS first.
 
 `npm run dev` does **not** run `next dev`. It runs the custom server, which
 prints the localhost URL, the LAN URL and the Colyseus port. Other players open
@@ -52,30 +56,33 @@ line. Bump all three together or not at all.
 ## Where everything is
 
 ```
-server/                  the authoritative half: Colyseus room, schema, UDP discovery
-src/shared/              the few constants both halves must agree on
 src/app/page.tsx         renders <Game />
 src/game/
   Game.tsx               top-level state: role, session, paused, painting, killed
   Scene.tsx              Canvas, lights, Physics, mark and grave lifetimes
-  core/                  Role, BODY, the paint palette, the pointer-lock handle
-  net/                   the Colyseus client, remotes, session discovery
+  shared/                Role + the constants both halves must agree on
+  server/                Colyseus room, schema, UDP discovery, HTTP bootstrap
+  net/                   the Colyseus *client*, remotes, session discovery
   world/                 the arena: shell, obstacles, ROOM_SURFACE
   figure/                the stick figure rig, the poses, PART_SHAPE
-  paint/                 per-body canvases, the wire format, the panel
-  players/               the local player and the remote ones
+  paint/                 canvases, brush, palette, the panel
+  players/               the local player and the remote ones, BODY
   combat/                shotgun, viewmodel, marks, graves
   hud/                   the 2D overlays and the role menu
 scripts/check-docs.mjs   the doc-freshness gate
 ```
 
-`src/game/CLAUDE.md` explains how these folders may depend on each other and
-carries the rules that belong to no single one — chiefly **never call into
-rapier from a React effect, only from `useFrame`**, and **no CDN assets**.
+**`src/game/server/` is a different runtime.** It lives with the client for
+convenience but runs in Node, never reaches the browser, and may import only from
+`shared/`. Nothing outside it may import from it.
+
+`src/game/CLAUDE.md` explains how the rest may depend on each other and carries
+the rules that belong to no single folder — chiefly **never call into rapier from
+a React effect, only from `useFrame`**, and **no CDN assets**.
 
 ## Traps already hit — do not reintroduce
 
-The folder docs hold the rest. These four are project-wide:
+The folder docs hold the rest. These five are project-wide:
 
 1. **`reactStrictMode: false` in `next.config.ts` is load-bearing.** R3F's
    `Canvas` does not survive StrictMode's dev-only double mount: the discarded
@@ -91,6 +98,12 @@ The folder docs hold the rest. These four are project-wide:
    Name labels use drei `Html`, not `Text` (troika fetches a font).
 4. **Nothing here deploys to Vercel.** Ignore Vercel-shaped advice; a LAN game
    should not round-trip the internet.
+5. **Colyseus schema fields use `declare`, never `!`.** Node strips types by
+   blanking characters, not re-emitting, so `x!: number` survives as the class
+   field `x;` — an own property that shadows the accessor `defineTypes` installs.
+   Every state encode then dies with `Cannot read properties of undefined
+   (reading 'Symbol(Symbol.metadata)')` and the server falls over on the first
+   join. See `src/game/server/CLAUDE.md`.
 
 ## Verifying changes
 

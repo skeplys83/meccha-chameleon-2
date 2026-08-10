@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { fetchSessions, type Session } from "@/game/net";
-import type { Role } from "@/game/core/types";
+import type { Role } from "@/game/shared/protocol";
 import { randomName } from "./names";
 
 /**

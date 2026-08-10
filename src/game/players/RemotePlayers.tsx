@@ -5,7 +5,7 @@ import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import * as THREE from "three";
 import { onRoster, remotes } from "@/game/net";
-import { BODY } from "@/game/core/types";
+import { BODY } from "./body";
 import { StickFigure } from "@/game/figure/StickFigure";
 import { Shotgun } from "@/game/combat/Shotgun";
 
