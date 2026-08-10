@@ -34,36 +34,40 @@ the pointer-lock state. This folder owns what the shot hits, and the aftermath.
    drops the mark after `MARK_LIFETIME` and the line goes with it, so "exactly as
    long as the patch" is true by construction. A killing shot relays no mark, so
    it draws no line either.
-3. **The tracer is a cylinder, not a `THREE.Line`.** GL line width is capped at
+3. **The tracer is transparent and depth-tested but not depth-written.** Tested,
+   so a wall still hides it — a tracer visible through geometry would give away
+   shots nobody could have seen. Not written, so it never sorts against itself or
+   against the patch at the end of it.
+4. **The tracer is a cylinder, not a `THREE.Line`.** GL line width is capped at
    one pixel on every desktop driver worth naming, so a real line can be neither
    thickened nor thinned. A cylinder has an honest width in world units — it
    thins with distance and goes sub-pixel far across the arena, which is the
    trade for being adjustable at all. `TRACER_RADIUS` is the knob.
-4. **`resolveShot` returns the wall hit already oriented** — position nudged off
+5. **`resolveShot` returns the wall hit already oriented** — position nudged off
    the surface along its normal, rotation facing out of it — because that is what
    the mark needs and the caller has no better place to work it out.
-5. **The shotgun has a cooldown, enforced on both sides.**
+6. **The shotgun has a cooldown, enforced on both sides.**
    `FIRE_INTERVAL_MS` in `shared/` — the trigger-pull is what is limited, not the
    hit, so clicking faster simply does nothing rather than queueing. Without it a
    held mouse button is a machine gun, a wall of noise and a stream of marks.
-6. **A kill is called by the shooter and checked by the server.** Same trust
+7. **A kill is called by the shooter and checked by the server.** Same trust
    model as movement. The client does not decide the victim dies — it asserts a
    hit, and `server/room.ts` verifies the caller is a seeker and the victim
    exists.
-7. **Graves are permanent and marks are not**, and that difference decides how
+8. **Graves are permanent and marks are not**, and that difference decides how
    each travels: graves are server *state* so a player joining an hour later
    still sees them all (capped at 200), marks are a broadcast that every client
    drops after 3 s. See `server/CLAUDE.md`.
-8. **Graves are deliberately not named `ROOM_SURFACE`.** A grave is paint on the
+9. **Graves are deliberately not named `ROOM_SURFACE`.** A grave is paint on the
    floor: it must not stop a bullet or the third-person camera. Naming it would
    make the room slowly fill with invisible walls where people died.
-9. **The viewmodel rides the camera, it is not parented to it.** The camera is
+10. **The viewmodel rides the camera, it is not parented to it.** The camera is
    driven imperatively in `players/Player.tsx`, so the viewmodel copies its
    position and quaternion each frame. Everything in it is expressed in camera
    space: −Z is forward.
-10. **The viewmodel's arms wear the local player's paint** (`SELF` canvases), so a
+11. **The viewmodel's arms wear the local player's paint** (`SELF` canvases), so a
    seeker sees their own colours in first person.
-11. **A remote seeker's gun arm leaves the pose.** `figure/StickFigure` takes an
+12. **A remote seeker's gun arm leaves the pose.** `figure/StickFigure` takes an
    `aim` prop that points the right arm along the aim and a `holding` prop that
    puts the shotgun in that hand. Rotating the hand group −90° about X turns the
    gun's −Z barrel to run down the arm.

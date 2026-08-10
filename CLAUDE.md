@@ -98,8 +98,10 @@ Next picks `icon.svg` up automatically — there is no `favicon.ico` and no
 the timestep is not the library default.
 Every mode transition in the game is decided in `Game.tsx` — which also means it
 owns the *teardown* of each: joining unlocks audio, pausing suspends it, and
-dying or leaving stops every looping sound. Anything that outlives its player is
-a bug that lands here.
+dying or leaving stops every looping sound. It owns the seeker's pointer lock the
+same way, held for as long as they are playing at all rather than re-taken by
+each button that hands control back. Anything that outlives its player, or fails
+to come back with it, is a bug that lands here.
 
 ## How the folders may depend on each other
 

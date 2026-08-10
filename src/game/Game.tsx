@@ -119,22 +119,16 @@ export function Game() {
     [],
   );
 
-  // Opening the panel hands the cursor back so you can draw; collapsing it
-  // re-locks the pointer for normal play.
-  const setPaintOpen = useCallback(
-    (open: boolean) => {
-      setPainting(open);
-      if (open) {
-        setPaused(false);
-        cancelLock();
-        document.exitPointerLock();
-      } else if (role === "seeker") {
-        // Hiders never hold the lock, so there is nothing to take back.
-        requestLock();
-      }
-    },
-    [role],
-  );
+  // Opening the panel hands the cursor back so you can draw. Closing it takes
+  // nothing back here — clearing `painting` is enough, because the effect below
+  // owns re-locking for every way into play, this one included.
+  const setPaintOpen = useCallback((open: boolean) => {
+    setPainting(open);
+    if (!open) return;
+    setPaused(false);
+    cancelLock();
+    document.exitPointerLock();
+  }, []);
 
   // Opening the palette clears `paused`, so a hover arriving while the menu is
   // up would dismiss it. Player already stops reporting hovers when paused;
@@ -180,8 +174,26 @@ export function Game() {
 
   const resume = useCallback(() => {
     setPaused(false);
-    if (role === "seeker") requestLock();
-  }, [role]);
+    // The effect below takes the lock back; this only clears the menu.
+  }, []);
+
+  /**
+   * A seeker aims with the mouse, so they hold the pointer for as long as they
+   * are actually playing — not just after Resume.
+   *
+   * Driving it from state rather than from each button means every way back into
+   * play is covered by one rule: joining, resuming, closing the palette,
+   * respawning. `requestLock` retries for about two seconds, which carries it
+   * through the browser's post-Esc cooldown and lands inside the transient
+   * activation left by whichever click got us here.
+   *
+   * Every state this guards against is one where the cursor is deliberately
+   * loose, and each of those calls `cancelLock` as it begins.
+   */
+  useEffect(() => {
+    if (role !== "seeker" || paused || painting || killedBy) return;
+    requestLock();
+  }, [role, paused, painting, killedBy]);
 
   const respawn = useCallback(() => {
     if (!role || !session) return;

@@ -26,6 +26,9 @@ export type Mark = NetMark;
  */
 const TRACER_RADIUS = 0.004;
 
+/** Faint enough to read as a trace of something that has already gone. */
+const TRACER_OPACITY = 0.35;
+
 const UP = new THREE.Vector3(0, 1, 0);
 
 /**
@@ -54,7 +57,15 @@ function Tracer({ from, to }: { from: NetMark["origin"]; to: NetMark["position"]
   return (
     <mesh position={position} quaternion={quaternion}>
       <cylinderGeometry args={[TRACER_RADIUS, TRACER_RADIUS, length, 5, 1, true]} />
-      <meshBasicMaterial color="#000000" />
+      <meshBasicMaterial
+        color="#000000"
+        transparent
+        opacity={TRACER_OPACITY}
+        // Depth-tested so a wall still hides it — a tracer visible through
+        // geometry would give away shots nobody could have seen. Not
+        // depth-*written*, so it never sorts against itself or the patch.
+        depthWrite={false}
+      />
     </mesh>
   );
 }
