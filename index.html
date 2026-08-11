@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en" class="h-full antialiased">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- `maximum-scale=1, user-scalable=no`: a pinch-zoom on a game canvas is
+         never what anybody meant, and it breaks the pointer maths. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
+    />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <title>Meccha Chameleon 2</title>
+    <meta name="description" content="A multiplayer hide-and-seek game." />
+  </head>
+  <body class="min-h-full overflow-hidden bg-neutral-950">
+    <div id="root" class="contents"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

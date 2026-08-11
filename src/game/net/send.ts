@@ -1,5 +1,3 @@
-"use client";
-
 import { getRoom } from "./connection";
 import { MAX_STROKE_BATCH } from "@/game/shared/protocol";
 

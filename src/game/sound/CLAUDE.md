@@ -18,6 +18,8 @@ follows your head, and the footstep derivation.
   caller; `audioReady` and `brokenSounds` were removed once it was clear the HUD
   hint and the test seam their comments promised had never been written.
 - `footsteps.ts` — turns a stream of positions into footfalls, and pitches them.
+  The round sounds are deliberately *not* here: they have no cadence and no
+  position, so there is nothing for this file to do with them.
 - `SoundStage.tsx` — mounted in the Canvas; drives the listener and plays the
   networked events. Renders nothing.
 
@@ -28,7 +30,9 @@ follows your head, and the footstep derivation.
    and the sound appears to come from everywhere at once. That is not a theory:
    `whistle.wav` shipped stereo and sounded exactly like that until it was
    converted. Everything positional — `step`, `shotgun`, `squash`, `whistle` —
-   is mono. Only `brush` is not, because it is your own hand at your own ear.
+   is mono. The non-positional ones are not, and need not be: `brush`, because it
+   is your own hand at your own ear, and `tick` / `bell` / `gong`, because they
+   are announcements about the round rather than events in the world.
    `preloadSounds` warns if a positional file arrives with more than one channel,
    because the symptom otherwise reads as "3D audio is just subtle".
 2. **Loudness is raised by compression, not by a gain above 1.** Every file peaks
@@ -42,7 +46,15 @@ follows your head, and the footstep derivation.
    # then peak-normalise _s.wav back to -1 dBFS as below
    ```
 
-3. **Every file is peak-normalised to −1 dBFS.** A `gain` in the catalogue is
+3. **Overlapping copies of one sound add, and the catalogue gain is per *copy*,
+   not per event.** The gong is struck three times 220 ms apart and rings for two
+   seconds, so all three are sounding at once — at 0.9 apiece the sum was near
+   2.7 and clipped the master, which is exactly what invariant 2 forbids. Its
+   gain is therefore 0.42, under half the bell's, and the strikes taper by
+   `GONG_FALLOFF`; the three together now peak just under 1. **Anything played
+   more than once inside its own duration has to be budgeted this way** — read
+   the catalogue number as the volume of one copy and multiply.
+4. **Every file is peak-normalised to −1 dBFS.** A `gain` in the catalogue is
    then a real proportion instead of a guess about how hot that export happened
    to be. This is not housekeeping: `step.wav` shipped 21 dB below `shotgun.wav`,
    and multiplied by a cautious gain it sat ~34 dB under the gunshot — perfectly
@@ -54,7 +66,7 @@ follows your head, and the footstep derivation.
    ffmpeg -i new.wav -af "volume=<-1 minus that>dB" out.wav
    ```
 
-4. **A looped file needs its seam closed.** `brush.wav` arrived ending at full
+5. **A looped file needs its seam closed.** `brush.wav` arrived ending at full
    level while starting near silence, so every 0.78 s the loop stepped straight
    down — an audible click, forever, under the one sound that is supposed to sit
    in the background. Check both ends against the middle and fade whichever one
@@ -65,7 +77,7 @@ follows your head, and the footstep derivation.
    ffmpeg -i loop.wav -af "afade=t=in:st=0:d=0.004,afade=t=out:st=<d-0.012>:d=0.012" out.wav
    ```
 
-5. **The context unlocks on *any* gesture, not just the join click.** Browsers
+6. **The context unlocks on *any* gesture, not just the join click.** Browsers
    start every context suspended and only honour `resume()` from a user gesture.
    `Game.tsx` calls `unlockAudio()` on Create or Join, and that is the intended
    path — but it was a single point of failure for the entire game's audio, and
@@ -74,46 +86,46 @@ follows your head, and the footstep derivation.
    unlocks, and drops them once it is running. `keydown` is the one that matters:
    you cannot walk without pressing a key, so footsteps can never be the first
    thing to discover the context is still locked.
-6. **A dropped sound says why, once — but not when the pause did it.** If
+7. **A dropped sound says why, once — but not when the pause did it.** If
    `playSound` is called while the context is not running it retries the resume,
    drops that one sound, and warns to the console, naming the sound and the
    state. A silent game with a silent cause is the worst thing this module can
    do, and it cost a full debugging round. `setAudioSuspended(true)` records that
    the silence is deliberate, so the whistle firing behind the pause menu does
    not cry wolf — a diagnostic nobody trusts is worse than none.
-7. **The context is created early, resumed late.** Constructing a suspended
+8. **The context is created early, resumed late.** Constructing a suspended
    `AudioContext` needs no gesture, so `SoundStage` builds it on mount and decodes
    the buffers then — otherwise the first shot of the round would be the one
    waiting on a fetch.
-8. **The listener reads `camera.position` / `camera.quaternion`, never
+9. **The listener reads `camera.position` / `camera.quaternion`, never
    `matrixWorld`.** `players/Player.tsx` drives the camera imperatively from its
    own `useFrame`, and matrices are only refreshed at render time — so a
    world-matrix read here would be a frame stale, and *which* frame would depend
    on `useFrame` ordering. The camera has no parent, so its local transform is its
    world transform.
-9. **One-shots are plain Web Audio nodes, not `THREE.PositionalAudio`.** That is
-   an `Object3D` you park in the scene graph, which suits a looping hum but would
-   mean mounting and unmounting a node per shot. Each play here is a source, a
-   gain and optionally a panner, all disconnected in `onended`.
-10. **A missing sound must never break a frame.** `playSound` drops the call if the
-   buffer has not decoded, the file 404'd, or the context is not running. It never
-   throws and never awaits.
-11. **Footsteps are derived, never networked.** Every client already has everyone's
-   position at 20 Hz, so a step is a function of distance travelled — no message,
-   no bandwidth, and it cannot drift out of sync with what you can see because it
-   *is* what you can see.
-12. **Only horizontal travel counts as walking.** Falling and jumping move you a
-   long way in Y and must not tick the stride. This is also why remote figures
-   cannot use the ground ray the local player has: nobody else's `grounded` is on
-   the wire, so ignoring Y is the approximation that stands in for it.
-13. **Both stride *and* pitch come from `BODY`.** A hider is smaller, so they
-    take shorter, quicker, higher steps than a seeker: stride 1.9 vs 2.47 and
+10. **One-shots are plain Web Audio nodes, not `THREE.PositionalAudio`.** That is
+    an `Object3D` you park in the scene graph, which suits a looping hum but would
+    mean mounting and unmounting a node per shot. Each play here is a source, a
+    gain and optionally a panner, all disconnected in `onended`.
+11. **A missing sound must never break a frame.** `playSound` drops the call if the
+    buffer has not decoded, the file 404'd, or the context is not running. It never
+    throws and never awaits.
+12. **Footsteps are derived, never networked.** Every client already has everyone's
+    position at 20 Hz, so a step is a function of distance travelled — no message,
+    no bandwidth, and it cannot drift out of sync with what you can see because it
+    *is* what you can see.
+13. **Only horizontal travel counts as walking.** Falling and jumping move you a
+    long way in Y and must not tick the stride. This is also why remote figures
+    cannot use the ground ray the local player has: nobody else's `grounded` is on
+    the wire, so ignoring Y is the approximation that stands in for it.
+14. **Both stride *and* pitch come from `BODY`.** A chameleon is smaller, so they
+    take shorter, quicker, higher steps than a hunter: stride 1.9 vs 2.47 and
     pitch 1.3 vs 1.0. At the shared movement speed of 6 that is 3.1 footfalls a
     second against 2.4. Re-proportioning a role changes both automatically.
     This is a gameplay signal, not decoration — hearing a step you cannot see and
     knowing whether it is prey or the hunter is most of what audio contributes to
     hide-and-seek.
-14. **Positions arrive more slowly than frames, and the stepper must not divide
+15. **Positions arrive more slowly than frames, and the stepper must not divide
     by `delta`.** This is the one that cost two rounds of silent footsteps.
     `<Physics>` steps at a fixed 1/60, so `rb.translation()` is unchanged on any
     frame that fell between steps — most of them above 60 Hz. Remote players are
@@ -131,33 +143,50 @@ follows your head, and the footstep derivation.
     version scored 0 in all of them but the artificially aligned one — which is
     the only case the first test covered. **Any test for this must tick positions
     slower than frames**, or it proves nothing.
-15. **Warping is not walking.** Further than `WARP_DISTANCE` (3 units) in one
+16. **Warping is not walking.** Further than `WARP_DISTANCE` (3 units) in one
     frame is a respawn, the under-the-floor catch, or a remote whose patch arrived
     after a stall — it resets rather than stepping, or every respawn would land a
     footfall on arrival. A *distance*, not a speed, for the reason above.
     `MIN_STEP_GAP` is the backstop beneath it.
-16. **No `constructor(private x)` parameter properties in this folder.** Node's
+17. **No `constructor(private x)` parameter properties in this folder.** Node's
     type stripping refuses them outright, and these modules are meant to import
     straight into Node for testing. `Stepper` writes the field out longhand.
-17. **Loops are keyed by name and at most one runs per name.** `startLoop` is
+18. **Loops are keyed by name and at most one runs per name.** `startLoop` is
     therefore idempotent — a caller can fire it every frame of a drag without
     tracking whether it already did — and `stopLoop` is the only thing that ends
     one. Both fade over `LOOP_FADE`: starting or stopping a buffer at full
     amplitude is a step in the waveform, and a brush you can hear clicking on and
     off is worse than no brush at all.
-18. **`startLoop` does not bail on a suspended context, unlike `playSound`.** A
+19. **`startLoop` does not bail on a suspended context, unlike `playSound`.** A
     suspended context has a frozen clock, so the sound and its fade simply begin
     when it wakes. Dropping the loop instead would mean a player who started
     brushing before the first gesture got silence until they released and pressed
     again.
-19. **Whoever starts a loop must stop it.** Nothing else will. `Player.tsx` stops
+20. **`once` is how a sound gets a handle without repeating.** `startLoop("…",
+    { once: true })` plays through a single time but stays in the `loops` map, so
+    `stopLoop` and `stopAllLoops` reach it. `playSound` cannot: nothing holds a
+    reference to a one-shot, which is right for a gunshot and wrong for
+    seventy-six seconds of music that would otherwise outlive a round ending
+    early and carry on through the reveal and into the lobby. Its `onended`
+    removes the entry, or the idempotence guard above would refuse to play it
+    again next round.
+21. **A hot reload can leave a second copy of this module, with its own `loops`
+    map and its own `AudioContext`.** `startLoop`'s "one per name" guard is
+    per-instance, so it cannot see what a previous instance started, and the two
+    then overlap — which reads as a sound playing twice and is not reproducible
+    from the source, because there is only ever one call site. `Game.tsx` stops
+    `ambient` before scheduling it and re-checks the phase when the timer fires,
+    so a round always begins from silence whatever the last edit left running.
+    **If a sound doubles in development, hard-reload before hunting for a second
+    caller.**
+22. **Whoever starts a loop must stop it.** Nothing else will. `Player.tsx` stops
     the brush on `onDrawingChange(false)` *and* in its effect teardown, so a loop
     cannot outlive the component that began it; `stopAllLoops` is there for any
     future caller that needs the blunt version.
 
 ## Contracts
 
-- **Reads `net/`** for `onShot` and `onKilled`, and reads `remotes` directly each
+- **Reads `net/`** for `onShot` and `onCaught`, and reads `remotes` directly each
   frame for footstep positions — including `cling`, which silences a climber.
   A remote's stepper only ever sees a position, and sliding along a wall or
   walking a ceiling is indistinguishable from walking a floor, so the flag has to
@@ -174,10 +203,11 @@ follows your head, and the footstep derivation.
 - **The server broadcasts `shot` on both the `shoot` and the `kill` path.** That
   matters: a killing shot relays no `mark`, so hanging the bang on `mark` would
   have made the most dramatic shot in the game silent.
-- **`killed` carries a position** so everyone hears the death where it happened.
-  It rides on the broadcast rather than on the grave because `graves.onAdd` also
-  replays the whole backlog to a joining client, who would otherwise hear every
-  death in the room's history at once.
+- **`caught` carries a position** so everyone hears the catch where it happened —
+  which is how the chameleons still hiding learn the hunt is closing in, and
+  roughly where. It rides on the broadcast rather than on the grave because
+  `graves.onAdd` also replays the whole backlog to a joining client, who would
+  otherwise hear every catch in the round's history at once.
 - **Reads `players/body.ts`** for `BODY`, to pitch steps by role.
 - **`players/Player.tsx` owns your own footsteps**, because it is the only place
   that knows you are grounded. They are played without a position — you are the
@@ -185,15 +215,16 @@ follows your head, and the footstep derivation.
   to hear. `SoundStage` owns everyone else's.
 - **`Game.tsx` calls `unlockAudio()` on join and `setAudioSuspended(paused)`**, so
   a shot fired the instant before Esc does not ring on behind the menu.
-- **`Game.tsx` runs the whistle timer for hiders only**, and *sends* rather than
+- **`Game.tsx` runs the whistle timer for chameleons only**, and *sends* rather than
   plays: the room relays it back positioned at you. Giving your position away
-  every 45 seconds is a cost the hidden pay; a seeker who announced themselves
+  every 45 seconds is a cost the hidden pay; a hunter who announced themselves
   would be handing the advantage to the people they are hunting. The server
-  refuses one from a seeker too, the same way it refuses a kill from a hider. `killedBy` is in the effect's deps, so a dead
-  player stops whistling — a corpse that keeps piping up is both wrong and
-  impossible to explain. `Game.tsx` also calls `stopAllLoops()` on death, on
-  leaving and on unmount; the brush loop would otherwise keep scrubbing behind
-  the death screen, since the component that started it is gone.
+  refuses one from a hunter too, the same way it refuses a catch from a
+  chameleon. A caught chameleon stops whistling the instant their role flips,
+  which the role check already covers. `Game.tsx` also calls `stopAllLoops()` on
+  leaving, on unmount and on every room change; the brush loop would otherwise
+  keep scrubbing after the component that started it is gone, and the music would
+  follow you into the next room.
 - **The brush loop is driven by `paint/brushCursor.ts`'s `onDrawingChange`**, via
   `players/Player.tsx`. `paint/` does not import `sound/` — it reports that a drag
   started or ended and lets the caller decide that makes a noise. One hook rather
@@ -218,7 +249,7 @@ All the knobs, in the order you are likely to want them:
 - **the brush loop** — `brush` gain in `catalogue.ts`, and `LOOP_FADE` in
   `engine.ts` for how softly it starts and stops
 - **footstep cadence** — `STRIDE_PER_HALF_HEIGHT` in `footsteps.ts`. Raise it and
-  everyone plods, lower it and everyone scurries; the hider/seeker difference
+  everyone plods, lower it and everyone scurries; the chameleon/hunter difference
   scales with it automatically. Currently 1.9, giving 3.1 and 2.4 steps a second.
 - the pitch spread — `JITTER`; the walk/idle threshold — `IDLE_SPEED`
 
@@ -235,16 +266,33 @@ part of this project's workflow — see the root CLAUDE.md.
 
 ## Not built yet
 
-No music, no ambience, no UI sounds, no volume control or mute in the HUD. No
+No UI sounds, no volume control or mute in the HUD — which the music makes more
+conspicuous than it was. No ambience between rounds: `ambient` plays once as a
+hunt begins and there is silence either side of it. No
 reverb, so the arena sounds like open air rather than a room. **Nobody else hears
 you brushing** — the loop is local, because "is painting" is not on the wire. It
 would be a fair thing to broadcast, and a good way to be found. Nothing varies
 footstep sound by surface, because every surface in the arena is the same
 material.
 
-**The whistle is a periodic tell, not a round bell.** Each *hider* runs the timer
-on their own clock and tells the room, so whistles arrive at different moments
-for different people and each one gives away roughly where its owner is. Seekers
-never whistle. A round
-boundary would be the opposite — one broadcast everybody hears at once — and when
-there is a round flow that will be a separate thing, not this.
+**The whistle is a periodic tell, not a round bell, and `bell` is the round bell.**
+Each *chameleon* runs the whistle timer on their own clock and tells the room, so
+whistles arrive at different moments for different people and each one gives away
+roughly where its owner is. Hunters never whistle. The three round sounds are the
+exact opposite and always will be: **`tick`, `bell` and `gong` are driven by the
+server's clock and heard by everybody at the same instant, at the same volume,
+wherever they are standing.** A bell that faded with distance would tell a
+chameleon in a far corner less than it told the hunter, which is backwards. `tick` marks every second the game is
+counting something you can act on: the ten before a round, the hiding phase, and
+the **closing thirty seconds** of a hunt. Not the whole hunt — a tick that never
+stops stops meaning anything — and it begins at exactly the moment the clock
+turns red, because a colour and a sound saying the same thing at the same instant
+are one signal where two thresholds would be two. `HUNT_URGENT_SECONDS` is that
+one threshold. The reveal does not tick: it counts down to a lobby rather than to
+anything that matters. **The bell plays at its own pitch.** A slowed one was tried — `rate` below 1 in
+`Game.tsx`, which is the one property of a played sound that does not touch the
+file — and dropped: it lengthens as well as deepens, and the tail ran into the
+start of the hunt. `bell` and `gong` are played
+from the **phase changing** rather than from a message: the phase is already in
+state and already reaches every client in the same patch, so the transition is
+the announcement.

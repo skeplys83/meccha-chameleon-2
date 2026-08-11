@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node src/game/server/index.ts",
-    "build": "next build",
+    "build": "vite build",
     "start": "NODE_ENV=production node src/game/server/index.ts",
     "lint": "eslint",
     "check:docs": "node scripts/check-docs.mjs",
@@ -21,21 +21,25 @@
     "colyseus": "^0.16.5",
     "colyseus.js": "^0.16.22",
     "express": "^5.2.1",
-    "next": "16.3.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "three": "^0.185.1"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
+    "@eslint/js": "^9.39.5",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/express": "^5.0.6",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/three": "^0.185.4",
+    "@vitejs/plugin-react": "^6.0.5",
     "eslint": "^9",
-    "eslint-config-next": "16.3.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.9.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "typescript-eslint": "^8.67.0",
+    "vite": "^8.2.1"
   }
 }

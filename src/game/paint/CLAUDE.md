@@ -4,7 +4,7 @@
 format for a stroke, and the panel that mixes colours.
 
 **Entry points:** `getSkin` / `paint` / `clearSkin` / `forgetSkin` /
-`forgetAllSkins` / `encodeStroke` / `decodeStroke` / `encodedHistory` / `SELF`
+`forgetAllSkins` / `encodeStroke` / `decodeStroke` / `SELF`
 from `skin.ts`; `Brush` / `DEFAULT_BRUSH` from
 `brush.ts`; `PaintPanel`.
 
@@ -35,32 +35,38 @@ from `skin.ts`; `Brush` / `DEFAULT_BRUSH` from
    within one radius of either edge is repeated on the far side or the seam
    shows a hard cut.
 4. **Painting needs no mode, only a free cursor.** Anyone whose pointer is not
-   locked — always a hider — paints by left-dragging on their own body and turns
+   locked — always a chameleon — paints by left-dragging on their own body and turns
    the camera by right-dragging. Hovering the body pops the panel open on its
    own; it lingers after the cursor leaves so you can reach it, and the header
    pins it.
-5. **The pin is how a *seeker* paints.** Pinning releases their pointer lock and
+5. **The pin is how a *hunter* paints.** Pinning releases their pointer lock and
    drops them to third person, so they can see their own figure. `Game.tsx` has
    to know about that, or losing the lock would raise the pause menu instead.
 6. **`SELF` is the local player's key in these maps**, remotes use their Colyseus
-   session id. `Viewmodel` draws the seeker's own arms from `SELF`'s canvases, so
-   a seeker sees their own paint in first person.
-7. **Paint does not survive joining, and that includes respawning.** `Game.tsx`
-   calls `forgetAllSkins()` on every join: yours goes, and so do the leftover
-   skins of whoever was in the last session, keyed by session ids that will never
-   be seen again.
-8. **Being *moved* is not joining, and paint does survive it.** The one
-   exception, and the reason `encodedHistory` exists at all: you paint yourself
-   in the waiting room while people arrive — as a seeker, which means through
-   the pin (invariant 5), and before you know which side you will end up on —
-   and arriving in the match stripped would make the waiting room pointless. `net/client.ts` replays your own
-   strokes into the new room and drops every remote skin, because session ids
-   are per room. Nothing else may use `encodedHistory` — a second caller would
-   quietly turn it back into the respawn replay that was deliberately removed.
-9. **A drag is throttled by UV distance, not by time.** `PAINT_STEP` in
+   session id. `Viewmodel` draws the hunter's own arms from `SELF`'s canvases, so
+   a hunter sees their own paint in first person.
+7. **Paint never survives leaving a room, by any door.** Joining, respawning,
+   being carried into a match and being carried home again all arrive unpainted,
+   yours and everyone else's: `Game.tsx` calls `forgetAllSkins()` on every join
+   *and* from `onLeftRoom`, which `net/` fires at each of the three ways a room
+   ends. That also clears the leftover skins of whoever was in the last session,
+   keyed by session ids that will never be seen again.
+
+   **The hand-off used to be the exception, and reversing this is a design
+   decision rather than a fix.** `encodedHistory` existed solely so
+   `net/client.ts` could replay your own strokes into the match, on the reasoning
+   that you paint yourself in the waiting room while people arrive and arriving
+   stripped makes the waiting room pointless. That reasoning has not stopped
+   being true: the arena's nine palette-matched pieces exist so a chameleon can test
+   camouflage against an exact match, and that preparation no longer travels with
+   them — painting is now a lobby activity that ends at Start. `encodedHistory`
+   is deleted rather than left for a second caller to find, so putting it back
+   means restoring it plus a replay in `move()` and dropping `forgetAllSkins`
+   from the `onLeftRoom` handler.
+8. **A drag is throttled by UV distance, not by time.** `PAINT_STEP` in
    `brushCursor.ts` — a smear at 60 fps would otherwise be hundreds of
    near-identical strokes, all of them sent and stored.
-10. **`createBrushCursor` takes getters, not values.** The figure and the ring
+9. **`createBrushCursor` takes getters, not values.** The figure and the ring
    mount after the handlers are installed, and the brush changes while they are
    live; reading them through getters is what lets the pointer handlers be bound
    exactly once, which is the invariant `Player.tsx` depends on.
@@ -86,10 +92,11 @@ from `skin.ts`; `Brush` / `DEFAULT_BRUSH` from
   that gets forgotten and the symptom is a brush still scrubbing behind the pause
   menu.
 - `net/` calls `paint`, `clearSkin` and `forgetSkin` for remote players.
-- **`world/Room.tsx` reads `palette.ts` too, and that is the point.** Nine arena
-  pieces are painted in exact `PAINT` hexes so a preset is a true match for
+- **`world/maps/arena.ts` reads `palette.ts` too, and that is the point.** Nine
+  arena pieces are painted in exact `PAINT` hexes so a preset is a true match for
   something you can lie against — camouflage is not testable otherwise. Never
-  "tidy" a preset without checking the room.
+  "tidy" a preset without checking the room. (It is also why that map table is
+  allowed to import from this folder: `palette.ts` has no imports of its own.)
 
 ## Not built yet
 

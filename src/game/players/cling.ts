@@ -1,11 +1,9 @@
-"use client";
-
 import * as THREE from "three";
 
 /**
  * Finding something to climb, and holding onto it.
  *
- * A hider sticks to any surface in the arena — a wall, the side of an obstacle,
+ * A chameleon sticks to any surface in the arena — a wall, the side of an obstacle,
  * the ceiling, the underside of the catwalk. All of it is one vector: the
  * surface normal, pointing *away* from the surface and back at the body. Walls
  * give a horizontal normal, a ceiling gives `(0, −1, 0)`.
@@ -48,7 +46,7 @@ const dirUnit = new THREE.Vector3();
 /**
  * How far the body's own box extends in a direction — its support function.
  *
- * The reach has to depend on the direction or nothing works: a hider is 0.26
+ * The reach has to depend on the direction or nothing works: a chameleon is 0.26
  * wide and 1 tall, so a probe upward that used the horizontal reach would never
  * see the ceiling their head is already touching, and a sideways probe that used
  * the vertical one would grab walls a body-length away.

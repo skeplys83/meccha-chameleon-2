@@ -1,9 +1,8 @@
-"use client";
-
 import { useEffect, useRef, useState } from "react";
 import { fetchSessions, type Game, type Session } from "@/game/net";
 import { randomName } from "./names";
-import { DEFAULT_MATCH_MAP, MATCH_MAP_LIST, mapName, type MapId } from "@/game/world/maps";
+import { mapName, type MapId } from "@/game/world/maps";
+import { CreateGamePanel } from "./CreateGamePanel";
 
 /**
  * The name lives in `sessionStorage`, deliberately — it is scoped to the tab,
@@ -45,8 +44,8 @@ function dropLegacyCookie() {
  * Everything before you are in a room, and it is deliberately two questions:
  * open a game, or type somebody's code.
  *
- * There is no side to pick — everyone waits as a seeker and the draw at Start
- * turns all but one of them into hiders.
+ * There is no side to pick — everyone waits as a hunter and the draw at Start
+ * turns all but one of them into chameleons.
  *
  * Public games are listed and joinable in a click; a game created with the box
  * unticked is not listed and needs its code passed by hand. Either way the code
@@ -56,18 +55,23 @@ export function StartMenu({
   onCreate,
   onJoinCode,
 }: {
-  onCreate: (name: string, target: Session, map: MapId, listed: boolean) => void;
+  onCreate: (
+    name: string,
+    target: Session,
+    map: MapId,
+    listed: boolean,
+    maxPlayers: number,
+  ) => void;
   onJoinCode: (name: string, target: Session, code: string) => void;
 }) {
   // Uncontrolled: the saved name only exists on the client, and filling it in
   // after mount keeps the server-rendered markup and the hydrated input equal.
   const input = useRef<HTMLInputElement>(null);
   const [self, setSelf] = useState<Session | null>(null);
-  const [map, setMap] = useState<MapId>(DEFAULT_MATCH_MAP);
   const [code, setCode] = useState("");
   const [games, setGames] = useState<Game[]>([]);
-  // Public by default: a game nobody can find is the exception, not the rule.
-  const [listed, setListed] = useState(true);
+  /** The create modal. Map, listing and size all live inside it. */
+  const [creating, setCreating] = useState(false);
 
   // Filled in after mount, so the server-rendered markup and the hydrated
   // input still match: a random name would differ on every render otherwise.
@@ -108,7 +112,7 @@ export function StartMenu({
         <h1 className="text-3xl font-semibold tracking-tight">Meccha Chameleon 2</h1>
         <p className="max-w-md text-center text-xs text-neutral-500">
           Everyone waits in the arena, armed. When the host starts, one player
-          keeps the shotgun — the rest become hiders.
+          keeps the shotgun — the rest become chameleons.
         </p>
       </div>
 
@@ -127,57 +131,18 @@ export function StartMenu({
             Create game
           </div>
 
-          {/* The arena is absent on purpose: it is the waiting room every game
-              starts in, not a map you choose. */}
-          <div className="mb-2 text-[11px] uppercase tracking-widest text-neutral-500">
-            Map
-          </div>
-          <div className="mb-4 flex flex-wrap gap-2">
-            {MATCH_MAP_LIST.map((m) => (
-              <button
-                key={m.id}
-                onClick={() => setMap(m.id)}
-                title={m.blurb}
-                className={`w-44 rounded-md border px-3 py-2 text-left transition ${
-                  map === m.id
-                    ? "border-neutral-300 bg-neutral-800 text-neutral-100"
-                    : "border-neutral-700 text-neutral-400 hover:border-neutral-500"
-                }`}
-              >
-                <div className="text-xs font-medium">{m.name}</div>
-                <div className="mt-0.5 text-[10px] leading-snug text-neutral-500">
-                  {m.blurb}
-                </div>
-              </button>
-            ))}
-          </div>
-
-          <label className="mb-3 flex cursor-pointer items-start gap-2 text-xs text-neutral-400">
-            <input
-              type="checkbox"
-              checked={listed}
-              onChange={(e) => setListed(e.target.checked)}
-              className="mt-0.5 accent-emerald-500"
-            />
-            <span>
-              List it publicly
-              <span className="block text-[10px] leading-snug text-neutral-600">
-                Anyone on this server sees it and can join. Unticked, only people
-                with the code can — it still works either way.
-              </span>
-            </span>
-          </label>
+          <p className="mb-4 text-[11px] leading-relaxed text-neutral-500">
+            Pick a map, a size and whether strangers can see it. You get a code to
+            hand out either way.
+          </p>
 
           <button
-            onClick={() => self && onCreate(takeName(), self, map, listed)}
+            onClick={() => setCreating(true)}
             disabled={!self}
             className="w-full rounded-lg border border-emerald-500 bg-emerald-600/20 px-6 py-3 text-sm font-medium text-emerald-200 transition hover:bg-emerald-600/40 disabled:opacity-40"
           >
             Create game
           </button>
-          <p className="mt-2 text-[11px] leading-snug text-neutral-600">
-            You get a code to hand out. Change the map from inside if you like.
-          </p>
         </section>
 
         {/* ── Or type someone's code ────────────────────────────────────────── */}
@@ -236,10 +201,10 @@ export function StartMenu({
                 </span>
               </span>
               <span className="shrink-0 text-xs text-neutral-500">
-                {mapName(g.map)} · {g.players}
                 {/* Both rooms are counted, so a started game reads as busy
                     rather than empty. */}
-                {g.players === 1 ? " player" : " players"}
+                {mapName(g.map)} · {g.players}
+                {g.maxPlayers ? ` / ${g.maxPlayers}` : ""}
                 {g.started ? " · in play" : ""}
               </span>
             </button>
@@ -255,6 +220,16 @@ export function StartMenu({
 
       {!self && (
         <p className="text-xs text-neutral-600">Looking for the game server…</p>
+      )}
+
+      {creating && self && (
+        <CreateGamePanel
+          onCancel={() => setCreating(false)}
+          onCreate={(map, listed, maxPlayers) => {
+            setCreating(false);
+            onCreate(takeName(), self, map, listed, maxPlayers);
+          }}
+        />
       )}
     </div>
   );

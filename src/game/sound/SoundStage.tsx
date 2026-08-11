@@ -1,8 +1,6 @@
-"use client";
-
 import { useEffect, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
-import { onKilled, onShot, onWhistle, remotes } from "@/game/net";
+import { onCaught, onShot, onWhistle, remotes } from "@/game/net";
 import { playSound, preloadSounds, updateListener } from "./engine";
 import { Stepper, jitteredStepRate, strideFor } from "./footsteps";
 
@@ -58,11 +56,12 @@ export function SoundStage() {
     [],
   );
 
-  // Everyone hears a death, wherever it happened. For the victim it lands just
-  // before their own death screen.
+  // Everyone hears a catch, at the spot it happened — which is how the
+  // chameleons still hiding learn the hunt is closing in, and roughly where.
+  // It is positional for exactly that reason, unlike the three round sounds.
   useEffect(
     () =>
-      onKilled((_victimId, _by, position) => {
+      onCaught((_victimId, _by, position) => {
         playSound("squash", { position });
       }),
     [],

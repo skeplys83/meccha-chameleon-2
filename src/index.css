@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+/**
+ * The HUD is `font-mono` almost everywhere, and that now resolves to Tailwind's
+ * own system stack (SF Mono, Menlo, Consolas…) rather than to Geist.
+ *
+ * Geist arrived via `next/font/google`, which fetched it at *build* time — an
+ * internet dependency in a game whose whole premise is that there may not be
+ * any. Dropping it makes `npm run build` work offline. To put it back, commit
+ * the woff2 files under `public/fonts/`, `@font-face` them here, and set
+ * `--font-mono` in the `@theme` block below; do not reintroduce a fetch.
+ */
+
+:root {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}

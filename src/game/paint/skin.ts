@@ -1,5 +1,3 @@
-"use client";
-
 import * as THREE from "three";
 import { PARTS, PART_SHAPE, type Part } from "@/game/figure/parts";
 import { MAX_STROKES } from "@/game/shared/protocol";
@@ -133,27 +131,16 @@ export function clearSkin(id: string) {
   history.set(id, []);
 }
 
-
-/**
- * Everything painted on one body, in wire form.
- *
- * The one thing that carries across a room switch. Joining is a clean slate —
- * `forgetAllSkins` — but being *moved* from a lobby into its match is not
- * joining: you painted yourself while you waited, and arriving stripped would
- * make the waiting room pointless. The match room has never heard of these
- * strokes, so they are replayed into it, and everyone there receives them the
- * ordinary way.
- */
-export function encodedHistory(id: string) {
-  return (history.get(id) ?? []).map(encodeStroke);
-}
-
 /**
  * Drop every body's paint, yours included.
  *
- * Joining is a clean slate: you arrive unpainted and so does everyone you can
- * see. Without this a rejoin showed you the leftover skins of players from the
- * last session, keyed by session ids that no longer exist.
+ * **Every change of room is a clean slate**, not just a join: `Game.tsx` calls
+ * this from `onLeftRoom`, so a match opens unpainted and so does the lobby you
+ * come home to. Paint used to be carried across a hand-off — `encodedHistory`
+ * existed solely to replay it — and no longer is.
+ *
+ * Without it a rejoin also showed you the leftover skins of players from the
+ * last session, keyed by session ids that will never be seen again.
  */
 export function forgetAllSkins() {
   for (const id of [...skins.keys()]) forgetSkin(id);

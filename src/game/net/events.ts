@@ -1,6 +1,4 @@
-"use client";
-
-import type { Role } from "@/game/shared/protocol";
+import type { Phase, Role } from "@/game/shared/protocol";
 
 /**
  * One-way notifications from the room that are not part of the synced state:
@@ -19,8 +17,15 @@ export type NetMark = {
   origin: [number, number, number];
 };
 
-/** Where somebody died, in world space. Permanent. */
-export type Grave = { id: string; position: [number, number, number] };
+/**
+ * Where a chameleon was found, in world space, and who it was.
+ *
+ * Permanent, and state rather than an event on the server, because the reveal at
+ * the end of a round is built from these: they are the record of where everybody
+ * was caught. The name rides along so a marker can be labelled rather than
+ * anonymous.
+ */
+export type Grave = { id: string; position: [number, number, number]; name: string };
 
 /**
  * Which room you are in and what it is doing.
@@ -34,7 +39,7 @@ export type RoomInfo = {
   mode: "lobby" | "match";
   /**
    * Which side you are on *here*. Not chosen and not carried: everybody waits as
-   * a seeker, and the draw at Start turns all but one of them into hiders, so
+   * a hunter, and the draw at Start turns all but one of them into chameleons, so
    * this is the room's answer rather than the player's.
    */
   role: Role;
@@ -52,8 +57,25 @@ export type RoomInfo = {
   /** The invite code of the game this room belongs to: a lobby's own code, and
    *  for a match the lobby to go back to. */
   lobbyCode: string;
-  /** Seconds left in the match. Zero in a lobby, which waits indefinitely. */
+  /**
+   * Seconds left in whatever this room is counting.
+   *
+   * Zero when nothing is: a lobby that is merely waiting has no clock, and that
+   * is the difference between `phase === "waiting"` and `phase === "countdown"`.
+   */
   timeLeft: number;
+  /** What the room is doing, as opposed to which kind of room it is. */
+  phase: Phase;
+  /**
+   * Who won, once somebody has — `"chameleons"`, `"hunters"`, or empty while the
+   * round is still open. Only ever set during `reveal`, and in state rather than
+   * an event because the reveal is long enough to reconnect inside.
+   */
+  winner: string;
+  /** How many players this game holds. The host chose it when they opened it. */
+  maxPlayers: number;
+  /** How many are here now — for "4 / 8", and for knowing when full is full. */
+  playerCount: number;
 };
 
 /** Where the shot came from — a session id, because every client already knows
@@ -63,7 +85,14 @@ const shotListeners = new Set<(shooterId: string) => void>();
 const whistleListeners = new Set<(whistlerId: string) => void>();
 const markListeners = new Set<(mark: NetMark) => void>();
 const graveListeners = new Set<(grave: Grave) => void>();
-const killListeners = new Set<
+/**
+ * Somebody was caught and is now a hunter.
+ *
+ * Not "killed": being caught does not put you out of the game, it changes which
+ * side you are on. The victim's own client uses it to know the thing that just
+ * happened was about them; everyone else uses it to place the sound.
+ */
+const caughtListeners = new Set<
   (victimId: string, by: string, position?: [number, number, number]) => void
 >();
 const roomListeners = new Set<(info: RoomInfo) => void>();
@@ -87,6 +116,31 @@ const droppedListeners = new Set<() => void>();
  * question anything holding UI over the old one needs answered.
  */
 const movedListeners = new Set<() => void>();
+/**
+ * The room you were in is gone — drop everything that belonged to it.
+ *
+ * Fired at each of the three places a room is left (a hand-off, a deliberate
+ * exit, a dead socket), always **before** the next room is attached. That
+ * ordering is the whole point and is why this cannot be an effect keyed on
+ * `onRoom`: a new room replays its `graves` backlog during `attach`, which lands
+ * *earlier* than the `RoomInfo` describing it, so a listener clearing on the
+ * room id would wipe the graves it had just been told about.
+ *
+ * Distinct from `onMoved`, which fires *after* arrival and means "you are
+ * somewhere new"; this one means "the old one stopped counting".
+ */
+const leftRoomListeners = new Set<() => void>();
+
+export function onLeftRoom(fn: () => void) {
+  leftRoomListeners.add(fn);
+  return () => {
+    leftRoomListeners.delete(fn);
+  };
+}
+
+export function emitLeftRoom() {
+  leftRoomListeners.forEach((fn) => fn());
+}
 
 export function onShot(fn: (shooterId: string) => void) {
   shotListeners.add(fn);
@@ -116,12 +170,12 @@ export function onGrave(fn: (grave: Grave) => void) {
   };
 }
 
-export function onKilled(
+export function onCaught(
   fn: (victimId: string, by: string, position?: [number, number, number]) => void,
 ) {
-  killListeners.add(fn);
+  caughtListeners.add(fn);
   return () => {
-    killListeners.delete(fn);
+    caughtListeners.delete(fn);
   };
 }
 
@@ -185,10 +239,10 @@ export function emitGrave(grave: Grave) {
   graveListeners.forEach((fn) => fn(grave));
 }
 
-export function emitKilled(
+export function emitCaught(
   victimId: string,
   by: string,
   position?: [number, number, number],
 ) {
-  killListeners.forEach((fn) => fn(victimId, by, position));
+  caughtListeners.forEach((fn) => fn(victimId, by, position));
 }

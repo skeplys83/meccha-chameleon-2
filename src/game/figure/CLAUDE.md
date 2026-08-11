@@ -14,6 +14,29 @@ dimensions of every limb.
   one needs.
 - `parts.ts` — `PARTS`, `Part`, `PART_SHAPE`.
 
+**A figure can be drawn as a marker instead of a body.** `highlight` swaps every
+part onto one flat unlit material with `depthTest` off, so it shows through
+walls, and **pulses** it between a dark and a bright red; the reveal uses it on
+the chameleons who survived a round. Three things about it are load-bearing:
+
+- **Flat and unlit.** A shaded material would be lit like everything else and
+  read as just another figure.
+- **A high `renderOrder` goes with the disabled depth test**, because "ignores
+  depth" only means "visible through walls" if you are the thing drawn last.
+- **One shared material for every highlighted body in the scene.** It is
+  animated, so a material per part per figure would be twelve times the colour
+  writes for an identical result — and worse, they would drift out of phase and
+  the pulse would stop reading as one deliberate signal. `pulseReveal` is
+  idempotent so every figure may drive it.
+
+It is attached through the mesh's `material` **prop**, and the paint material is
+rendered only when `highlight` is false. The two must never both be present: a
+child `<meshStandardMaterial>` attaches to `material` as well and, being applied
+after props, silently wins.
+
+It also hides the paint deliberately — camouflage is the thing being revealed,
+and leaving it on would conceal the figure this exists to expose.
+
 ## Invariants
 
 1. **Poses are joint angles on a rig, not separate models.** Limbs are groups
@@ -21,7 +44,7 @@ dimensions of every limb.
    is a table of rotations: `x` swings forward (the figure faces −Z), `spread`
    swings out and is mirrored per side. Angles are damped every frame, so figures
    ease between poses instead of snapping.
-2. **Index 0 is the upright stance** and is what everyone spawns in. A seeker
+2. **Index 0 is the upright stance** and is what everyone spawns in. A hunter
    never leaves it, so a rolled first-person camera is not a case that exists.
    The order is the order of the number keys: stand, crumple, lie on your side,
    arms up, sit.
@@ -37,7 +60,7 @@ dimensions of every limb.
    disagreed the brush would silently paint the wrong size — far bigger on the
    head than on a forearm. Change a radius and both follow.
 5. **`LOW_HALF` is a constant, not `hx`.** A folded pose's collider half-height
-   is 0.4. Tying it to how *wide* the body is meant that narrowing the hider (so
+   is 0.4. Tying it to how *wide* the body is meant that narrowing the chameleon (so
    they could sink into walls) also squashed their crouch to nothing.
 6. **`safePose` guards everything off the wire.** A pose index arrives from the
    network on every patch; an out-of-range one must clamp, not index into
@@ -53,7 +76,7 @@ dimensions of every limb.
 - `players/` passes `pose` as a plain number for the local player and as a
   *getter* for remotes, whose pose changes on network patches that deliberately
   do not re-render the tree.
-- `combat/` supplies the `aim` and `holding` props: on a remote seeker the right
+- `combat/` supplies the `aim` and `holding` props: on a remote hunter the right
   arm leaves the pose entirely and points along the aim
   (`x = π/2 + pitch`, yaw already being the figure's rotation), with the shotgun
   in that hand.

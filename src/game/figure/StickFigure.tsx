@@ -1,5 +1,3 @@
-"use client";
-
 import { useRef, type ReactNode } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
@@ -34,17 +32,68 @@ const UPPER_LEG = PART_SHAPE.legUpperL.length;
 /** How fast a limb settles into a new pose. Higher is snappier. */
 const POSE_DAMP = 14;
 
-function Segment({ part, skin }: { part: Part; skin: Record<Part, THREE.CanvasTexture> }) {
+/** Above everything else in the scene, so the walls it ignores draw first. */
+const REVEAL_ORDER = 20;
+/** The two ends of the pulse. Dark enough to read as a beat, never off. */
+const REVEAL_DIM = new THREE.Color("#5a0008");
+const REVEAL_BRIGHT = new THREE.Color("#ff2a36");
+/** Beats per second. Slow enough to read as breathing rather than an alarm. */
+const REVEAL_HZ = 1.15;
+
+/**
+ * **One material for every highlighted body in the scene, shared on purpose.**
+ *
+ * It is animated, and a material per part per figure would mean twelve times as
+ * many colour writes a frame for an identical result — worse, they would drift
+ * out of phase and the pulse would stop reading as one deliberate signal. One
+ * instance means one write and every survivor beating together.
+ *
+ * Flat and unlit: the point is to be unmissable through forty metres of wall,
+ * and a lit material would be shaded by whatever the light is doing and read as
+ * just another figure. `depthTest: false` is what makes it show through
+ * geometry, and it only reads correctly alongside a high `renderOrder`, because
+ * "ignores depth" means "whatever is drawn last wins".
+ */
+const revealMaterial = new THREE.MeshBasicMaterial({
+  color: REVEAL_BRIGHT.clone(),
+  toneMapped: false,
+  depthTest: false,
+});
+
+/**
+ * Drive the shared pulse. Idempotent, so every highlighted figure may call it.
+ *
+ * Attached through the mesh's `material` **prop**, never as a child element: a
+ * child `<meshStandardMaterial>` attaches to `material` too and, being applied
+ * after props, would silently win. The two must never both be present, which is
+ * why the paint material below is rendered only when `highlight` is false.
+ */
+function pulseReveal(elapsed: number) {
+  const t = (Math.sin(elapsed * Math.PI * 2 * REVEAL_HZ) + 1) / 2;
+  revealMaterial.color.copy(REVEAL_DIM).lerp(REVEAL_BRIGHT, t);
+}
+
+function Segment({
+  part,
+  skin,
+  highlight,
+}: {
+  part: Part;
+  skin: Record<Part, THREE.CanvasTexture>;
+  highlight: boolean;
+}) {
   const { radius, length } = PART_SHAPE[part];
   return (
     <mesh
       position={[0, -length / 2, 0]}
       castShadow
+      renderOrder={highlight ? REVEAL_ORDER : 0}
+      material={highlight ? revealMaterial : undefined}
       name={`PART:${part}`}
       userData={{ part }}
     >
       <capsuleGeometry args={[radius, length, 8, 20]} />
-      <meshStandardMaterial map={skin[part]} roughness={0.55} />
+      {!highlight && <meshStandardMaterial map={skin[part]} roughness={0.55} />}
     </mesh>
   );
 }
@@ -55,6 +104,7 @@ export function StickFigure({
   skinId,
   aim = null,
   holding,
+  highlight = false,
 }: {
   scale?: number;
   /** A getter for remote figures: their pose changes on network patches, which
@@ -70,6 +120,15 @@ export function StickFigure({
   aim?: (() => number) | null;
   /** Rendered in the right hand, barrel already aligned down the arm. */
   holding?: ReactNode;
+  /**
+   * Paint this body one flat colour and draw it through walls.
+   *
+   * Used for the surviving chameleons during the reveal, so a round ends by
+   * showing everybody where the people who beat them were actually standing.
+   * It replaces the paint deliberately: camouflage is the thing being revealed,
+   * and leaving it on would hide the very figure this is meant to expose.
+   */
+  highlight?: boolean;
 }) {
   const root = useRef<THREE.Group>(null);
   const torso = useRef<THREE.Group>(null);
@@ -80,7 +139,8 @@ export function StickFigure({
   const knees = useRef<(THREE.Group | null)[]>([]);
   const skin = getSkin(skinId);
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
+    if (highlight) pulseReveal(state.clock.elapsedTime);
     const p = POSES[safePose(typeof pose === "function" ? pose() : pose)];
 
     const settle = (g: THREE.Group | null | undefined, j: Joint | undefined, side: number) => {
@@ -148,16 +208,30 @@ export function StickFigure({
     <group ref={root} scale={scale}>
       <group ref={torso}>
         {/* torso */}
-        <mesh position={[0, TORSO_Y, 0]} castShadow name="PART:torso" userData={{ part: "torso" }}>
+        <mesh
+          position={[0, TORSO_Y, 0]}
+          castShadow
+          renderOrder={highlight ? REVEAL_ORDER : 0}
+          material={highlight ? revealMaterial : undefined}
+          name="PART:torso"
+          userData={{ part: "torso" }}
+        >
           <capsuleGeometry args={[PART_SHAPE.torso.radius, PART_SHAPE.torso.length, 8, 20]} />
-          <meshStandardMaterial map={skin.torso} roughness={0.55} />
+          {!highlight && <meshStandardMaterial map={skin.torso} roughness={0.55} />}
         </mesh>
 
         {/* head */}
         <group ref={head} position={[0, HEAD_Y - HEAD_R, 0]}>
-          <mesh position={[0, HEAD_R, 0]} castShadow name="PART:head" userData={{ part: "head" }}>
+          <mesh
+            position={[0, HEAD_R, 0]}
+            castShadow
+            renderOrder={highlight ? REVEAL_ORDER : 0}
+            material={highlight ? revealMaterial : undefined}
+            name="PART:head"
+            userData={{ part: "head" }}
+          >
             <sphereGeometry args={[HEAD_R, 24, 24]} />
-            <meshStandardMaterial map={skin.head} roughness={0.55} />
+            {!highlight && <meshStandardMaterial map={skin.head} roughness={0.55} />}
           </mesh>
         </group>
 
@@ -170,14 +244,14 @@ export function StickFigure({
               shoulders.current[i] = g;
             }}
           >
-            <Segment part={`armUpper${tag}`} skin={skin} />
+            <Segment part={`armUpper${tag}`} skin={skin} highlight={highlight} />
             <group
               position={[0, -UPPER_ARM, 0]}
               ref={(g) => {
                 elbows.current[i] = g;
               }}
             >
-              <Segment part={`armFore${tag}`} skin={skin} />
+              <Segment part={`armFore${tag}`} skin={skin} highlight={highlight} />
               {/* The hand. Rotating -90° about X turns the gun's -Z barrel to
                   run down the arm, so it points wherever the arm points. */}
               {tag === "R" && holding && (
@@ -199,14 +273,14 @@ export function StickFigure({
             hips.current[i] = g;
           }}
         >
-          <Segment part={`legUpper${tag}`} skin={skin} />
+          <Segment part={`legUpper${tag}`} skin={skin} highlight={highlight} />
           <group
             position={[0, -UPPER_LEG, 0]}
             ref={(g) => {
               knees.current[i] = g;
             }}
           >
-            <Segment part={`legLower${tag}`} skin={skin} />
+            <Segment part={`legLower${tag}`} skin={skin} highlight={highlight} />
           </group>
         </group>
       ))}

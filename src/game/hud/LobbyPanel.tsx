@@ -1,8 +1,7 @@
-"use client";
-
 import { useState } from "react";
 import { sendMap, sendStart } from "@/game/net";
 import { MATCH_MAP_LIST, mapName } from "@/game/world/maps";
+import { MIN_PLAYERS, type Phase } from "@/game/shared/protocol";
 
 /**
  * The waiting room's own overlay: the invite code, the map you are about to
@@ -13,7 +12,7 @@ import { MATCH_MAP_LIST, mapName } from "@/game/world/maps";
  * arrive, not stare at a menu. It disappears the moment the match begins.
  *
  * **It stays up while paused, and that is the only way it is usable.** Everyone
- * in the waiting room is a seeker, so everyone holds the pointer lock and has no
+ * in the waiting room is a hunter, so everyone holds the pointer lock and has no
  * cursor; pausing is what hands the cursor back. Hiding this panel behind the
  * pause menu — which is what it used to do — left the host looking at a Start
  * button they could see and could not click.
@@ -29,13 +28,27 @@ export function LobbyPanel({
   nextMap,
   isHost,
   isListed,
+  phase,
+  timeLeft,
+  players,
+  maxPlayers,
 }: {
   code: string;
   nextMap: string;
   isHost: boolean;
   isListed: boolean;
+  /** `"waiting"` or `"countdown"` — a lobby is never in any other. */
+  phase: Phase;
+  /** Seconds left on the countdown. Zero while waiting. */
+  timeLeft: number;
+  players: number;
+  maxPlayers: number;
 }) {
   const [copied, setCopied] = useState(false);
+  const counting = phase === "countdown";
+  /** Two is the floor: a round needs a hunter and something to hunt. The server
+   *  refuses Start below it too — this only greys the button out. */
+  const enough = players >= MIN_PLAYERS;
 
   /**
    * Copy the code, by whichever of the two routes exists here.
@@ -80,21 +93,18 @@ export function LobbyPanel({
     <div className="absolute left-1/2 top-4 w-[22rem] -translate-x-1/2 rounded-lg border border-neutral-700 bg-neutral-950/90 px-4 py-3 text-neutral-100">
       <div className="flex items-center justify-between">
         <div>
+          {/* One line of facts about this game: whether strangers can find it —
+              decided at creation and unchangeable from here — and whether the
+              round is waiting on you. Host is said outright rather than inferred
+              from "there is a Start button here", because that button only
+              appears once you pause. */}
           <div className="text-[10px] uppercase tracking-widest text-neutral-500">
-            {/* Whether strangers can find this game is worth saying out loud —
-                it is decided at creation and cannot be changed from here. */}
             Invite code · {isListed ? "public" : "unlisted"}
+            {isHost && (
+              <span className="font-semibold text-red-400"> · you are host</span>
+            )}
           </div>
           <div className="font-mono text-2xl tracking-[0.35em]">{code}</div>
-          {/* Said outright rather than inferred from "there is a Start button
-              here": the button only appears once you pause, so without this a
-              host who has not paused has no way of knowing the round is waiting
-              on them. */}
-          {isHost && (
-            <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-widest text-red-400">
-              You are host
-            </div>
-          )}
         </div>
         <button
           onClick={copy}
@@ -103,6 +113,36 @@ export function LobbyPanel({
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
+
+      {/* The roster, and the countdown when there is one. It is the same strip
+          for everybody: whether the round is about to begin is not a host's
+          private business, and the tick everyone hears needs a number to belong
+          to. */}
+      <div
+        className={`mt-3 flex items-baseline justify-between rounded-md px-2.5 py-1.5 ${
+          counting ? "bg-emerald-950/60" : "bg-neutral-900/70"
+        }`}
+      >
+        <span className="text-[10px] uppercase tracking-widest text-neutral-400">
+          {counting ? "Starting" : "Waiting"}
+        </span>
+        <span className="flex items-baseline gap-3">
+          {counting && (
+            <span className="font-mono text-xl tabular-nums text-emerald-300">
+              {timeLeft}
+            </span>
+          )}
+          <span className="font-mono text-sm tabular-nums text-neutral-300">
+            {players} / {maxPlayers}
+          </span>
+        </span>
+      </div>
+      {!counting && !enough && (
+        <div className="mt-1 text-[10px] leading-snug text-neutral-500">
+          Waiting for {MIN_PLAYERS - players} more — a round needs at least{" "}
+          {MIN_PLAYERS}.
+        </div>
+      )}
 
       {isHost ? (
         <>
@@ -125,12 +165,18 @@ export function LobbyPanel({
               </button>
             ))}
           </div>
-          <button
-            onClick={sendStart}
-            className="mt-3 w-full rounded-md border border-emerald-500 bg-emerald-600/20 px-4 py-2 text-sm font-medium text-emerald-200 transition hover:bg-emerald-600/40"
-          >
-            Start on {mapName(nextMap)}
-          </button>
+          {/* No Start while the countdown runs: it is already starting, and the
+              server ignores a second press anyway rather than restarting the
+              clock. */}
+          {!counting && (
+            <button
+              onClick={sendStart}
+              disabled={!enough}
+              className="mt-3 w-full rounded-md border border-emerald-500 bg-emerald-600/20 px-4 py-2 text-sm font-medium text-emerald-200 transition hover:bg-emerald-600/40 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Start on {mapName(nextMap)}
+            </button>
+          )}
         </>
       ) : (
         <>
@@ -143,7 +189,7 @@ export function LobbyPanel({
           <div className="text-lg font-medium text-neutral-100">{mapName(nextMap)}</div>
           <p className="mt-2 text-xs text-neutral-500">
             Waiting for the host to start. One player keeps the shotgun and the
-            rest become hiders — your paint comes with you.
+            rest become chameleons — your paint comes with you.
           </p>
         </>
       )}

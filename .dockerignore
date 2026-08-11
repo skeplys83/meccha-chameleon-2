@@ -1,6 +1,6 @@
 # Keeps the build context small and stops host junk leaking into the image.
 node_modules
-.next
+dist
 .git
 .githooks
 .vscode

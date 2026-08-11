@@ -1,5 +1,3 @@
-"use client";
-
 import { useMemo } from "react";
 import * as THREE from "three";
 import type { NetMark } from "@/game/net";
@@ -15,7 +13,7 @@ import type { NetMark } from "@/game/net";
 export type Mark = NetMark;
 
 /**
- * Hairline. A hider is two units tall, so this is about a four-hundredth of a
+ * Hairline. A chameleon is two units tall, so this is about a four-hundredth of a
  * body across — read as a drawn line rather than a rod.
  *
  * It is a world-space thickness, so it thins with distance and goes sub-pixel
@@ -71,7 +69,7 @@ function Tracer({ from, to }: { from: NetMark["origin"]; to: NetMark["position"]
 }
 
 /**
- * Yellow patches where a seeker's shot landed, each with the line it travelled.
+ * Yellow patches where a hunter's shot landed, each with the line it travelled.
  *
  * Both live and die together — `Scene.tsx` owns the single timer that drops a
  * mark after `MARK_LIFETIME`, so the line is on screen for exactly as long as

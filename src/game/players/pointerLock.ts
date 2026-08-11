@@ -1,5 +1,3 @@
-"use client";
-
 /**
  * The canvas is created inside the r3f tree but the pause menu lives outside
  * it, so the element both need is kept here.
@@ -16,6 +14,11 @@ export function setLockTarget(canvas: HTMLCanvasElement | null) {
   if (!canvas) cancelLock();
 }
 
+/** The element the lock is taken on, for anyone needing to compare against it. */
+export function lockTargetEl() {
+  return target;
+}
+
 export function isLocked() {
   return !!target && document.pointerLockElement === target;
 }
@@ -25,7 +28,7 @@ export function isLocked() {
  *
  * A single attempt is not enough and never was. Esc releases the lock *and*
  * starts a cooldown of roughly a second during which the browser silently
- * refuses `requestPointerLock` — so a seeker who paused with Esc and pressed
+ * refuses `requestPointerLock` — so a hunter who paused with Esc and pressed
  * Resume got their cursor left loose in the tab with no way to look around, the
  * exact bug the old one-shot call was written to fix.
  *
@@ -35,12 +38,25 @@ export function isLocked() {
  */
 export function requestLock() {
   cancelLock();
-  if (!target) return;
 
+  /**
+   * **A missing target is a reason to wait, not to give up.**
+   *
+   * `Player` owns the canvas handle and lives inside r3f's own reconciler, so
+   * its mount effect is not ordered against `Game.tsx`'s. When a role change
+   * rebuilds the player — which is exactly what being caught does — the old
+   * one's teardown clears the target and the new one's effect sets it back, and
+   * the ask can land in between. Bailing out there left a freshly converted
+   * hunter with a loose cursor and no way to aim until they clicked.
+   */
   let left = RETRY_ATTEMPTS;
   const attempt = () => {
     retry = null;
-    if (!target || isLocked()) return;
+    if (isLocked()) return;
+    if (!target) {
+      if (--left > 0) retry = setTimeout(attempt, RETRY_MS);
+      return;
+    }
 
     // A refusal during the cooldown is expected here, and it arrives two
     // different ways depending on the browser: older Chrome *throws*

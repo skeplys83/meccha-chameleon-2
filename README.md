@@ -3,8 +3,8 @@
 <img width="1914" height="967" alt="image" src="https://github.com/user-attachments/assets/8c62910d-3f56-489e-93d8-7124af27c636" />
 
 
-A LAN-only multiplayer hide-and-seek game. Hiders are stick figures who can lie
-on their side to pass as scenery; seekers hunt them in first person with a
+A LAN-only multiplayer hide-and-seek game. Chameleons are stick figures who can lie
+on their side to pass as scenery; hunters hunt them in first person with a
 shotgun. No internet, no accounts — everything runs on machines on the same
 Wi-Fi.
 
@@ -16,16 +16,16 @@ npm run dev
 ```
 
 This starts a custom server (`src/game/server/index.ts`, TypeScript run
-directly by Node — no build step): Next.js on `:3000` and a Colyseus
-game server on `:2567`. It prints a LAN URL — other players on the same Wi-Fi
-open that.
+directly by Node — no build step): the page on `:3000`, served through Vite in
+middleware mode, and a Colyseus game server on `:2567`. It prints a LAN URL —
+other players on the same Wi-Fi open that.
 
 Press **Create game** and you get a waiting room in the arena with a four-letter
 code. Games are public by default and show up in everyone's menu with a player
 count, or untick the box and hand the code out yourself — either way the code is
 what gets you in. Everyone waits armed. When the host presses Start, the whole
 room moves to the chosen map, one player keeps the shotgun and the rest become
-hiders. A match runs for sixty seconds; when it ends everyone is back in the
+chameleons. A match runs for sixty seconds; when it ends everyone is back in the
 waiting room and the host can start another. One server runs as many games at once as you like. A code is the only way
 into a game — nothing is listed.
 
@@ -36,29 +36,29 @@ Env vars: `PORT` (web), `GAME_PORT` (Colyseus), `SESSION_NAME`.
 `WASD` to move, mouse to look, `Q`/`E` to turn the figure, `Space` to jump.
 Click the canvas to lock the cursor, `Esc` to release.
 
-You do not choose a side — the seeker is drawn at random when the match starts.
+You do not choose a side — the hunter is drawn at random when the match starts.
 
-- **Seeker** — first person with a shotgun, left click to fire (pump-action, so
+- **Hunter** — first person with a shotgun, left click to fire (pump-action, so
   there is a delay between shots). Everyone is one in the waiting room, and
   exactly one stays one per match. Nobody can be killed while waiting.
-- **Hider** — third-person camera, `1`–`5` for poses, left-drag to paint
+- **Chameleon** — third-person camera, `1`–`5` for poses, left-drag to paint
   yourself, and the only side that can climb.
 
 If your connection drops mid-match the server holds your seat for twenty
 seconds — reconnect inside that and you keep your side, your position and your
 paint. Your body stays standing there in the meantime, and can be shot.
 
-Hiders can climb: walk into a wall or an object and you go onto it. `W`/`S` run
+Chameleons can climb: walk into a wall or an object and you go onto it. `W`/`S` run
 up and down the face, `A`/`D` across it, and `Space` lets go. Climb high enough
 and you wrap onto the ceiling.
 
 Sound is positional: footsteps, gunshots and deaths come from where they happen,
-and a hider's lighter footsteps are pitched above a seeker's. Climbing is silent.
+and a chameleon's lighter footsteps are pitched above a hunter's. Climbing is silent.
 Every 45 seconds you whistle, and anyone near enough hears roughly where you are.
 
 ## Stack
 
-Next.js 16 App Router, React 19, TypeScript, Tailwind v4, three.js via
+Vite 8, React 19, TypeScript, Tailwind v4, three.js via
 `@react-three/fiber` / `drei` / `rapier`, and Colyseus 0.16 for netcode.
 
 ## Layout
@@ -114,8 +114,8 @@ is:
 
 ## Watching it run
 
-Colyseus's admin panel is mounted at **`/colyseus`** — open
-<http://localhost:3000/colyseus> while the server is running.
+Colyseus's admin panel is mounted at **`/monitor`** — open
+<http://localhost:3000/monitor> while the server is running.
 
 It lists every live room. This game makes two kinds, so the list is the clearest
 picture of what the matchmaking is doing:

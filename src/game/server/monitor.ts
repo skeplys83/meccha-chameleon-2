@@ -4,7 +4,7 @@ import express from "express";
 import { monitor } from "@colyseus/monitor";
 
 /**
- * Colyseus's own admin panel, mounted at `/colyseus`.
+ * Colyseus's own admin panel, mounted at `/monitor`.
  *
  * It lists every live room with its client count and metadata, and lets you open
  * one and watch its state change in real time — which is the only way to see the
@@ -32,10 +32,10 @@ import { monitor } from "@colyseus/monitor";
  * else. See "Hosting it" in the README.
  */
 
-export const MONITOR_PATH = "/colyseus";
+export const MONITOR_PATH = "/monitor";
 
 const user = process.env.MONITOR_USER || "admin";
-const password = process.env.MONITOR_PASSWORD || "";
+const password = process.env.MONITOR_PASSWORD || "admin";
 
 /** Constant-time, and length-safe: comparing different lengths would throw. */
 function matches(given: string, expected: string) {
@@ -60,7 +60,7 @@ function authorised(header: string | undefined) {
  * The panel as a plain request handler, or `null` if it should not exist.
  *
  * Returning `null` rather than an always-403 handler is deliberate: a route that
- * is not mounted cannot be probed, and `/colyseus` on a server without a
+ * is not mounted cannot be probed, and `/monitor` on a server without a
  * password should look exactly like any other unknown path.
  */
 export function createMonitor(dev: boolean) {

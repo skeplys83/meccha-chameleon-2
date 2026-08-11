@@ -1,5 +1,3 @@
-"use client";
-
 import * as THREE from "three";
 import type { Part } from "@/game/figure/parts";
 import { encodeStroke, paint, SELF } from "./skin";
@@ -15,7 +13,7 @@ import type { Brush } from "./brush";
  * hard to read.
  *
  * Painting needs no mode, only a free cursor: anyone whose pointer is not locked
- * (always a hider, or a seeker who pinned the palette) can draw.
+ * (always a chameleon, or a hunter who pinned the palette) can draw.
  */
 
 /** Minimum UV travel before a drag lays down another dot — a smear at 60 fps

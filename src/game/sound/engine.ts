@@ -1,5 +1,3 @@
-"use client";
-
 import * as THREE from "three";
 import { SOUNDS, SOUND_NAMES, type SoundName } from "./catalogue";
 
@@ -299,7 +297,10 @@ export function playSound(name: SoundName, options: PlayOptions = {}) {
  * starts anyway and asks for a resume. A suspended context has a frozen clock,
  * so the sound and its fade simply begin when the context wakes.
  */
-export function startLoop(name: SoundName, options: { gain?: number; rate?: number } = {}) {
+export function startLoop(
+  name: SoundName,
+  options: { gain?: number; rate?: number; once?: boolean } = {},
+) {
   const context = ctx;
   const out = master;
   const buffer = buffers.get(name);
@@ -308,7 +309,17 @@ export function startLoop(name: SoundName, options: { gain?: number; rate?: numb
 
   const source = context.createBufferSource();
   source.buffer = buffer;
-  source.loop = true;
+  /**
+   * `once` plays a sound through a single time but **keeps the handle**, which
+   * is the whole reason it lives here rather than in `playSound`.
+   *
+   * A `playSound` one-shot cannot be stopped: nothing holds a reference to it.
+   * That is right for a gunshot and wrong for seventy-six seconds of music,
+   * which would otherwise carry on through the reveal and into the lobby when a
+   * round ends early. Registered in `loops`, it is reached by `stopAllLoops`
+   * along with everything else scoped to a room.
+   */
+  source.loop = options.once !== true;
   source.playbackRate.value = options.rate ?? 1;
 
   const gain = context.createGain();
@@ -319,6 +330,11 @@ export function startLoop(name: SoundName, options: { gain?: number; rate?: numb
 
   source.connect(gain);
   gain.connect(out);
+  // A `once` source ends on its own, and the entry has to go with it or the
+  // guard above would refuse to play it a second time next round.
+  source.onended = () => {
+    if (loops.get(name)?.source === source) loops.delete(name);
+  };
   source.start();
   loops.set(name, { source, gain });
 }

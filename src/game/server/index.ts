@@ -1,5 +1,7 @@
-import { createServer } from "node:http";
-import next from "next";
+import { readFileSync } from "node:fs";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { fileURLToPath } from "node:url";
+import express from "express";
 import { matchMaker, Server } from "colyseus";
 import { GameRoom } from "./room.ts";
 import { createMonitor, monitorNotice, MONITOR_PATH } from "./monitor.ts";
@@ -15,17 +17,28 @@ import {
  * The entry point: `npm run dev` and `npm start` both run this file. Node strips
  * the types itself — there is no build step for the server.
  *
- * It is deliberately *two* servers. Next keeps its own HTTP server, including
- * its dev HMR websocket upgrades; Colyseus listens on its own port. Handing a
- * WebSocket server the HTTP server's `upgrade` event destroys every non-matching
- * upgrade, which kills HMR, which stops the client bootstrap, which means React
- * never hydrates and no button on the page works. See the root CLAUDE.md.
+ * It is deliberately *two* servers, and now arguably three. This HTTP server
+ * carries the page and `/api/sessions`; Colyseus listens on its own port; and in
+ * development Vite's HMR websocket gets a port of its own as well. Handing a
+ * WebSocket server this server's `upgrade` event destroys every non-matching
+ * upgrade — which is how HMR died once already, taking the client bootstrap and
+ * every button on the page with it. See trap 2 in the root CLAUDE.md. Nothing
+ * here touches `upgrade`, and that is the whole reason the ports are separate.
  */
 
 const dev = process.env.NODE_ENV !== "production";
 const port = Number(process.env.PORT ?? 3000);
 const gamePort = Number(process.env.GAME_PORT ?? 2567);
 const hostname = "0.0.0.0";
+
+/**
+ * Vite's HMR websocket, in development only.
+ *
+ * It gets its own port for exactly the reason Colyseus has one: the alternative
+ * is handing Vite this server's `upgrade` event. Guests on the LAN need to reach
+ * it as well as the page, so it binds the same wildcard address.
+ */
+const hmrPort = Number(process.env.HMR_PORT ?? 24678);
 
 /**
  * The Colyseus port to *advertise*, which is not always the one we listen on.
@@ -45,9 +58,68 @@ const publicGamePort = Number(process.env.PUBLIC_GAME_PORT ?? gamePort);
  */
 if (process.env.LAN_DISCOVERY !== "0") startDiscovery({ port, gamePort });
 
-const app = next({ dev, hostname, port });
-const handle = app.getRequestHandler();
-await app.prepare();
+/** Where `vite build` puts the client. Resolved from this file, not from cwd. */
+const DIST = fileURLToPath(new URL("../../../dist", import.meta.url));
+
+type Handler = (req: IncomingMessage, res: ServerResponse) => void;
+
+/**
+ * Whatever serves the page itself — Vite in development, the built files in
+ * production. Everything the custom server owns is checked before this; it is
+ * the fall-through, the slot Next's request handler used to occupy.
+ *
+ * Vite is imported dynamically so it stays a devDependency: a production image
+ * installs `--omit=dev` and must never reach for it.
+ */
+async function serveApp(): Promise<Handler> {
+  if (dev) {
+    const { createServer: createViteServer } = await import("vite");
+    const vite = await createViteServer({
+      // `spa` is what makes Vite serve and transform index.html itself, with a
+      // fallback for any path — so this file needs no HTML handling of its own.
+      appType: "spa",
+      server: {
+        middlewareMode: true,
+        // Its own port. See the note on `hmrPort` above.
+        hmr: { port: hmrPort },
+        // The page is opened from other machines on the Wi-Fi, and Vite refuses
+        // hosts it does not recognise. This is the replacement for Next's
+        // `allowedDevOrigins`, and it is one line because Vite checks the Host
+        // header rather than the origin of every asset request.
+        allowedHosts: true,
+      },
+    });
+    return (req, res) => vite.middlewares(req, res);
+  }
+
+  let index: Buffer;
+  try {
+    index = readFileSync(new URL("../../../dist/index.html", import.meta.url));
+  } catch {
+    console.error(`  no client build at ${DIST} — run \`npm run build\` first`);
+    process.exit(1);
+  }
+
+  // Vite fingerprints every asset filename, so the only file that must not be
+  // cached is the one that names them.
+  //
+  // Cast for the same reason `monitor.ts` casts: express types its middleware
+  // against its own Request/Response, but the implementation is plain connect
+  // and reads nothing this server does not already have.
+  const files = express.static(DIST, { index: false, maxAge: "1h" }) as unknown as (
+    req: IncomingMessage,
+    res: ServerResponse,
+    next: () => void,
+  ) => void;
+  return (req, res) =>
+    files(req, res, () => {
+      res.setHeader("content-type", "text/html; charset=utf-8");
+      res.setHeader("cache-control", "no-cache");
+      res.end(index);
+    });
+}
+
+const app = await serveApp();
 
 /**
  * The public games on this server.
@@ -79,6 +151,7 @@ async function publicGames() {
     map: room.metadata?.map ?? "",
     started: room.metadata?.started === true,
     players: room.clients + (inMatch.get(room.metadata?.matchId) ?? 0),
+    maxPlayers: room.metadata?.maxPlayers ?? room.maxClients,
   }));
 }
 
@@ -92,13 +165,15 @@ const admin = createMonitor(dev);
 
 const web = createServer((req, res) => {
   // The panel is express-based, so it is handed the request whole. It comes
-  // first because Next would otherwise answer `/colyseus` with a 404 page.
+  // first because the app is the fall-through and answers everything — Vite's
+  // SPA middleware in development, an index.html fallback in production — so a
+  // route mounted after it would never be reached.
   if (admin && req.url?.startsWith(MONITOR_PATH)) {
     admin(req, res);
     return;
   }
 
-  // The only other route the custom server owns. Everything else is Next's.
+  // The only other route the custom server owns. Everything else is the app's.
   if (req.url === "/api/sessions") {
     res.setHeader("content-type", "application/json");
     void publicGames().then((games) => {
@@ -118,7 +193,7 @@ const web = createServer((req, res) => {
     });
     return;
   }
-  handle(req, res);
+  app(req, res);
 });
 
 const gameServer = new Server();
@@ -134,6 +209,7 @@ web.listen(port, hostname, () => {
   console.log(`  ready   http://localhost:${port}`);
   if (lan) console.log(`  LAN     http://${lan}:${port}`);
   console.log(`  game    colyseus on :${gamePort}`);
+  if (dev) console.log(`  hmr     vite on :${hmrPort}`);
   if (publicGamePort !== gamePort) {
     console.log(`  public  clients are told :${publicGamePort}`);
   }

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Meccha Chameleon — a painted hider</title>
+  <defs>
+    <clipPath id="head"><circle cx="32" cy="32" r="26"/></clipPath>
+    <radialGradient id="lit" cx="38%" cy="30%" r="78%">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.6" stop-color="#efefef"/>
+      <stop offset="1" stop-color="#b4b4b4"/>
+    </radialGradient>
+  </defs>
+  <!-- The dark tile is what makes a white head legible on a light tab bar. -->
+  <rect width="64" height="64" rx="12" fill="#0a0a0a"/>
+  <circle cx="32" cy="32" r="26" fill="url(#lit)"/>
+  <g clip-path="url(#head)"><ellipse cx="49.92" cy="30.15" rx="2.87" ry="3.98" fill="#06b6d4" transform="rotate(-5.9 49.92 30.15)"/><ellipse cx="47.52" cy="29.33" rx="3.18" ry="4" fill="#06b6d4" transform="rotate(-9.77 47.52 29.33)"/><ellipse cx="44.36" cy="27.99" rx="3.5" ry="4.04" fill="#06b6d4" transform="rotate(-17.98 44.36 27.99)"/><ellipse cx="41.61" cy="26.91" rx="3.04" ry="3.35" fill="#06b6d4" transform="rotate(-27.9 41.61 26.91)"/><ellipse cx="30.63" cy="42.91" rx="4.49" ry="4.95" fill="#3b82f6" transform="rotate(97.13 30.63 42.91)"/><ellipse cx="28.18" cy="43.71" rx="4.58" ry="5.2" fill="#3b82f6" transform="rotate(108.06 28.18 43.71)"/><ellipse cx="26.02" cy="44.86" rx="4.38" ry="5.23" fill="#3b82f6" transform="rotate(114.96 26.02 44.86)"/><ellipse cx="24" cy="45.8" rx="3.81" ry="4.83" fill="#3b82f6" transform="rotate(120.08 24 45.8)"/><ellipse cx="21.25" cy="46.89" rx="3.13" ry="4.42" fill="#3b82f6" transform="rotate(125.83 21.25 46.89)"/><ellipse cx="48.66" cy="46.15" rx="2.83" ry="5.22" fill="#e11d48" transform="rotate(40.35 48.66 46.15)"/><ellipse cx="50.49" cy="47.7" rx="1.77" ry="4.92" fill="#e11d48" transform="rotate(40.32 50.49 47.7)"/><ellipse cx="26.39" cy="32.93" rx="4.31" ry="4.42" fill="#f97316" transform="rotate(170.55 26.39 32.93)"/><ellipse cx="22.85" cy="32.47" rx="3.77" ry="4.03" fill="#f97316" transform="rotate(177.08 22.85 32.47)"/><ellipse cx="19.33" cy="31.81" rx="3.77" ry="4.31" fill="#f97316" transform="rotate(-179.16 19.33 31.81)"/><ellipse cx="16.77" cy="30.79" rx="3.06" ry="3.79" fill="#f97316" transform="rotate(-175.44 16.77 30.79)"/></g>
+  <!-- Re-seat the shading over the paint so the whole head reads as one sphere. -->
+  <circle cx="32" cy="32" r="26" fill="url(#lit)" opacity="0.22"/>
+  <circle cx="32" cy="32" r="26" fill="none" stroke="#000000" stroke-opacity="0.25"/>
+</svg>

@@ -1,5 +1,3 @@
-"use client";
-
 import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
@@ -8,7 +6,7 @@ import { getSkin, SELF } from "@/game/paint/skin";
 import type { Part } from "@/game/figure/parts";
 
 /**
- * The seeker's own arms and shotgun, held out in front of the camera. It rides
+ * The hunter's own arms and shotgun, held out in front of the camera. It rides
  * the camera each frame rather than being parented to it, since the camera is
  * driven imperatively.
  *

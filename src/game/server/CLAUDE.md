@@ -1,11 +1,12 @@
 # server — the authoritative half
 
 **Owns:** the Colyseus rooms and their state, the matchmaking between them, LAN
-discovery over UDP, and the HTTP bootstrap that serves Next.
+discovery over UDP, and the HTTP bootstrap that serves the client.
 
 **Entry point:** `node src/game/server/index.ts`, which is what both `npm run
-dev` and `npm start` run. There is no `next dev` in this project, and no build
-step for the server — **Node strips the TypeScript itself** (22.18+ / 23.6+).
+dev` and `npm start` run. Vite has no dev server of its own here — it runs as
+middleware inside this one — and there is no build step for the server at all:
+**Node strips the TypeScript itself** (22.18+ / 23.6+).
 
 It lives under `src/game/` with the client, but it is a *different runtime*: this
 code never reaches the browser, and nothing here may import from `world/`,
@@ -14,14 +15,15 @@ code never reaches the browser, and nothing here may import from `world/`,
 
 ## Files
 
-- `index.ts` — starts discovery, prepares Next, serves `/api/sessions` itself and
-  hands everything else to Next, defines both room types, starts Colyseus,
-  prints the banner.
+- `index.ts` — starts discovery, serves `/monitor` and `/api/sessions` itself
+  and hands everything else to the app (Vite in middleware mode in development,
+  `express.static("dist")` in production), defines both room types, starts
+  Colyseus, prints the banner.
 - `room.ts` — `GameRoom`: every message handler, the clamping, the kill rules,
   and the lobby → match hand-off.
 - `schema.ts` — `Player` and `GameState`, the synced state.
 - `code.ts` — the invite alphabet and a code no live room is using.
-- `monitor.ts` — Colyseus's admin panel at `/colyseus`, and the rule for when it
+- `monitor.ts` — Colyseus's admin panel at `/monitor`, and the rule for when it
   is allowed to exist.
 - `discovery.ts` — the UDP socket, the peer table, the session name.
 
@@ -29,14 +31,15 @@ code never reaches the browser, and nothing here may import from `world/`,
 
 One class, two registered names. A **lobby** is the waiting room: it runs the
 arena, it is playable, and it owns a short invite code. A **match** is the game
-proper on the chosen map, created by a lobby and lasting sixty seconds. They
+proper on the chosen map, created by a lobby and lasting as long as that map
+says. They
 differ in which map they run, whether Start exists, how roles are assigned, and
 whether there is a clock — everything else (movement, paint, kills, whistles) is
 identical, which is why it is one class. `this.roomName` is what tells them
 apart.
 
-The cycle is: lobby → Start → match → the clock runs out → back to the same
-lobby → Start again. `state.lobby` is the one field that makes the return trip
+The cycle is: lobby → **countdown** → match → the clock runs out → back to the
+same lobby → countdown again. `state.lobby` is the one field that makes the return trip
 possible, and it is set in both directions: a lobby's own code, and for a match
 the lobby that opened it.
 
@@ -60,6 +63,53 @@ one thing: spanning *processes*. Reach for it the day there is more than one.
 The client half is `game/net/` — see its doc for the receiving end of every
 message named here.
 
+## The four phases, and who owns each clock
+
+```
+lobby   waiting ──▶ countdown(10s) ──▶ hiding(20s) ──▶ waiting
+                         │  draw hunter    │  hunter waits here
+                         │  chameleons ───▶│──── sendHunter ────▶
+match                    └──────────────▶ hiding ──▶ hunt ──▶ reveal(30s) ──▶ home
+```
+
+**The match owns the deciding clock.** One `clock.setInterval` drives all three
+of its phases; each sets the seconds for the next and the same tick keeps
+counting. Not a timer per phase — two timers are two things that can disagree,
+and the number on screen must be the one that decides what happens next.
+
+**The lobby's hiding countdown is a display mirror and decides nothing.** The
+hunter is standing in the lobby watching it, so it has to show a number; but the
+phase ends when the *match* calls `sendHunter`, never when this interval reaches
+zero. That is why it does not violate invariant 17: two clocks are a problem when
+both can end the phase, and only one of these can.
+
+**A round's length is a property of the map**, read through `mapRoundSeconds`
+from `world/maps.ts`. The hiding phase is carved out of it rather than added to
+it, so "two minutes" means two minutes. That import is the first thing outside
+the browser to read map data, and it only works because the registry and
+everything under it are free of React and three.js and use relative `.ts` paths.
+
+## The countdown, and how a round begins
+
+**Nothing opens a match directly.** Two things ask for a round — the lobby
+filling to `maxPlayers`, and the host pressing Start — and both go through
+`beginCountdown()`, which runs `COUNTDOWN_SECONDS` and then calls `start()`. One
+way in means one thing to cancel and one place a round can begin from.
+
+It is idempotent by guard rather than by luck: asking again while it runs is
+ignored, so the last player through the door does not reset the clock for
+everybody. And it **cancels back to `waiting` if the roster drops below
+`MIN_PLAYERS`**, checked both on the tick and in `onLeave` — the tick alone would
+leave the panel counting for up to a second after the room stopped being able to
+start.
+
+## Capacity
+
+`maxClients` is the cap and Colyseus enforces it before `onJoin` ever runs;
+`state.maxPlayers` is the copy the client may read. The number arrives from a
+client, so it is clamped into `[MIN_PLAYERS, MAX_PLAYERS]` rather than trusted.
+A match is created with the same cap.
+
 ## Invariants
 
 1. **Schema fields use `declare`, never `!`.** This is the one that will bite
@@ -76,11 +126,14 @@ message named here.
    parameter properties, and **no decorators** — which is why the schema uses
    `defineTypes(...)` rather than `@type`. Imports must name the real file
    (`./room.ts`), which is what `allowImportingTsExtensions` in tsconfig permits.
-3. **Two servers, never one.** Next keeps its own HTTP server, Colyseus listens
-   on its own port. Handing a WebSocket server the HTTP server's `upgrade` event
-   destroys every non-matching upgrade, including Next's dev HMR socket — which
-   stops the client bootstrap, so **React never hydrates and no button on the
+3. **Nothing here touches `upgrade`.** This HTTP server carries the page and
+   `/api/sessions`; Colyseus binds `GAME_PORT`; and in development Vite's HMR
+   socket binds `HMR_PORT` of its own rather than being handed this server via
+   `server.hmr.server`. Handing a WebSocket server the HTTP server's `upgrade`
+   event destroys every non-matching upgrade, including the dev HMR socket —
+   which stops the client bootstrap, so **nothing mounts and no button on the
    page works**. The symptom is "connection refused" plus a completely dead UI.
+   Three listeners is the cost of never rediscovering that.
 4. **State is what a late joiner still has to see.** Paint strokes and graves are
    permanent, so they are schema fields and arrive via `onAdd` backlog. Shot
    marks expire after three seconds, so they are a `broadcast` and are never
@@ -88,7 +141,7 @@ message named here.
    full of ghost marks.
 5. **Movement is trusted, kills are not.** Clients simulate themselves and report
    their position; the server only clamps it into the arena. A kill is checked —
-   this must be a match, caller must be a seeker, victim must exist and not be
+   this must be a match, caller must be a hunter, victim must exist and not be
    the caller — because it is the one message where a wrong client changes
    someone else's game.
 6. **The victim is told before they are dropped.** `killed` is broadcast, then the
@@ -96,19 +149,19 @@ message named here.
    delay they disconnect before the message lands and see nothing but a dropped
    connection.
 7. **A schema `boolean` must be coerced, not assigned**, and `cling` is checked
-   against the role besides. `player.cling = player.role === "hider" &&
+   against the role besides. `player.cling = player.role === "chameleon" &&
    msg.cling === true` — never `= msg.cling`, because the encoder will take a
    string or an object and hand it to every client, and never without the role,
-   because clinging is what silences your footsteps for everyone else. A seeker
+   because clinging is what silences your footsteps for everyone else. A hunter
    who could set it would hunt in silence. Same instinct as `clamp` for numbers,
    and the same role mirror as the kill and whistle handlers.
 8. **Non-finite input becomes 0, never `NaN`.** That is what `clamp` is for. A
    `NaN` written into schema propagates to every client.
-9. **A whistle is relayed, never stored, hider-only, and rate-limited like a
+9. **A whistle is relayed, never stored, chameleon-only, and rate-limited like a
    shot.** It only gives a position away, so it is trusted the way movement is —
    but *rate* reaches everybody, so `MIN_WHISTLE_GAP_MS` stops a client turning
    theirs into a siren. The role check mirrors the kill handler's: a kill refuses
-   anyone who is not a seeker, a whistle refuses anyone who is not a hider. A
+   anyone who is not a hunter, a whistle refuses anyone who is not a chameleon. A
    player who has left the room cannot whistle at all.
 10. **One trigger, one clock.** `canFire` rate-limits `shoot` and `kill` together,
    per client, because a trigger-pull sends exactly one of the two — never both.
@@ -138,9 +191,9 @@ message named here.
    client to consume theirs, so a failure is *sent* (`moveFailed`) rather than
    assumed away — a player who does not make the trip is still sitting in the
    lobby and needs telling.
-16. **The seeker is drawn in the lobby, at Start, and never chosen.** Everybody
-   waits as a **seeker**; exactly one of the clients making the trip keeps that
-   on their seat reservation and the rest are reserved as hiders. It happens
+16. **The hunter is drawn in the lobby, at Start, and never chosen.** Everybody
+   waits as a **hunter**; exactly one of the clients making the trip keeps that
+   on their seat reservation and the rest are reserved as chameleons. It happens
    there rather than in the match because the draw needs the whole roster at
    once and the match has no players yet — its seats are what is being handed
    out. A lobby therefore *ignores* a role option outright; a match honours one,
@@ -171,10 +224,10 @@ message named here.
    options and a client's own join options arrive at `onJoin` in the same
    argument and are otherwise indistinguishable, so the lobby mints a `pass`,
    passes it in `createRoom` and includes it in every reservation. Without it,
-   any hider could leave a match and rejoin by its id claiming the gun — and
-   every player in a match knows its id. A join with no valid pass is a hider,
+   any chameleon could leave a match and rejoin by its id claiming the gun — and
+   every player in a match knows its id. A join with no valid pass is a chameleon,
    which is the right answer for the only case that reaches it: a dead player
-   respawning is necessarily a hider, since a seeker cannot be shot.
+   respawning is necessarily a chameleon, since a hunter cannot be shot.
 21. **A `kill` is refused outright in a lobby.** Everyone waiting is armed, and a
    kill drops its victim from the room and onto a death screen — so honouring
    one there means being shot out of the game you are queuing for. `shoot` is
@@ -229,17 +282,77 @@ message named here.
    all* unless `MONITOR_PASSWORD` is set, then behind Basic auth. Forgetting the
    password fails closed. `createMonitor` returns `null` rather than an
    always-403 handler on purpose — an unmounted route cannot be probed, and
-   `/colyseus` should look like any other unknown path.
-28. **The panel is pinned to `@colyseus/monitor@0.16.x`.** Its 0.17 line depends
+   `/monitor` should look like any other unknown path.
+28. **The panel fetches Material Icons from Google, and nothing can be done
+   about it here.** Its HTML — third-party markup inside `@colyseus/monitor` —
+   links `fonts.googleapis.com`, so on a Wi-Fi with no uplink the panel loads and
+   works but every icon renders as its literal ligature text (`more_vert`,
+   `delete`). It reads as broken and is not. This is the one place trap 3's
+   no-CDN rule is violated by a dependency rather than by us; fixing it would
+   mean patching the package or proxying the font, and it is admin UI rather than
+   the game.
+29. **The panel is pinned to `@colyseus/monitor@0.16.x`.** Its 0.17 line depends
    on `@colyseus/core@^0.17`, which npm would install *alongside* our 0.16 — a
    second matchMaker, in the same process, that knows about none of our rooms.
    The panel would load and list nothing. This is the same version constraint as
    the rest of the stack (see the root doc); bump it with everything else or not
    at all.
-29. **The panel's route is checked before `/api/sessions` and before Next.**
-   Next answers anything it does not recognise with a 404 page, so a panel
-   mounted after it would never be reached.
-30. **`start` refuses while a match is live**, and `matchEnded` is how the lobby
+30. **The panel's route is checked before `/api/sessions` and before the app.**
+   The app is the fall-through and it answers *everything*: Vite's SPA middleware
+   in development, and in production an `express.static` that falls back to
+   `index.html`. A panel mounted after it would never be reached. That fallback
+   is also what keeps invariant 27 honest — with no `MONITOR_PASSWORD` set,
+   `/monitor` returns the game page exactly as `/anything-else` does, so an
+   unmounted panel still cannot be told apart from an unknown path.
+31. **A lobby admits only known players while its match runs, and this is a
+   capacity rule.** `reserveSeatFor` *respects* `maxClients` — `Room._reserveSeat`
+   returns false once `hasReachedMaxClients()`, which was read in the source
+   rather than assumed. So a stranger who took a lobby seat while the match was
+   out would make the trip home fail for whoever reserved last, leaving them in a
+   room that is about to dispose holding a `moveFailed` and no way back. `onJoin`
+   therefore turns away any player id `firstSeen` has never recorded, for as long
+   as `matchId` is set. Someone walking back out of the match is known, so
+   quitting a round still lands you in the lobby.
+32. **A countdown is a `clock.setInterval` that is *held*, not fired and
+   forgotten.** `this.counting` exists so it can be cleared — by a leaver, or by
+   reaching zero. A countdown that outlived its second player would start a round
+   for one person.
+33. **The lobby stays in `hiding` until the hunter has actually been handed
+   over.** The bell is not a message — it is the phase changing from `hiding` to
+   `hunt`, which every client reads for itself. Clearing the lobby to `waiting`
+   before the hand-off meant the hunter's last sight of it was `waiting`, so
+   their arrival read as `waiting → hunt` and **no bell rang for the one person
+   it is about**. Setting it afterwards leaves them `hiding → hunt`, the same
+   transition the chameleons already see, so exactly one bell reaches everybody.
+34. **Only the chameleons travel at Start; the hunter is fetched later.** `start`
+   hands over everyone *except* the drawn hunter, who stays in a lobby that is a
+   playable arena for the whole hiding phase — they cannot watch anybody choose a
+   spot, because they are not in the room where spots are chosen. `sendHunter` is
+   public for the same reason `matchEnded` is: `matchMaker.remoteRoomCall`
+   reaches it by name. The round's `pass` is kept on the lobby precisely because
+   that second reservation happens a whole phase after the first.
+35. **A catch converts, it does not kill.** The victim stays in the room, their
+   `role` flips to `hunter`, their pose and cling reset and their strokes are
+   cleared — with a `clearSkin` broadcast, because everyone else is who has to
+   stop seeing the camouflage. There is no `leave()`, no death notice delay and
+   no respawn. `kill` is refused unless `phase === "hunt"`, so the reveal cannot
+   be played through, and it refuses a victim who is already a hunter, which also
+   makes a duplicated message harmless.
+36. **A round ends two ways and both go through `finish`.** The hunt clock
+   expiring is `chameleons`; the last chameleon converting is `hunters`. **The
+   last chameleon *leaving* counts too** — checked in `onLeave`, and only during
+   a hunt, or an early quitter during the hiding phase would hand the round to
+   nobody. Without it the hunters sweep an empty map for the rest of the clock,
+   which reads as the game having hung.
+37. **`finish` does not send anyone home; `goHome` does, thirty seconds later.**
+   The reveal is the difference between a hunt that ends with an answer and one
+   that cuts to a menu, so the world stays up with the survivors in their spots
+   and the graves where people were found. `winner` is in schema rather than
+   broadcast because thirty seconds is long enough to reconnect inside.
+38. **`matchId` is cleared in `goHome`, not in `finish`.** It gates the
+   admits-only-known-players rule of invariant 30; clearing it early would let
+   strangers take lobby seats during the reveal and break the trip home.
+39. **`start` refuses while a match is live**, and `matchEnded` is how the lobby
    learns otherwise. The sweep would notice within fifteen seconds, which is fine
    for bookkeeping and far too slow for a person standing there pressing a button
    that does nothing. `matchEnded` is public because `matchMaker.remoteRoomCall`
@@ -298,18 +411,18 @@ message named here.
 Headlessly, and you should: drive two `colyseus.js` clients from a scratch `.mjs`
 script in the project root (so `node_modules` resolves) against a running server,
 assert what each sees, then delete it. Join, clamping, paint relay and non-echo,
-the late-joiner backlog, a hider's kill being rejected and a seeker's producing a
+the late-joiner backlog, a chameleon's kill being rejected and a hunter's producing a
 grave are all checkable that way in about 60 lines.
 
 The matchmaking is *especially* worth testing this way, because almost none of
 it is visual: two `create` calls giving two different rooms, `joinById` on a
 code, a wrong code being refused rather than creating a room, a guest's `start`
 and `setMap` being ignored, the arena refused as a match map, everyone waiting
-as a seeker, a kill in the lobby refused while the shot still bangs, a public
+as a hunter, a kill in the lobby refused while the shot still bangs, a public
 game listed and an unlisted one absent *but still joinable by code*, the count
 holding steady across the start because it spans both rooms, every client
-landing in one match with **exactly one seeker** between them, a client's
-claimed `role: "seeker"` refused on a plain match join, the lobby surviving its
+landing in one match with **exactly one hunter** between them, a client's
+claimed `role: "hunter"` refused on a plain match join, the lobby surviving its
 own start, the button changing hands, and paint arriving in the match. The draw
 is worth looping a couple of dozen times to prove it is not always the host.
 
@@ -318,7 +431,7 @@ the outside. Close a client's socket with
 `room.connection.transport.ws.close()` — that is a *drop*, where `room.leave()`
 is not — then `client.reconnect(token)` and assert the same session id, side,
 position and paint come back. For the round trip, start a match and wait the
-real sixty seconds for the `moveTo` home; it is a slow test but it is the only
+whole round for the `moveTo` home; it is a slow test but it is the only
 one that proves the timer ends anything. Consume the `moveTo` seat in the script
 exactly as the client does — that is the step most likely to break.
 

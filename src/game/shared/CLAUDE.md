@@ -1,6 +1,6 @@
 # shared — what the browser and the server both have to believe
 
-**Owns:** `Role`, plus the handful of constants that would be a bug if the two
+**Owns:** `Role` and `Phase`, plus the handful of constants that would be a bug if the two
 halves of the app disagreed about them.
 
 **Entry points:** `@/game/shared/protocol` from the client,
@@ -8,7 +8,8 @@ halves of the app disagreed about them.
 
 ## Files
 
-- `protocol.ts` — `Role`, `ROOM_HALF`, `ROOM_LIMIT`, `POSE_COUNT`,
+- `protocol.ts` — `Role`, `Phase`, `MIN_PLAYERS`, `MAX_PLAYERS`,
+  `COUNTDOWN_SECONDS`, `ROOM_HALF`, `ROOM_LIMIT`, `POSE_COUNT`,
   `MAX_STROKES`, `MAX_STROKE_LENGTH`, `FIRE_INTERVAL_MS`,
   `FIRE_INTERVAL_TOLERANCE`, `WHISTLE_INTERVAL_MS`, `WHISTLE_TOLERANCE`,
   `MAX_STROKE_BATCH`.
@@ -36,17 +37,33 @@ halves of the app disagreed about them.
 
 ## Contracts
 
-- `Role` is used by the client everywhere and stored in schema by the server,
-  which checks it before honouring a kill. It is protocol, not decoration —
-  that is why it lives here rather than in a client folder.
-- `world/Room.tsx` builds the arena shell from `ROOM_HALF`.
+- `Role` is `"chameleon" | "hunter"` and is used by the client everywhere and
+  stored in schema by the server, which checks it before honouring a kill. It is
+  protocol, not decoration — that is why it lives here rather than in a client
+  folder. It was `"hider" | "seeker"` until the round work renamed both sides at
+  once; **a rename here is a wire break**, and it is only survivable because
+  nothing is persisted and both halves ship together.
+- `Phase` is the union of everything a room can be *doing*: `waiting`,
+  `countdown`, `hiding`, `hunt`, `reveal`. **Two of those nothing sets yet** —
+  `hiding` and `reveal` arrive in stage 5 of `PLAN.md`. They are declared early
+  on purpose: the union is the design, and a phase the server can produce but the
+  client has never heard of is exactly what this prevents. `net/client.ts`
+  validates an incoming phase against the list and falls back to `waiting`.
+- **`MIN_PLAYERS` / `MAX_PLAYERS` are the bounds, not the size of any lobby.**
+  The host picks a cap when they open a game; `server/room.ts` clamps it into
+  this range and it becomes that room's `maxClients`. The create panel builds its
+  stepper from the same two numbers, which is why they live here.
+- `world/maps/arena.ts` builds the arena shell from `ROOM_HALF`.
 - `server/room.ts` clamps movement to `ROOM_LIMIT` and pose indices to
   `POSE_COUNT`.
-- `figure/poses.ts` **throws at import time** if `POSES.length !== POSE_COUNT`.
-  That is the drift guard: it fails `next build` during prerender with an
-  explanatory message rather than letting a fifth pose silently never reach
-  anyone else's screen. If you add a pose, change `POSE_COUNT` here in the same
-  edit — the build will tell you if you forget.
+- `figure/poses.ts` **throws at import time** if `POSES.length !== POSE_COUNT`,
+  the drift guard against a fifth pose that silently never reaches anyone else's
+  screen. **That guard got weaker when the app moved to Vite and nobody has
+  replaced it.** Under Next it fired during prerender, so `npm run build` failed
+  with an explanatory message; Vite bundles without evaluating, so it now throws
+  in the browser on first load instead. Still loud and still explanatory, but no
+  longer a build gate — the build will *not* tell you if you forget. If you add a
+  pose, change `POSE_COUNT` here in the same edit.
 - `players/Player.tsx` and `server/room.ts` both enforce `FIRE_INTERVAL_MS` —
   the client so the gun feels like a pump-action, the server because fire rate
   reaches everybody. The server allows `FIRE_INTERVAL_TOLERANCE` of slack for

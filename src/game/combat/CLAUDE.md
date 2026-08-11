@@ -1,6 +1,6 @@
 # combat — the gun and its consequences
 
-**Owns:** the shotgun prop, the seeker's first-person viewmodel, and the two
+**Owns:** the shotgun prop, the hunter's first-person viewmodel, and the two
 kinds of thing a shot leaves behind.
 
 **Entry points:** `Shotgun`, `Viewmodel`, `Marks`, `Graves`.
@@ -14,7 +14,7 @@ the pointer-lock state. This folder owns what the shot hits, and the aftermath.
   an oriented wall hit, or nothing.
 - `Shotgun.tsx` — the prop, barrel pointing down −Z. Shared by the viewmodel and
   by the figure other players see.
-- `Viewmodel.tsx` — the seeker's own arms and gun, riding the camera.
+- `Viewmodel.tsx` — the hunter's own arms and gun, riding the camera.
 - `Marks.tsx` — yellow patches where a shot hit a wall, each with the thin black
   line the shot travelled along. Three seconds. `Mark` is
   an **alias** of `net/events`'s `NetMark`, not a second declaration: a mark is
@@ -22,11 +22,19 @@ the pointer-lock state. This folder owns what the shot hits, and the aftermath.
   identical types would only wait to drift apart.
 - `Graves.tsx` — red squares where somebody died. Permanent.
 
+**A hit is a catch, not a kill.** `shoot.ts` and the trigger are unchanged — the
+raycast, the rate limit and the mark all work as they did — but what the server
+does with a hit on a player is convert them: `role` flips to hunter, paint is
+wiped, and they carry on playing. Nothing in this folder needs to know that, and
+that is the point of it living on the server; the only visible consequence here
+is that `Graves` now marks *where somebody was found* rather than where they
+died, and each grave carries the name for the reveal.
+
 ## Invariants
 
 1. **A shot raycasts people and walls together, and the nearer one wins.** That
    is why `resolveShot` is one function and not two: checking people first and
-   falling back to walls would let a seeker shoot a hider through a wall. A wall
+   falling back to walls would let a hunter shoot a chameleon through a wall. A wall
    hit relays a `mark`; a player hit sends `kill`.
 2. **The tracer rides on the mark, so the two cannot disagree.** A shot reports
    its origin as well as its impact, the server relays both, and `Marks.tsx`
@@ -52,7 +60,7 @@ the pointer-lock state. This folder owns what the shot hits, and the aftermath.
    held mouse button is a machine gun, a wall of noise and a stream of marks.
 7. **A kill is called by the shooter and checked by the server.** Same trust
    model as movement. The client does not decide the victim dies — it asserts a
-   hit, and `server/room.ts` verifies the caller is a seeker and the victim
+   hit, and `server/room.ts` verifies the caller is a hunter and the victim
    exists.
 8. **Graves are permanent and marks are not**, and that difference decides how
    each travels: graves are server *state* so a player joining an hour later
@@ -66,8 +74,8 @@ the pointer-lock state. This folder owns what the shot hits, and the aftermath.
    position and quaternion each frame. Everything in it is expressed in camera
    space: −Z is forward.
 11. **The viewmodel's arms wear the local player's paint** (`SELF` canvases), so a
-   seeker sees their own colours in first person.
-12. **A remote seeker's gun arm leaves the pose.** `figure/StickFigure` takes an
+   hunter sees their own colours in first person.
+12. **A remote hunter's gun arm leaves the pose.** `figure/StickFigure` takes an
    `aim` prop that points the right arm along the aim and a `holding` prop that
    puts the shotgun in that hand. Rotating the hand group −90° about X turns the
    gun's −Z barrel to run down the arm.

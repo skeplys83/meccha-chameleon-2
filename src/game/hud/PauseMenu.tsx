@@ -1,5 +1,3 @@
-"use client";
-
 /**
  * One dark panel along the bottom edge. There is still no full-screen scrim or
  * blur — the arena stays visible and readable while you are paused — but the
@@ -39,18 +37,23 @@ export function PauseMenu({
           </div>
         </div>
 
-        <div className="flex gap-2">
-          <button
-            onClick={onResume}
-            className="rounded-lg border border-neutral-500/70 bg-neutral-800/80 px-5 py-2 text-neutral-100 transition hover:border-neutral-400 hover:bg-neutral-700/80"
-          >
-            Resume
-          </button>
+        {/* Leaving sits on the left and resuming on the right, and both are the
+            same width. `flex-1` over a shared `basis-0` is what makes them equal
+            rather than merely aligned: the labels differ in length and differ
+            again by mode, so sizing to content made the pair jump about between
+            a lobby and a match. */}
+        <div className="flex w-full gap-2">
           <button
             onClick={onLeave}
-            className="rounded-lg border border-rose-500/60 bg-rose-950/40 px-5 py-2 text-rose-200 transition hover:border-rose-400 hover:bg-rose-900/60"
+            className="flex-1 basis-0 whitespace-nowrap rounded-lg border border-rose-500/60 bg-rose-950/40 px-5 py-2 text-rose-200 transition hover:border-rose-400 hover:bg-rose-900/60"
           >
             {mode === "match" ? "Leave match" : "Return to menu"}
+          </button>
+          <button
+            onClick={onResume}
+            className="flex-1 basis-0 whitespace-nowrap rounded-lg border border-neutral-500/70 bg-neutral-800/80 px-5 py-2 text-neutral-100 transition hover:border-neutral-400 hover:bg-neutral-700/80"
+          >
+            Resume
           </button>
         </div>
 

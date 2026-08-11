@@ -1,5 +1,5 @@
-# One process serves both halves: Next on PORT and Colyseus on GAME_PORT.
-# The Colyseus docs' example is a single-port server; this needs both exposed.
+# One process serves both halves: the built client on PORT and Colyseus on
+# GAME_PORT. The Colyseus docs' example is a single-port server; this needs both.
 #
 # Node 22 is not a preference. The server is TypeScript that Node runs directly
 # by stripping types, which needs 22.18 or newer — there is no build step for it,
@@ -14,8 +14,9 @@ FROM node:22-slim AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# Tailwind and its postcss plugin are devDependencies and are needed *here* —
-# this is the stage that has them.
+# Vite and Tailwind are devDependencies and are needed *here* — this is the
+# stage that has them. The output is `dist/`, and nothing else from this stage
+# is carried forward except the sources the server itself still needs.
 RUN npm run build
 
 
@@ -28,16 +29,13 @@ ENV LAN_DISCOVERY=0
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
-# `.next` and `public` are the built site. `src` is here because the server is
-# still TypeScript at runtime — Node strips it on the way in — and `next.config.ts`
-# is read at boot, which Next handles through that same native stripping rather
-# than the typescript package, so it is not needed in production.
-# --chown matters: Next writes into .next/cache at runtime, and files copied as
-# root would leave the unprivileged user unable to.
-COPY --from=build --chown=node:node /app/.next ./.next
-COPY --from=build --chown=node:node /app/public ./public
+# `dist` is the built client, which the server hands out with express.static.
+# `public` is copied by the build into `dist`, so it is not needed separately.
+# `src` is here because the server is still TypeScript at runtime — Node strips
+# it on the way in. There is no config file to carry: `vite.config.ts` is a
+# build-time artefact and the production server never imports vite at all.
+COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/src ./src
-COPY --from=build --chown=node:node /app/next.config.ts ./
 
 USER node
 EXPOSE 3000 2567

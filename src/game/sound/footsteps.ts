@@ -1,5 +1,3 @@
-"use client";
-
 import * as THREE from "three";
 import { BODY } from "@/game/players/body";
 import type { Role } from "@/game/shared/protocol";
@@ -15,9 +13,9 @@ import type { Role } from "@/game/shared/protocol";
 /**
  * Stride length per unit of body half-height.
  *
- * Stride scales with the body, like pitch does: a hider is smaller, so they take
- * shorter, quicker steps than a seeker. At the movement speed of 6 that lands a
- * hider at roughly 3.2 footfalls a second and a seeker at 2.4 — a run and a
+ * Stride scales with the body, like pitch does: a chameleon is smaller, so they take
+ * shorter, quicker steps than a hunter. At the movement speed of 6 that lands a
+ * chameleon at roughly 3.2 footfalls a second and a hunter at 2.4 — a run and a
  * heavy jog, which is what the two look like on screen.
  *
  * Both roles move at the same speed, so this is the only thing separating their
@@ -60,16 +58,16 @@ export function strideFor(role: Role) {
 }
 
 /**
- * Pitch scales inversely with body size: a hider is smaller, so their step is
+ * Pitch scales inversely with body size: a chameleon is smaller, so their step is
  * higher and lighter. That is a real gameplay signal, not decoration — hearing
  * a step you cannot see and knowing whether it is prey or the hunter is most of
  * what audio contributes to hide-and-seek.
  *
  * Derived from `BODY` rather than hard-coded, so re-proportioning a role
- * re-pitches it: seeker 1.3 → 1.0, hider 1.0 → 1.3 (about four semitones up).
+ * re-pitches it: hunter 1.3 → 1.0, chameleon 1.0 → 1.3 (about four semitones up).
  */
 export function stepRate(role: Role) {
-  return BODY.seeker[1] / BODY[role][1];
+  return BODY.hunter[1] / BODY[role][1];
 }
 
 /** `stepRate` with a little per-step variation. */

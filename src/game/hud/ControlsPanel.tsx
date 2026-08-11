@@ -1,5 +1,3 @@
-"use client";
-
 import type { Role } from "@/game/shared/protocol";
 import { POSES } from "@/game/figure/poses";
 
@@ -8,10 +6,10 @@ type Row = [key: string, action: string];
 /**
  * The two roles do not share a control scheme, so they do not share a legend
  * either. Anything listed here must actually be wired up in `Player.tsx` for
- * that role — a hider has no shoot, and a seeker has no pose, no Q/E and no
+ * that role — a chameleon has no shoot, and a hunter has no pose, no Q/E and no
  * zoom, so none of those appear on the wrong card.
  */
-const HIDER: Row[] = [
+const CHAMELEON: Row[] = [
   ["W A S D", "Move · climb a surface you walk into"],
   ["Space", "Jump · let go of a surface"],
   ["Q / E", "Turn your figure"],
@@ -21,7 +19,7 @@ const HIDER: Row[] = [
   ...POSES.map((p, i): Row => [String(i + 1), p.label]),
 ];
 
-const SEEKER: Row[] = [
+const HUNTER: Row[] = [
   ["W A S D", "Move (relative to aim)"],
   ["Space", "Jump"],
   ["Mouse", "Aim"],
@@ -29,7 +27,7 @@ const SEEKER: Row[] = [
 ];
 
 export function ControlsPanel({ role }: { role: Role }) {
-  const rows = role === "seeker" ? SEEKER : HIDER;
+  const rows = role === "hunter" ? HUNTER : CHAMELEON;
 
   return (
     <div className="pointer-events-none absolute right-4 top-4 select-none rounded-lg bg-black/55 px-4 py-3 font-mono text-xs text-neutral-100 backdrop-blur">
@@ -47,7 +45,7 @@ export function ControlsPanel({ role }: { role: Role }) {
         </tbody>
       </table>
       <div className="mt-2 text-[11px] text-neutral-500">
-        {role === "seeker"
+        {role === "hunter"
           ? "Click to lock the cursor · Esc to release"
           : "Esc pauses · your cursor stays free"}
       </div>

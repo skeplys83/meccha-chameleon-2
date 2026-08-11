@@ -1,6 +1,4 @@
-"use client";
-
-/** The shotgun prop, barrel pointing down -Z. Shared by the seeker's own
+/** The shotgun prop, barrel pointing down -Z. Shared by the hunter's own
  *  viewmodel and by the figure other players see. */
 export function Shotgun({ scale = 1 }: { scale?: number }) {
   return (

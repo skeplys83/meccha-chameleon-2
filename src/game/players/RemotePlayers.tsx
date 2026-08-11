@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
@@ -10,7 +8,7 @@ import { StickFigure } from "@/game/figure/StickFigure";
 import { Shotgun } from "@/game/combat/Shotgun";
 
 /**
- * Every remote figure's root, so a seeker's shot can raycast the people in the
+ * Every remote figure's root, so a hunter's shot can raycast the people in the
  * room. Keyed by session id; the id is also stamped on the group's userData so
  * a hit mesh can be walked back to its owner.
  */
@@ -20,11 +18,11 @@ const targetPos = new THREE.Vector3();
 const targetEuler = new THREE.Euler(0, 0, 0, "YXZ");
 const targetQuat = new THREE.Quaternion();
 
-function RemotePlayer({ id }: { id: string }) {
+function RemotePlayer({ id, reveal }: { id: string; reveal: boolean }) {
   const group = useRef<THREE.Group>(null);
   const visual = useRef<THREE.Group>(null);
   const remote = remotes.get(id);
-  const [, hy] = BODY[remote?.role ?? "hider"];
+  const [, hy] = BODY[remote?.role ?? "chameleon"];
   const settled = useRef(false);
 
   useEffect(() => {
@@ -60,18 +58,22 @@ function RemotePlayer({ id }: { id: string }) {
   return (
     <group ref={group} userData={{ remoteId: id }}>
       <group ref={visual}>
-        {/* A seeker holds the gun out along their aim, so hiders can read both
+        {/* A hunter holds the gun out along their aim, so chameleons can read both
             where they are looking and how far up or down. */}
         <StickFigure
           scale={hy}
           pose={() => remotes.get(id)?.target.pose ?? 0}
           skinId={id}
           aim={
-            remote.role === "seeker"
+            remote.role === "hunter"
               ? () => remotes.get(id)?.target.pitch ?? 0
               : null
           }
-          holding={remote.role === "seeker" ? <Shotgun scale={1.05} /> : null}
+          holding={remote.role === "hunter" ? <Shotgun scale={1.05} /> : null}
+          /* Anyone still a chameleon when the round is over survived it — the
+             caught ones are hunters by now — so during the reveal they light up
+             through the walls and the spot that beat you stops being a mystery. */
+          highlight={reveal && remote.role === "chameleon"}
         />
       </group>
       <Html position={[0, hy + 0.55, 0]} center distanceFactor={14}>
@@ -83,7 +85,7 @@ function RemotePlayer({ id }: { id: string }) {
   );
 }
 
-export function RemotePlayers() {
+export function RemotePlayers({ reveal = false }: { reveal?: boolean }) {
   const [ids, setIds] = useState<string[]>([]);
 
   useEffect(() => onRoster(setIds), []);
@@ -91,7 +93,7 @@ export function RemotePlayers() {
   return (
     <>
       {ids.map((id) => (
-        <RemotePlayer key={id} id={id} />
+        <RemotePlayer key={id} id={id} reveal={reveal} />
       ))}
     </>
   );

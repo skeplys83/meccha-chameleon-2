@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useMemo, useRef } from "react";
 import { SWATCHES } from "@/game/paint/palette";
 import { MAX_SIZE, MIN_SIZE, type Brush } from "./brush";
@@ -134,7 +132,7 @@ function ColorWheel({
 /**
  * The palette. It opens by itself the moment the cursor touches your figure
  * and then stays open until the ▾ button minimises it. The collapsed pill
- * opens it too — which is how a seeker gets to it, since they hold the pointer
+ * opens it too — which is how a hunter gets to it, since they hold the pointer
  * lock and have no cursor to hover with.
  */
 export function PaintPanel({

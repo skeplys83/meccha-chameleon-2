@@ -1,5 +1,3 @@
-"use client";
-
 /**
  * LAN discovery, client half. A browser cannot scan a network, so the local
  * server does it over UDP and hands the result back here — see `server/`.
@@ -33,6 +31,8 @@ export type Game = {
    * game in full swing as empty.
    */
   players: number;
+  /** The cap the host chose, so the menu can show "4 / 8". */
+  maxPlayers: number;
 };
 
 /** The local server's identity, its LAN peers, and its public games. */

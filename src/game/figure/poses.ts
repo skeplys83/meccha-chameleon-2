@@ -110,7 +110,7 @@ export const safePose = (n: unknown) =>
 /**
  * Half-height of a folded pose's collider — a crouch, so it can tuck under
  * things. It is a constant, *not* `hx`: tying a pose's height to how wide the
- * body is meant that narrowing the hider (so they can sink into walls) also
+ * body is meant that narrowing the chameleon (so they can sink into walls) also
  * squashed their crouch down to nothing.
  */
 const LOW_HALF = 0.4;

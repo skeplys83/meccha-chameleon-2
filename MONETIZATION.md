@@ -138,7 +138,7 @@ Three things that bite multiplayer specifically on that path:
 
 1. **Pointer lock in a cross-origin iframe.** The portal must set
    `allow="pointer-lock"` on the frame. Confirm before building against it — a
-   seeker with no aim is not a game.
+   hunter with no aim is not a game.
 2. **Rewarded video needs a clean pause.** Suspend audio, release pointer lock,
    resume without a broken state. `Game.tsx` already owns exactly this teardown
    for the pause menu, so this is closer to done than most of it.

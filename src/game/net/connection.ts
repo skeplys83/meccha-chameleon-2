@@ -1,5 +1,3 @@
-"use client";
-
 import type { Client, Room } from "colyseus.js";
 
 /**

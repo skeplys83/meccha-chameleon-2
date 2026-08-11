@@ -1,5 +1,3 @@
-"use client";
-
 /**
  * The networking surface every other folder imports. Keeping it here means a
  * caller writes `from "@/game/net"` and never has to know which of the five
@@ -12,7 +10,8 @@ export {
   onDropped,
   onMark,
   onGrave,
-  onKilled,
+  onCaught,
+  onLeftRoom,
   onMoved,
   onMoveFailed,
   onRoom,

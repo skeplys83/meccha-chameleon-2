@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Paints a hider's head and writes it to src/app/icon.svg.
+ * Paints a chameleon's head and writes it to public/icon.svg.
  *
  *     npm run favicon          # a new random paint job
  *     npm run favicon 33       # the one currently committed
@@ -22,7 +22,7 @@ import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { PAINT } from "../src/game/paint/palette.ts";
 
-const OUT = fileURLToPath(new URL("../src/app/icon.svg", import.meta.url));
+const OUT = fileURLToPath(new URL("../public/icon.svg", import.meta.url));
 
 const SIZE = 64;
 const C = SIZE / 2;
@@ -116,7 +116,7 @@ const count = Math.floor(between(3, 6));
 for (let i = 0; i < count; i++) strokes.push(stroke(taken));
 
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIZE} ${SIZE}">
-  <title>Meccha Chameleon — a painted hider</title>
+  <title>Meccha Chameleon — a painted chameleon</title>
   <defs>
     <clipPath id="head"><circle cx="${C}" cy="${C}" r="${R}"/></clipPath>
     <radialGradient id="lit" cx="38%" cy="30%" r="78%">
@@ -136,7 +136,7 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIZE} ${SIZE
 `;
 
 writeFileSync(OUT, svg, "utf-8");
-console.log(`painted a hider with seed ${seed}`);
+console.log(`painted a chameleon with seed ${seed}`);
 console.log(`  ${count} strokes, ${svg.match(/<ellipse/g)?.length ?? 0} dots`);
-console.log(`  -> src/app/icon.svg (${svg.length} bytes)`);
+console.log(`  -> public/icon.svg (${svg.length} bytes)`);
 console.log(`  re-roll: npm run favicon    ·    keep this one: npm run favicon ${seed}`);

@@ -1,5 +1,3 @@
-"use client";
-
 import type { Role } from "@/game/shared/protocol";
 
 export type RemoteTarget = {

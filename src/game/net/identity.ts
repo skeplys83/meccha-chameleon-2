@@ -1,5 +1,3 @@
-"use client";
-
 /**
  * Who this browser tab is, for as long as it is open.
  *

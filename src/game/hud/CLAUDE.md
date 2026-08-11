@@ -4,22 +4,60 @@
 you join.
 
 **Entry points:** `StartMenu`, `LobbyPanel`, `PauseMenu`, `ControlsPanel`,
-`PlayerList`, `DeathScreen`, `randomName`.
+`PlayerList`, `PhaseBanner`, `RoundOverPanel`, `randomName`.
 
 ## Files
 
 - `StartMenu.tsx` — name entry, the map picker, Create game, Join by code. Two
   questions and nothing else.
+- `CreateGamePanel.tsx` — the modal behind Create: map, public flag, size.
 - `LobbyPanel.tsx` — the invite code, the queued map and Start, over the
   waiting room.
-- `MatchClock.tsx` — the seconds left in the match.
 - `DroppedPanel.tsx` — the connection died: reconnect, or go back to the menu.
 - `PauseMenu.tsx` — resume / leave, where "leave" is a different place in each
   room.
 - `ControlsPanel.tsx` — the key legend, one per role.
 - `PlayerList.tsx` — who else is connected.
-- `DeathScreen.tsx` — respawn or exit.
+- `PhaseBanner.tsx` — the clock, and what it is counting towards. Worded per
+  side: the same twenty seconds is a head start for one player and a wait for
+  the other.
+- `RoundOverPanel.tsx` — the reveal card: who won, and who was found where.
 - `names.ts` — random fallback player names.
+
+## Creating a game is a modal, and the three choices in it are permanent
+
+`CreateGamePanel` holds the map, the public flag and the size, because they are
+one decision — *what game is this* — and because none of them behaves like an
+in-game setting afterwards. The map is the softest: a host can pick a different
+`nextMap` from inside the lobby. The other two are fixed at creation, and
+deliberately: a game that went public with people already in it would be a
+surprise nobody consented to, and a cap that moved under a room that was already
+filling is a race with no right answer.
+
+The stepper's bounds are `MIN_PLAYERS` / `MAX_PLAYERS` from `shared/`, the same
+two numbers the server clamps against. It is a display rule on top of a server
+rule, never instead of one.
+
+**There is no death screen, and that is a rule rather than an omission.** Being
+caught turns you into a hunter and leaves you in the round, so the notice is a
+toast that expires after a few seconds — not a screen with a Respawn button, of
+which there is none. `MatchClock` went the same way: a bare number was enough
+when a match was one block of sixty seconds and says nothing useful now.
+
+**The reveal panel sits at the top, like every other panel here, and never in
+the middle.** The world behind it is the answer — survivors lit red through the
+walls, graves where everybody else was found — and the reveal is the one moment
+in a round that is *about* looking at the world. A card in the centre of the
+screen covers exactly the thing it exists to explain, and everyone can still walk
+about while it is up. `PhaseBanner` occupies the same slot during a hunt and is
+hidden during the reveal, so the two never collide.
+
+**No emoji in the HUD.** `PlayerList` had a gun and a lizard, on the reasoning
+that a glyph skims faster than a word and that emoji come from the operating
+system's own font — which satisfies the no-CDN rule. They came out anyway: the OS
+draws them, so row weight, baseline and width changed per machine, and on several
+of them the lizard is not recognisably a lizard. Colour carries the same fact and
+costs nothing.
 
 ## Invariants
 
@@ -27,13 +65,13 @@ you join.
    `combat/`.** It renders outside the Canvas and talks to the game through
    `Game.tsx` props and through `net/`. The one exception is reading `POSES` for
    the legend — a label, not behaviour.
-2. **Not every difference between the roles is a key.** Only hiders whistle, and
+2. **Not every difference between the roles is a key.** Only chameleons whistle, and
    nothing on either card says so — there is no key for it and nothing to press.
    The legend is for controls; role asymmetries that are not controls belong in
    `players/CLAUDE.md` and `sound/CLAUDE.md`, not here.
 3. **`ControlsPanel` holds one legend per role and they are not built from a
    shared base.** If a row is on a card, that role must really have it wired up
-   in `players/Player.tsx`. A hider has no shoot; a seeker has no pose, no
+   in `players/Player.tsx`. A chameleon has no shoot; a hunter has no pose, no
    `Q`/`E`, no zoom and no climb, so none of those may appear on the wrong card.
    Climbing has **no key of its own** — you attach by walking into a surface — so
    it is written onto the `W A S D` and `Space` rows rather than given one. A row
@@ -54,10 +92,10 @@ you join.
    needs no change here. It sits with Create and with Start because in both
    places the choice belongs to whoever opened the game.
 7. **Nobody picks a side, and no menu may offer one.** Everyone waits as a
-   seeker and the draw at Start turns all but one of them into hiders. `role`
+   hunter and the draw at Start turns all but one of them into chameleons. `role`
    therefore arrives on `RoomInfo` and is only ever *displayed*; a control that
    set it would be either ignored or a lie. It also means the lobby shows the
-   seeker's card and the seeker's legend to everybody, which is correct — that
+   hunter's card and the hunter's legend to everybody, which is correct — that
    is what they are while they wait.
 8. **The public checkbox is ticked by default, and only appears next to
    Create.** A game nobody can find is the exception, not the rule. It is
@@ -66,7 +104,7 @@ you join.
    and an unlisted one are both entered by the same code, which is what the
    helper text under the box has to keep saying.
 9. **The lobby panel stays up while paused, and that is the only reason it
-   works.** Everyone in the waiting room is a seeker, so everyone holds the
+   works.** Everyone in the waiting room is a hunter, so everyone holds the
    pointer lock and nobody has a cursor — pausing is what hands it back. Hiding
    the panel behind the pause menu, which it originally did, left the host
    looking at a Start button they could see and could not click. Do not "tidy"
@@ -80,24 +118,23 @@ you join.
    are still in that game and its code still works. From the waiting room it is
    *Return to menu*. A single label for both would be a lie in one of them.
 12. **You are on the player list, in green, marked "(you)".** Both questions it
-   answers — how many are we, and who is the seeker — include you. `remotes`
+   answers — how many are we, and who is the hunter — include you. `remotes`
    holds everyone *else* by design (it is a table of bodies to interpolate and
-   draw), so your own row comes from `Game.tsx` as props. Every row also carries
-   a glyph for its side, because in a column of near-identical monospace lines
-   the word alone is easy to skim past.
-13. **Those glyphs are emoji, not an icon set.** They come from the operating
-   system's own font and need no download, which is the same rule that keeps
-   drei's `Environment` and troika text out of the scene: there may be no
-   internet at all. Colour repeats the same fact for anyone whose font
-   substitutes something unhelpful.
+   draw), so your own row comes from `Game.tsx` as props.
+13. **Sides are hidden on that list until they exist.** `onJoin` makes everybody
+   a hunter in a lobby, so labelling the rows before the draw printed "hunter"
+   beside every name and gave away a decision nobody had made. `showRoles` is
+   false while a lobby waits or counts down and true from the hiding phase on.
 14. **The lobby's Copy button feature-detects the clipboard.**
    `navigator.clipboard` is secure-context only, so over the LAN URL it is
    absent and a bare call left the button silently dead for everyone except
    whoever was testing on localhost. It falls back to `execCommand("copy")` —
    deprecated, and therefore unrestricted. Root doc, trap 8.
-15. **The clock is displayed, never counted.** `MatchClock` renders
-   `room.timeLeft` straight from state. A local `setInterval` alongside it would
-   drift out of step with the counter that actually ends the match.
+15. **The clock is displayed, never counted.** `PhaseBanner` renders
+   `room.timeLeft` straight from state, and so does `LobbyPanel`. A local
+   `setInterval` alongside it would drift out of step with the counter that
+   actually decides the round — and the tick everyone hears is driven off the
+   same number changing, so a second clock would desync the sound too.
 16. **The lobby panel stays small and off-centre.** A waiting room is a playable
    arena — you walk about and paint yourself while people arrive — so its
    overlay must not be a screen you sit and stare at.
@@ -124,7 +161,7 @@ you join.
 ## Contracts
 
 - **`Game.tsx` owns every mode transition.** This folder raises intent
-  (`onCreate`, `onJoinCode`, `onResume`, `onLeave`, `onRespawn`, `onReconnect`,
+  (`onCreate`, `onJoinCode`, `onResume`, `onLeave`, `onReconnect`,
   `onExit`) and
   renders state; it decides nothing. `LobbyPanel` is the one exception and a
   narrow one: Start and the map buttons are `net/` senders called directly,
@@ -138,10 +175,8 @@ you join.
 
 ## Not built yet
 
-No ready-up (a lobby is a place to wait, not a checklist), no scoreboard, no
-chat, no settings (sensitivity, volume, FOV), and no round timer — there is no
-round: the clock ends a match but nothing says who won, and nothing marks the
-moment it ends beyond finding yourself back in the arena. Nothing announces the
-draw when a match opens either — now that everyone waits armed, what most
-players notice is the gun *leaving* their hands. Nothing returns you to the
-lobby when a match ends, because nothing ends a match.
+No ready-up (a lobby is a place to wait, not a checklist), no score kept across
+rounds, no chat, and no settings — sensitivity, FOV, and **volume**, which the
+music makes the most conspicuous of the three. Nothing announces the draw at the
+moment it happens: a chameleon's first sign of it is the gun leaving their hands
+and the world changing around them.

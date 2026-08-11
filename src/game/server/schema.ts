@@ -1,5 +1,5 @@
 import { Schema, MapSchema, ArraySchema, defineTypes } from "@colyseus/schema";
-import type { Role } from "../shared/protocol.ts";
+import type { Phase, Role } from "../shared/protocol.ts";
 
 /**
  * The synced room state.
@@ -26,8 +26,8 @@ export class Player extends Schema {
   declare x: number;
   declare y: number;
   declare z: number;
-  /** For a seeker this is the *camera* yaw, not the body yaw — that is how a
-   *  hider reads where the gun hunting them is pointed. See players/CLAUDE.md. */
+  /** For a hunter this is the *camera* yaw, not the body yaw — that is how a
+   *  chameleon reads where the gun hunting them is pointed. See players/CLAUDE.md. */
   declare yaw: number;
   declare pitch: number;
   declare pose: number;
@@ -112,6 +112,37 @@ export class GameState extends Schema {
    * likes.
    */
   declare timeLeft: number;
+  /**
+   * What this room is *doing*, as opposed to which kind of room it is.
+   *
+   * `mode` says lobby or match and never changes; this changes throughout. A
+   * lobby is `waiting` until it fills or the host presses Start, then
+   * `countdown`. A match will run `hiding → hunt → reveal`; today it only ever
+   * says `hunt`, because the phases around it are not built yet.
+   *
+   * It is a string on the wire and a union in `shared/protocol.ts`, which is
+   * what stops the two halves inventing different spellings of the same phase.
+   */
+  declare phase: Phase;
+  /**
+   * How many players this lobby will hold, chosen by whoever opened it.
+   *
+   * `maxClients` is the thing that actually refuses a join; this is the copy the
+   * client may read, so the lobby panel can say "4 / 8" and the countdown knows
+   * what counts as full. Clamped into `[MIN_PLAYERS, MAX_PLAYERS]` at creation
+   * and never changed afterwards — a cap that moved under a room that was
+   * already filling would be a race with no right answer.
+   */
+  declare maxPlayers: number;
+  /**
+   * Who won, once somebody has: `"chameleons"`, `"hunters"`, or empty while the
+   * round is still open.
+   *
+   * In state rather than broadcast because the reveal lasts thirty seconds and a
+   * client that joined, dropped or reconnected inside that window still has to
+   * be told what it is looking at.
+   */
+  declare winner: string;
 
   constructor() {
     super();
@@ -132,4 +163,7 @@ defineTypes(GameState, {
   listed: "boolean",
   lobby: "string",
   timeLeft: "number",
+  phase: "string",
+  maxPlayers: "number",
+  winner: "string",
 });

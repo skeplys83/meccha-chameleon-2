@@ -22,12 +22,21 @@ import path from "node:path";
 const DOC = "CLAUDE.md";
 
 /** Files that are documentation or tooling in their own right. */
-const EXEMPT = new Set(["CLAUDE.md", "AGENTS.md", "README.md", ".gitignore"]);
+const EXEMPT = new Set([
+  "CLAUDE.md",
+  "AGENTS.md",
+  "README.md",
+  ".gitignore",
+]);
 
 /**
  * Paths the root CLAUDE.md does not claim. Everything else that is not inside a
- * documented folder falls through to it — chiefly Game.tsx, Scene.tsx and
- * src/app, which are the composition roots and belong to no folder.
+ * documented folder falls through to it — chiefly Game.tsx and Scene.tsx, the
+ * composition roots, which belong to no folder.
+ *
+ * `index.html`, `src/main.tsx` and `src/index.css` are *not* here on purpose:
+ * they are the client entry point, the root doc describes them, and a change to
+ * how the app boots is exactly the kind that should make somebody re-read it.
  */
 const UNCLAIMED = [
   "public/",
@@ -36,10 +45,8 @@ const UNCLAIMED = [
   "package.json",
   "package-lock.json",
   "tsconfig.json",
-  "next.config.ts",
+  "vite.config.ts",
   "eslint.config.mjs",
-  "postcss.config.mjs",
-  "next-env.d.ts",
 ];
 
 const git = (...args) =>

@@ -1,21 +1,13 @@
-"use client";
-
 import { Client, getStateCallbacks, type Room } from "colyseus.js";
-import type { Role } from "@/game/shared/protocol";
-import {
-  clearSkin,
-  decodeStroke,
-  encodedHistory,
-  forgetSkin,
-  paint,
-  SELF,
-} from "@/game/paint/skin";
+import type { Phase, Role } from "@/game/shared/protocol";
+import { clearSkin, decodeStroke, forgetSkin, paint } from "@/game/paint/skin";
 import { getClient, getRoom, getToken, setClient, setRoom, setToken } from "./connection";
 import { playerId } from "./identity";
 import { clearRemotes, emitRoster, remotes } from "./remotes";
 import {
+  emitCaught,
   emitGrave,
-  emitKilled,
+  emitLeftRoom,
   emitMark,
   emitDropped,
   emitMoved,
@@ -26,7 +18,6 @@ import {
   type NetMark,
   type RoomInfo,
 } from "./events";
-import { sendPaint } from "./send";
 import type { Session } from "./sessions";
 
 /** Mirrors the Player schema declared in server/schema.ts. */
@@ -51,7 +42,10 @@ type StateSchema = {
   listed?: boolean;
   lobby?: string;
   timeLeft?: number;
-  players?: { get(id: string): PlayerSchema | undefined };
+  phase?: string;
+  winner?: string;
+  maxPlayers?: number;
+  players?: { get(id: string): PlayerSchema | undefined; size?: number };
 };
 
 type Callbacks = {
@@ -85,8 +79,8 @@ type Seat = {
  * used to glue every player on a machine into one room, and it is exactly the
  * behaviour a second game must not have.
  *
- * No role goes out. Everybody waits as a seeker and the draw at Start turns all
- * but one of them into hiders, so a role sent from here would be either ignored
+ * No role goes out. Everybody waits as a hunter and the draw at Start turns all
+ * but one of them into chameleons, so a role sent from here would be either ignored
  * or a lie.
  *
  * `listed` is the one thing only the creator can decide, and only now: it puts
@@ -103,9 +97,10 @@ export async function createLobby(
   target: Session,
   map: string,
   listed: boolean,
+  maxPlayers: number,
 ) {
   return open(target, (client) =>
-    client.create("lobby", { name, map, listed, pid: playerId() }),
+    client.create("lobby", { name, map, listed, maxPlayers, pid: playerId() }),
   );
 }
 
@@ -126,9 +121,9 @@ export async function joinLobby(name: string, target: Session, code: string) {
  * had their seat deleted deliberately.
  *
  * The fall-back is a plain join by room id, which is a fresh player: new session
- * id, spawn position, and a hider, because the server will not take a role from
+ * id, spawn position, and a chameleon, because the server will not take a role from
  * a client. That is exactly right for the case that reaches it, since the only
- * player who ever needs it is a dead hider — a seeker cannot be shot.
+ * player who ever needs it is a dead chameleon — a hunter cannot be shot.
  */
 export async function rejoin(name: string, target: Session, roomId: string) {
   const token = getToken();
@@ -231,9 +226,16 @@ async function attach(joined: Room): Promise<RoomInfo> {
   // Graves are state, so this fires for the ones already there when you join
   // as well as for each new one.
   $(joined.state).graves.onAdd((raw, index) => {
-    const [x, y, z] = raw.split(",").map(Number);
+    // "x,y,z,name" — the name may contain nothing dangerous but it may contain
+    // anything else, so it is taken as the remainder rather than as field 4.
+    const [sx, sy, sz, ...rest] = raw.split(",");
+    const [x, y, z] = [sx, sy, sz].map(Number);
     if (![x, y, z].every(Number.isFinite)) return;
-    emitGrave({ id: `grave-${index}-${raw}`, position: [x, y, z] });
+    emitGrave({
+      id: `grave-${index}-${raw}`,
+      position: [x, y, z],
+      name: rest.join(",") || "someone",
+    });
   });
 
   joined.onMessage("shot", (msg: { id: string }) => {
@@ -245,10 +247,10 @@ async function attach(joined: Room): Promise<RoomInfo> {
   });
 
   joined.onMessage(
-    "killed",
+    "caught",
     (msg: { id: string; by: string; position?: [number, number, number] }) => {
       if (!msg?.id) return;
-      emitKilled(msg.id, msg.by ?? "the seeker", msg.position);
+      emitCaught(msg.id, msg.by ?? "a hunter", msg.position);
     },
   );
 
@@ -277,6 +279,7 @@ async function attach(joined: Room): Promise<RoomInfo> {
     if (getRoom() !== joined) return;
     setRoom(null);
     clearRemotes();
+    emitLeftRoom();
     emitDropped();
   });
 
@@ -296,6 +299,10 @@ async function attach(joined: Room): Promise<RoomInfo> {
       info.isListed,
       info.lobbyCode,
       info.timeLeft,
+      info.phase,
+      info.maxPlayers,
+      info.playerCount,
+      info.winner,
     ].join("|");
     if (key === last) return;
     last = key;
@@ -335,9 +342,9 @@ function describe(room: Room): RoomInfo {
   const state = room.state as StateSchema;
   return {
     mode: state.mode === "match" ? "match" : "lobby",
-    // The room's answer, not the player's — this is where a seeker finds out
+    // The room's answer, not the player's — this is where a hunter finds out
     // they are one.
-    role: state.players?.get(room.sessionId)?.role === "seeker" ? "seeker" : "hider",
+    role: state.players?.get(room.sessionId)?.role === "hunter" ? "hunter" : "chameleon",
     map: state.map ?? "",
     nextMap: state.nextMap ?? state.map ?? "",
     code: room.roomId,
@@ -345,8 +352,17 @@ function describe(room: Room): RoomInfo {
     isListed: state.listed === true,
     lobbyCode: state.lobby ?? "",
     timeLeft: state.timeLeft ?? 0,
+    // Anything the server has not spelled is treated as the quiet case: a room
+    // still waiting, with nobody in it, rather than a room mid-countdown.
+    phase: PHASES.includes(state.phase as Phase) ? (state.phase as Phase) : "waiting",
+    maxPlayers: state.maxPlayers ?? 0,
+    winner: state.winner ?? "",
+    playerCount: state.players?.size ?? 0,
   };
 }
+
+/** The phases a room may claim to be in. Anything else is treated as waiting. */
+const PHASES: Phase[] = ["waiting", "countdown", "hiding", "hunt", "reveal"];
 
 /**
  * Take the seat the lobby reserved for us in its match.
@@ -355,10 +371,11 @@ function describe(room: Room): RoomInfo {
  * left — which is deliberate: leaving first would make a failed hand-off a
  * silent exit from the game rather than a message on screen.
  *
- * Session ids are per room, so every *remote* skin is dropped: the ids they are
- * keyed by will never be seen again, and everyone re-sends their paint on
- * arrival. Your own is the exception. It is kept and replayed into the new room,
- * because painting yourself is most of what a waiting room is for.
+ * Nothing comes with you. `emitLeftRoom` fires before the new room is attached
+ * and every piece of room-scoped state hangs off it — paint, marks, graves,
+ * remotes — so a match opens on a clean slate and so does the lobby you come
+ * home to. Session ids are per room anyway, so the ids remote skins were keyed
+ * by would never be seen again.
  */
 async function move(from: Room, seat: Seat) {
   const client = getClient();
@@ -366,14 +383,14 @@ async function move(from: Room, seat: Seat) {
 
   try {
     const next = await client.consumeSeatReservation(seat);
-    for (const id of remotes.keys()) forgetSkin(id);
     clearRemotes();
+    // Before `attach`, never after: the new room replays its graves during it,
+    // and every listener clearing room-scoped state hangs off this.
+    emitLeftRoom();
     await attach(next);
     void from.leave();
-    const mine = encodedHistory(SELF);
-    if (mine.length) sendPaint(mine);
-    // Announced only once the new room is wired and our paint is on its way, so
-    // a listener acting on it is looking at the room we actually landed in.
+    // Announced only once the new room is wired, so a listener acting on it is
+    // looking at the room we actually landed in.
     emitMoved();
   } catch (e) {
     emitMoveFailed(e instanceof Error ? e.message : "could not enter the match");
@@ -396,4 +413,5 @@ export async function disconnect() {
     }
   }
   clearRemotes();
+  emitLeftRoom();
 }

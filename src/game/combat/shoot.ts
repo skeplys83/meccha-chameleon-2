@@ -1,5 +1,3 @@
-"use client";
-
 import * as THREE from "three";
 import { remoteFigures } from "@/game/players/RemotePlayers";
 
@@ -8,7 +6,7 @@ import { remoteFigures } from "@/game/players/RemotePlayers";
  *
  * People and walls are raycast together and **whichever is nearer wins**, which
  * is the whole reason this is one function rather than two: checking people
- * first and only falling back to walls would let a seeker shoot a hider through
+ * first and only falling back to walls would let a hunter shoot a chameleon through
  * a wall.
  *
  * A wall hit comes back already oriented — position nudged off the surface along
