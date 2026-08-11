@@ -66,6 +66,52 @@ export class GameState extends Schema {
    * players who are standing on it has no sane outcome.
    */
   declare map: string;
+  /**
+   * `"lobby"` or `"match"`. A lobby is the waiting room — always the arena,
+   * always able to start a match; a match is the game proper on the chosen map
+   * and is unlisted. One class serves both, so the client has to be told which
+   * it is in, and so does anything that renders a Start button.
+   */
+  declare mode: string;
+  /**
+   * The map a lobby will start its match on. Meaningless in a match room, where
+   * `map` is already the answer. Kept apart from `map` because a lobby is
+   * *playable* while it waits — it is the arena, not a menu — so it needs its
+   * own geometry and the pending choice at the same time.
+   */
+  declare nextMap: string;
+  /**
+   * Whoever may press Start: the first player to join, reassigned if they
+   * leave. Not authoritative about a person — there are no accounts — only about
+   * which seat in this room holds the button.
+   */
+  declare hostId: string;
+  /**
+   * Whether this lobby appears in the menu's list of games.
+   *
+   * Chosen once, by whoever created it, and on by default — a game nobody can
+   * find needs the code passed by hand. Unlisted is not locked: the code still
+   * works either way, so this only decides whether strangers on the server can
+   * see that the game exists. Always false for a match.
+   */
+  declare listed: boolean;
+  /**
+   * The invite code of the lobby this game belongs to.
+   *
+   * A lobby's own id, and for a match the lobby that opened it — which is how a
+   * client leaving a match knows where "back" is, and how the match itself
+   * finds the room to send everyone home to when time runs out.
+   */
+  declare lobby: string;
+  /**
+   * Seconds left in the match, counted down on the server.
+   *
+   * A number rather than a deadline: a wall-clock end time would have to be
+   * reconciled against every client's own clock, and this is a countdown nobody
+   * needs to the millisecond. Zero in a lobby, which waits for as long as it
+   * likes.
+   */
+  declare timeLeft: number;
 
   constructor() {
     super();
@@ -80,4 +126,10 @@ defineTypes(GameState, {
   players: { map: Player },
   graves: ["string"],
   map: "string",
+  mode: "string",
+  nextMap: "string",
+  hostId: "string",
+  listed: "boolean",
+  lobby: "string",
+  timeLeft: "number",
 });

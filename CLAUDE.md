@@ -5,11 +5,45 @@ side to pass as scenery; seekers hunt them in first person with a shotgun. No
 accounts, no third-party services.
 
 It runs two ways, and both matter. **On a LAN**, every machine runs the whole app
-and UDP discovery lists the games on the Wi-Fi. **On a single hosted server**,
+and UDP discovery lists the machines on the Wi-Fi. **On a single hosted server**,
 one container serves everybody and discovery is switched off — see "Hosting it"
 in the README. It is still **not deployed to Vercel**: the game is one long-lived
-process holding a websocket room, which is the opposite of what that platform
+process holding websocket rooms, which is the opposite of what that platform
 does.
+
+**One server runs many games at once.** A player opens a **lobby** — the arena,
+playable, with a four-letter invite code — and when the host presses Start
+everybody is moved together into a **match** on the chosen map, where the server
+draws one of them at random to be the seeker. A match lasts **sixty seconds**;
+when its clock runs out everyone is carried back to the same lobby and the host
+can start another. Both rooms are the same class under two registered names; the
+lobby stays behind precisely so there is somewhere to come back to.
+
+Two things follow and are load-bearing. **A code is the only way *in*, and
+listing only decides whether you can *find* it**: a lobby is public by default
+and appears in the menu with the number of players across both its rooms, but
+unticking that box hides it without locking it — the code works the same either
+way. **Nobody
+picks a side**: everyone waits as a *seeker*, the draw at Start leaves one of
+them armed and turns the rest into hiders, and a role sent from a client is
+honoured only in a match (the seat reservation, and a respawn returning as what
+it already was) *and* only when it carries the pass the lobby minted, which is
+what stops a hider rejoining a match as the seeker. A `kill` is refused in a
+lobby, since everyone there could otherwise shoot everyone else out of the game
+they are queuing for.
+
+**The host is whoever has been in the game longest**, so it is the creator until
+they leave, and then the next-longest. It survives the round trip because each
+tab sends a `sessionStorage` player id that is forwarded through both seat
+reservations — session ids are per room and change every time you cross one.
+
+**A dropped socket is not a departure.** A match holds your seat for twenty
+seconds — your body stays standing there, and stays shootable — so reconnecting
+returns you to the same side, position and paint. The client tells you it
+happened rather than leaving you in a game that has quietly stopped listening. There are no accounts and nothing is
+persisted: a player is a name typed into a box. See
+`src/game/server/CLAUDE.md` for the matchmaking and `src/game/net/CLAUDE.md` for
+the client's side of the move.
 
 ## How the docs work
 
@@ -57,7 +91,14 @@ through the custom server; verified by requesting a dev chunk with a foreign
 
 Useful env vars: `PORT` (web, default 3000), `GAME_PORT` (Colyseus, default 2567),
 `PUBLIC_GAME_PORT` (what clients are *told* to connect to, when a proxy fronts
-Colyseus), `LAN_DISCOVERY=0` (skip UDP broadcast on a hosted box), `SESSION_NAME`.
+Colyseus), `LAN_DISCOVERY=0` (skip UDP broadcast on a hosted box), `SESSION_NAME`,
+`MONITOR_PASSWORD` / `MONITOR_USER` / `MONITOR=0` (the admin panel — see
+"Watching it run" in the README).
+
+**The admin panel is at `/colyseus`** and is the only way to see the matchmaking
+from outside: a lobby and its match are two rooms, and a player only ever sees
+the one they are standing in. It is on in development and, because it can end any
+room, absent in production unless `MONITOR_PASSWORD` is set.
 
 `Dockerfile` and `docker-compose.yml` are the hosted path. The image is Node 22
 because the server is TypeScript that Node strips at load — there is no build
@@ -69,6 +110,7 @@ step for it, and an older Node fails to parse rather than misbehaving.
 - three.js + `@react-three/fiber` + `@react-three/drei`
 - `@react-three/rapier` for physics
 - **Colyseus 0.16** server + `colyseus.js` 0.16 client, `@colyseus/schema` v3
+- `@colyseus/monitor` 0.16 + `express`, for the admin panel at `/colyseus`
 
 ### Version constraint — do not "upgrade" Colyseus casually
 
@@ -77,13 +119,19 @@ goes up to 0.16 (schema v3). Mixing them is a protocol mismatch and npm refuses
 to resolve it. The whole stack is deliberately pinned to the 0.16 / schema-3
 line. Bump all three together or not at all.
 
+**`@colyseus/monitor` is pinned to 0.16 for a sharper reason.** Its 0.17 line
+depends on `@colyseus/core@^0.17`, which npm installs *alongside* our 0.16 rather
+than refusing — giving a second matchMaker in the same process that knows about
+none of our rooms. The panel loads and lists nothing, with no error to explain
+it. Four things move together now, not three.
+
 ## The map
 
 ```
 src/app/page.tsx    renders <Game />
 src/app/icon.svg    the favicon — generated, see below
 src/game/
-  Game.tsx          top-level state: role, session, paused, painting, killed
+  Game.tsx          top-level state: joined, session, room, paused, painting, killed
   Scene.tsx         Canvas, lights, Physics, mark and grave lifetimes
 public/sounds/      the five .wav files
 public/maps/        model assets for maps that use them
@@ -103,8 +151,8 @@ Next picks `icon.svg` up automatically — there is no `favicon.ico` and no
 | folder     | owns                                                 | read it before touching                       |
 | ---------- | ---------------------------------------------------- | --------------------------------------------- |
 | `shared/`  | `Role` and the constants both halves must agree on   | anything the server also reads                |
-| `server/`  | Colyseus room, schema, UDP discovery, HTTP bootstrap | messages, validation, authority               |
-| `net/`     | the Colyseus **client**, remotes, LAN session list   | joining, remote transforms, events            |
+| `server/`  | Colyseus rooms, matchmaking, schema, UDP, HTTP       | messages, validation, authority, lobbies      |
+| `net/`     | the Colyseus **client**, remotes, which room you are in | joining, moving rooms, remote transforms    |
 | `world/`   | the maps, and the registry that picks one            | room layout, collision, cover, adding a map   |
 | `figure/`  | the stick figure rig, the poses, `PART_SHAPE`        | proportions, poses, limb geometry             |
 | `paint/`   | canvases, brush, palette, the panel                  | painting, brushes, skins, colours             |
@@ -119,6 +167,16 @@ why the timestep is not the library default, and note that `shadows` is spelled
 `"percentage"` rather than left bare, because three has deprecated the
 `PCFSoftShadowMap` that a bare `shadows` selects and downgrades it to exactly
 this anyway.
+**`Game.tsx` holds two kinds of state and they do not change at the same time.**
+Local state (`joined`, `paused`, `killedBy`) flips the instant a button is
+clicked; room state (`room`, and the `role`, `map` and `mode` read off it)
+arrives when the connection settles, a few hundred milliseconds later. Anything
+that renders the world must be keyed on the *room*, never on `joined` — keying
+the player on `joined` fell back to `"hider"` for that window and spawned you
+into the waiting room as a small third-person figure before snapping to the
+seeker's first-person camera. `enter` clears `room` on the way in for the same
+reason: the room being left says nothing true about the one being opened.
+
 Every mode transition in the game is decided in `Game.tsx` — which also means it
 owns the *teardown* of each: joining unlocks audio, pausing suspends it, and
 dying or leaving stops every looping sound. It owns the seeker's pointer lock the
@@ -150,7 +208,7 @@ through `net/`. Reading `POSES` for a label is the allowed exception.
 
 ## Traps already hit — do not reintroduce
 
-The folder docs hold the rest. These seven are project-wide:
+The folder docs hold the rest. These eight are project-wide:
 
 1. **`reactStrictMode: false` in `next.config.ts` is load-bearing.** R3F's `Canvas`
    does not survive StrictMode's dev-only double mount: the discarded mount calls
@@ -194,6 +252,16 @@ The folder docs hold the rest. These seven are project-wide:
      the module is loaded outside the bundler.
 7. **Nothing here deploys to Vercel.** Ignore Vercel-shaped advice; a LAN game
    should not round-trip the internet.
+8. **No secure-context-only browser API.** `crypto.randomUUID`,
+   `navigator.clipboard`, `crypto.subtle`, geolocation and the rest exist on
+   `localhost` and over HTTPS and **nowhere else** — including
+   `http://192.168.x.x:3000`, which is how every guest opens this game. The
+   failure only ever hits the people who are not the developer, and it is not
+   subtle: `crypto.randomUUID is not a function` killed every LAN join the day
+   player ids were added. Use `crypto.getRandomValues`, which carries no such
+   restriction; where there is no unrestricted equivalent, feature-detect and
+   fall back (`LobbyPanel`'s Copy button falls back to `execCommand`, deprecated
+   and therefore unrestricted). Testing on localhost cannot catch this.
 
 ## Verifying changes
 
@@ -244,8 +312,10 @@ was all confirmed.
 
 ## Not built yet
 
-No round flow (hide phase, win condition), no lobby or ready-up, no health — a
-hit is instantly fatal. The whistle is a periodic tell **hiders** give off, not a
+No hide phase and no win condition — a sixty-second clock ends a match and sends
+everyone back to the lobby, but nothing counts who survived it, so a round has a
+length and no result. No ready-up: a lobby is a place to wait, not a checklist.
+No health — a hit is instantly fatal. The whistle is a periodic tell **hiders** give off, not a
 round bell: it is heard from wherever its owner is standing, and seekers never
 make one. Paint has no undo and
 no per-part erase. Each folder's doc ends with the gaps specific to it.

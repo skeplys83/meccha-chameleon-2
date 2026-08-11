@@ -67,7 +67,7 @@ follows your head, and the footstep derivation.
 
 5. **The context unlocks on *any* gesture, not just the join click.** Browsers
    start every context suspended and only honour `resume()` from a user gesture.
-   `Game.tsx` calls `unlockAudio()` on the role button, and that is the intended
+   `Game.tsx` calls `unlockAudio()` on Create or Join, and that is the intended
    path — but it was a single point of failure for the entire game's audio, and
    when it failed it failed *silently*. `engine.ts` now also binds capture-phase
    `pointerdown` / `keydown` / `touchstart` listeners beside the context it

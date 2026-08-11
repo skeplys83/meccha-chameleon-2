@@ -8,10 +8,20 @@
  */
 export function PauseMenu({
   sessionName,
+  mode,
   onResume,
   onLeave,
 }: {
   sessionName: string;
+  /**
+   * Which room is paused, because backing out means different things in each.
+   *
+   * From a match, leaving means leaving *the match* — you are still in that game
+   * and its waiting room is where you land. From the waiting room there is
+   * nothing left to back out of, so it means the menu. The label has to say
+   * which, or the button is a lie about where it takes you.
+   */
+  mode: "lobby" | "match";
   onResume: () => void;
   onLeave: () => void;
 }) {
@@ -40,14 +50,18 @@ export function PauseMenu({
             onClick={onLeave}
             className="rounded-lg border border-rose-500/60 bg-rose-950/40 px-5 py-2 text-rose-200 transition hover:border-rose-400 hover:bg-rose-900/60"
           >
-            Return to menu
+            {mode === "match" ? "Leave match" : "Return to menu"}
           </button>
         </div>
 
         {/* Not "Esc toggles pause" any more: Esc is what released the pointer,
             and the browser will not give it back for about a second afterwards.
             Resuming has to be a click. */}
-        <div className="text-[10px] text-neutral-500">Click Resume to continue</div>
+        <div className="text-[10px] text-neutral-500">
+          {mode === "match"
+            ? "Leaving takes you back to the waiting room"
+            : "Click Resume to continue"}
+        </div>
       </div>
     </div>
   );

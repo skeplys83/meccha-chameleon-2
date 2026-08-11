@@ -153,7 +153,7 @@ export function preloadSounds() {
  * **Must be called from inside a real click handler.** Browsers start every
  * context suspended and only `resume()` succeeds from a gesture; call it from an
  * effect and the promise rejects silently, leaving the whole game mute. The
- * gesture this game uses is picking a role in `RoleMenu`.
+ * gesture this game uses is Create or Join in `StartMenu`.
  */
 export function unlockAudio() {
   const context = ensureContext();

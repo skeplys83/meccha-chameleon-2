@@ -8,8 +8,10 @@ cover, and the `ROOM_SURFACE` name that shots and the camera filter on.
 ## Files
 
 - `Room.tsx` — renders whichever map the room is playing. Four lines.
-- `maps.ts` — the registry: every map's id, name, blurb and component.
-- `mapIds.ts` — the ids alone, **import-free on purpose**.
+- `maps.ts` — the registry: every map's id, name, blurb and component, plus
+  `MATCH_MAP_LIST` and `mapName`.
+- `mapIds.ts` — the ids alone, **import-free on purpose**. Also `LOBBY_MAP` and
+  `MATCH_MAP_IDS`, which the server validates against.
 - `surface.ts` — `ROOM_SURFACE`, alone for the same reason.
 - `Piece.tsx` — one loaded glTF model, placed. The counterpart of `Solid` for
   maps built from files.
@@ -32,8 +34,9 @@ name on every mesh, and a collider type you choose per piece.
 ## Adding a map
 
 Drop a component in `maps/`, add its id to `mapIds.ts` and an entry to `maps.ts`.
-Nothing else: the menu lists whatever is in the table, the server validates a
-chosen id against it, and `Room` renders it. `maps.ts` throws at import time if
+Nothing else: the menu and the lobby panel both list `MATCH_MAP_LIST`, the server
+validates a chosen id against `MATCH_MAP_IDS`, and `Room` renders it. `mapName`
+turns an id off the wire into its label. `maps.ts` throws at import time if
 the two files disagree, so a half-added map fails the build instead of showing an
 empty menu entry or silently refusing a legitimate choice.
 
@@ -47,28 +50,36 @@ empty menu entry or silently refusing a legitimate choice.
 2. **A map id is a wire value.** It is chosen in the menu, stored in room state
    and read by every client. Add ids freely; rename one and you break anybody
    mid-session, the same as renaming a message.
-3. **The map is fixed for a room's life**, chosen by whoever opened it. Swapping
-   geometry under players standing on it has no sane outcome, and a map chosen
-   per client would put people inside walls their opponents cannot see.
-4. **Every surface must be named `ROOM_SURFACE`.** That name is what
+3. **The map is fixed for a room's life.** Swapping geometry under players
+   standing on it has no sane outcome, and a map chosen per client would put
+   people inside walls their opponents cannot see. A lobby is *always* the
+   arena; the map a host picks is `nextMap`, which the match is created with.
+   Changing the map is therefore always changing rooms.
+4. **The arena is `LOBBY_MAP`, not a choice.** It is where every game waits —
+   playable on purpose, so you can walk about and paint while people arrive — and
+   it is absent from `MATCH_MAP_IDS`, refused by `onCreate` and `setMap`, and
+   missing from both pickers. Offering it would mean pressing Start and arriving
+   where you already were. It stays in `MAP_IDS` because it is still a real map
+   that `Room` renders.
+5. **Every surface must be named `ROOM_SURFACE`.** That name is what
    `players/Player.tsx` filters on for the shot raycast, the ground test and the
    camera pull-in. A new piece without it is shot straight through, cannot be
    stood on, and the camera clips into it. `Solid` sets it for you — hand-rolled
    geometry must not forget.
-5. **A non-box shape must name the collider it needs.** `Solid`'s `colliders`
+6. **A non-box shape must name the collider it needs.** `Solid`'s `colliders`
    prop goes to rapier's auto-generation: `cuboid` reads a bounding box (correct
    for boxes, including rotated ones like the ramp), `hull` wraps the real
    vertices (cylinders, cones, the crystal, the capsule), `ball` is the exact
    sphere, and the ring **must** be `trimesh` — a hull fills its hole in.
    Getting this wrong does not error; it just puts an invisible box around the
    piece.
-6. **Everything tall has a way up.** Jump apex is `JUMP_SPEED²/2g` ≈ 3 units, so
+7. **Everything tall has a way up.** Jump apex is `JUMP_SPEED²/2g` ≈ 3 units, so
    no step in the room is more than ~2: the ziggurat is three 1-unit tiers, the
    divider is a lip then a wall, the stairs rise 0.9 each onto a catwalk that
    dead-ends at the slab, and the big drum has a smaller drum beside it as its
    step. The cone, the capsule and the crystal are the deliberate exceptions — a
    hider who cannot reach the high ground has nowhere to hide but the corners.
-7. **A map that loads files must suspend exactly once, before any `RigidBody`
+8. **A map that loads files must suspend exactly once, before any `RigidBody`
    exists.** Each `Piece` calls `useGLTF`, so if the first piece to want a file
    were the one to fetch it, the map would suspend once *per file* — and React
    discards a suspended tree, so pieces that had already committed would have
@@ -77,7 +88,7 @@ empty menu entry or silently refusing a legitimate choice.
    `recursive use of an object`, killing physics for the session. `dungeon.tsx`
    loads all seven models in one `useGLTF(PIECES)` at the top of the component;
    the per-piece calls below then read from cache.
-8. **Anything that changes the set of surfaces must call `bumpSurfaces`.**
+9. **Anything that changes the set of surfaces must call `bumpSurfaces`.**
    `players/Player.tsx` collects `ROOM_SURFACE` meshes and reuses the list for
    the shot raycast, the ground ray, the climb probes and the camera. It used to
    collect them once in a mount effect, which worked only because the arena is
@@ -86,20 +97,20 @@ empty menu entry or silently refusing a legitimate choice.
    walls, no climbing, no shots, which reads exactly like "the controls are
    broken". `Room` bumps the counter when a map mounts and again when it
    unmounts, and the player re-collects on the next frame.
-9. **A loaded model must be cloned per placement, and named.** One `Object3D`
+10. **A loaded model must be cloned per placement, and named.** One `Object3D`
    cannot be in two places, and the dungeon uses the same wall two dozen times.
    `Piece` clones in a `useMemo` — before render, so the `ROOM_SURFACE` names
    exist by the time `players/Player.tsx` collects them in its mount effect — and
    `clone(true)` shares geometry and materials, so every piece still draws from
    the one 17 KB atlas.
-10. **Assets are committed uncompressed, beside their `.bin` and their texture.**
+11. **Assets are committed uncompressed, beside their `.bin` and their texture.**
    No Draco: drei's decoder is fetched from a Google CDN, which a LAN game cannot
    reach. And `.gltf` rather than `.glb` on purpose here — the pack shares one
    atlas across every piece, so keeping it external means one download and one
    GPU texture, where `.glb` would embed a copy per file.
-11. **Only the pieces a map uses are copied in.** KayKit's pack is 6.3 MB across
+12. **Only the pieces a map uses are copied in.** KayKit's pack is 6.3 MB across
    211 models; the dungeon needs seven, which is 204 KB including the atlas.
-12. **Nine pieces are painted in exact `PAINT` hexes.** Same table the swatch row
+13. **Nine pieces are painted in exact `PAINT` hexes.** Same table the swatch row
    renders. Pick the matching swatch, paint yourself, and you can test camouflage
    against a true match instead of eyeballing it. That is the whole point; do not
    "tidy" an arena colour to something off-palette.

@@ -1,21 +1,35 @@
 "use client";
 
-import { Client, getStateCallbacks } from "colyseus.js";
+import { Client, getStateCallbacks, type Room } from "colyseus.js";
 import type { Role } from "@/game/shared/protocol";
-import { clearSkin, decodeStroke, forgetSkin, paint } from "@/game/paint/skin";
-import { getRoom, setRoom } from "./connection";
+import {
+  clearSkin,
+  decodeStroke,
+  encodedHistory,
+  forgetSkin,
+  paint,
+  SELF,
+} from "@/game/paint/skin";
+import { getClient, getRoom, getToken, setClient, setRoom, setToken } from "./connection";
+import { playerId } from "./identity";
 import { clearRemotes, emitRoster, remotes } from "./remotes";
 import {
   emitGrave,
   emitKilled,
   emitMark,
+  emitDropped,
+  emitMoved,
+  emitMoveFailed,
+  emitRoom,
   emitShot,
   emitWhistle,
   type NetMark,
+  type RoomInfo,
 } from "./events";
+import { sendPaint } from "./send";
 import type { Session } from "./sessions";
 
-/** Mirrors the Player schema declared in server/schema.mjs. */
+/** Mirrors the Player schema declared in server/schema.ts. */
 type PlayerSchema = {
   name: string;
   role: Role;
@@ -29,6 +43,17 @@ type PlayerSchema = {
   strokes: { forEach(cb: (raw: string) => void): void };
 };
 
+type StateSchema = {
+  map?: string;
+  mode?: string;
+  nextMap?: string;
+  hostId?: string;
+  listed?: boolean;
+  lobby?: string;
+  timeLeft?: number;
+  players?: { get(id: string): PlayerSchema | undefined };
+};
+
 type Callbacks = {
   players: {
     onAdd(cb: (player: PlayerSchema, sessionId: string) => void): void;
@@ -40,26 +65,111 @@ type Callbacks = {
   onChange(cb: () => void): void;
 };
 
-export async function connect(
+/**
+ * A seat held for this client in another room. The server sends one per client
+ * when a lobby starts, trimmed to what `consumeSeatReservation` reads.
+ */
+type Seat = {
+  sessionId: string;
+  room: {
+    roomId: string;
+    name: string;
+    publicAddress?: string;
+    clients: number;
+    maxClients: number;
+  };
+};
+
+/**
+ * Open a lobby of your own. `create`, never `joinOrCreate` — the latter is what
+ * used to glue every player on a machine into one room, and it is exactly the
+ * behaviour a second game must not have.
+ *
+ * No role goes out. Everybody waits as a seeker and the draw at Start turns all
+ * but one of them into hiders, so a role sent from here would be either ignored
+ * or a lie.
+ *
+ * `listed` is the one thing only the creator can decide, and only now: it puts
+ * the game in the menu's list for anyone on this server. Unlisted games are
+ * reached by their code exactly as listed ones are.
+ *
+ * The `pid` is what makes *this tab* the lobby's host for as long as the lobby
+ * lives — see `identity.ts`. It goes out on every way in, because the server has
+ * no other way to tell that the tab coming back from a match is the one that
+ * opened the game.
+ */
+export async function createLobby(
   name: string,
-  role: Role,
   target: Session,
   map: string,
+  listed: boolean,
 ) {
-  await disconnect();
+  return open(target, (client) =>
+    client.create("lobby", { name, map, listed, pid: playerId() }),
+  );
+}
 
+/** Join someone else's lobby by its invite code, which is its room id. */
+export async function joinLobby(name: string, target: Session, code: string) {
+  return open(target, (client) =>
+    client.joinById(code.trim().toUpperCase(), { name, pid: playerId() }),
+  );
+}
+
+/**
+ * Get back into a room you were in — after a drop, or after being shot.
+ *
+ * It tries the reconnection token first, which is the good outcome: the server
+ * held the seat, so the *same* session id comes back and with it the position,
+ * the side and the paint that were already there. That only works inside the
+ * window the server holds it for, and only for a drop — a player who was shot
+ * had their seat deleted deliberately.
+ *
+ * The fall-back is a plain join by room id, which is a fresh player: new session
+ * id, spawn position, and a hider, because the server will not take a role from
+ * a client. That is exactly right for the case that reaches it, since the only
+ * player who ever needs it is a dead hider — a seeker cannot be shot.
+ */
+export async function rejoin(name: string, target: Session, roomId: string) {
+  const token = getToken();
+  return open(target, async (client) => {
+    if (token) {
+      try {
+        return await client.reconnect(token);
+      } catch {
+        // The window closed, or the seat was deleted. Go in as somebody new.
+      }
+    }
+    return client.joinById(roomId, { name, pid: playerId() });
+  });
+}
+
+async function open(target: Session, join: (client: Client) => Promise<Room>) {
+  await disconnect();
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const client = new Client(`${proto}//${target.host}:${target.gamePort}`);
-  // The map only counts if this call is what *creates* the room; the server
-  // ignores it for anyone joining one that already exists.
-  const joined = await client.joinOrCreate("game", { name, role, map });
+  setClient(client);
+  const joined = await join(client);
+  return attach(joined);
+}
+
+/**
+ * Wire a room up and wait for it to have said something.
+ *
+ * Called once per *room*, not once per session — being moved from a lobby into
+ * its match runs all of this again against the new handle. Everything it
+ * installs is therefore scoped to `joined` and dies with it; the only state that
+ * outlives a room is your own paint.
+ */
+async function attach(joined: Room): Promise<RoomInfo> {
   setRoom(joined);
+  // Captured now, while the room is healthy. After a drop there is no room left
+  // to read it from, which is the only time it is any use.
+  setToken(joined.reconnectionToken);
 
   // The room is untyped on this side, so the callback proxy is described by
   // the shape the server actually sends.
-  const $ = getStateCallbacks(joined) as unknown as (
-    target: unknown,
-  ) => Callbacks;
+  const $ = getStateCallbacks(joined) as unknown as (target: unknown) => Callbacks;
 
   $(joined.state).players.onAdd((player, sessionId) => {
     if (sessionId === joined.sessionId) return;
@@ -81,7 +191,8 @@ export async function connect(
     emitRoster();
 
     // Whatever this player has already painted on themselves, replayed so a
-    // late joiner does not see a blank body.
+    // late joiner does not see a blank body. This is also how paint survives
+    // the trip out of a lobby: everyone re-sends theirs on arrival.
     player.strokes?.forEach((raw) => {
       const stroke = decodeStroke(raw);
       if (stroke) paint(sessionId, stroke);
@@ -149,26 +260,134 @@ export async function connect(
     emitMark(mark);
   });
 
-  joined.onLeave(() => {
-    clearRemotes();
+  // The lobby has opened a match and is holding a seat in it for us.
+  joined.onMessage("moveTo", (seat: Seat) => {
+    void move(joined, seat);
   });
 
-  // Whatever the room actually settled on, which may not be what was asked for.
-  // Waiting for the first patch is the only way to know: state is empty until it
-  // lands, and rendering the wrong geometry for even a frame puts players inside
-  // walls their opponents cannot see.
-  const settled = joined.state as unknown as { map?: string };
-  if (!settled.map) {
+  joined.onMessage("moveFailed", (msg: { reason?: string }) => {
+    emitMoveFailed(msg?.reason ?? "the match could not be reached");
+  });
+
+  joined.onLeave(() => {
+    // Every deliberate exit clears the room handle before it leaves — quitting,
+    // dying, being handed to another room — so reaching here still holding it
+    // means nobody asked for this. Two consequences: do not wipe the room we
+    // have just arrived in, and do tell somebody that the socket died.
+    if (getRoom() !== joined) return;
+    setRoom(null);
+    clearRemotes();
+    emitDropped();
+  });
+
+  // The map, the host and the pending map all live in state, so they are read
+  // from a patch rather than returned once: the host can change the map while
+  // people arrive, and the Start button changes hands when its owner leaves.
+  let last = "";
+  const publish = () => {
+    const info = describe(joined);
+    const key = [
+      info.mode,
+      info.role,
+      info.map,
+      info.nextMap,
+      info.code,
+      info.isHost,
+      info.isListed,
+      info.lobbyCode,
+      info.timeLeft,
+    ].join("|");
+    if (key === last) return;
+    last = key;
+    emitRoom(info);
+  };
+  joined.onStateChange(publish);
+
+  /**
+   * Wait for the room to have said who we are before handing it back.
+   *
+   * Two things must have landed, not one. The **map**, because the caller
+   * renders geometry from it and drawing the wrong one for even a frame puts
+   * players inside walls their opponents cannot see. And **our own player**,
+   * because that is where the role lives — describing a room we are not yet in
+   * would report the wrong side, which is a camera in the wrong place and a
+   * pointer lock that should not have been taken.
+   */
+  const seated = () => {
+    const state = joined.state as StateSchema;
+    return Boolean(state.map) && Boolean(state.players?.get(joined.sessionId));
+  };
+  if (!seated()) {
     await new Promise<void>((resolve) => {
-      joined.onStateChange.once(() => resolve());
+      const check = () => {
+        if (!seated()) return;
+        joined.onStateChange.remove(check);
+        resolve();
+      };
+      joined.onStateChange(check);
     });
   }
-  return joined;
+  publish();
+  return describe(joined);
+}
+
+function describe(room: Room): RoomInfo {
+  const state = room.state as StateSchema;
+  return {
+    mode: state.mode === "match" ? "match" : "lobby",
+    // The room's answer, not the player's — this is where a seeker finds out
+    // they are one.
+    role: state.players?.get(room.sessionId)?.role === "seeker" ? "seeker" : "hider",
+    map: state.map ?? "",
+    nextMap: state.nextMap ?? state.map ?? "",
+    code: room.roomId,
+    isHost: state.hostId === room.sessionId,
+    isListed: state.listed === true,
+    lobbyCode: state.lobby ?? "",
+    timeLeft: state.timeLeft ?? 0,
+  };
+}
+
+/**
+ * Take the seat the lobby reserved for us in its match.
+ *
+ * The two rooms overlap for a moment — the match is consumed before the lobby is
+ * left — which is deliberate: leaving first would make a failed hand-off a
+ * silent exit from the game rather than a message on screen.
+ *
+ * Session ids are per room, so every *remote* skin is dropped: the ids they are
+ * keyed by will never be seen again, and everyone re-sends their paint on
+ * arrival. Your own is the exception. It is kept and replayed into the new room,
+ * because painting yourself is most of what a waiting room is for.
+ */
+async function move(from: Room, seat: Seat) {
+  const client = getClient();
+  if (!client || getRoom() !== from) return;
+
+  try {
+    const next = await client.consumeSeatReservation(seat);
+    for (const id of remotes.keys()) forgetSkin(id);
+    clearRemotes();
+    await attach(next);
+    void from.leave();
+    const mine = encodedHistory(SELF);
+    if (mine.length) sendPaint(mine);
+    // Announced only once the new room is wired and our paint is on its way, so
+    // a listener acting on it is looking at the room we actually landed in.
+    emitMoved();
+  } catch (e) {
+    emitMoveFailed(e instanceof Error ? e.message : "could not enter the match");
+  }
 }
 
 export async function disconnect() {
   const leaving = getRoom();
   setRoom(null);
+  setClient(null);
+  // A deliberate exit gives up the seat, so the token that would have reclaimed
+  // it is worthless. `rejoin` reads it *before* calling this, which is what lets
+  // a reconnect still work.
+  setToken(null);
   if (leaving) {
     try {
       await leaving.leave();

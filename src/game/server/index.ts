@@ -1,7 +1,8 @@
 import { createServer } from "node:http";
 import next from "next";
-import { Server } from "colyseus";
+import { matchMaker, Server } from "colyseus";
 import { GameRoom } from "./room.ts";
+import { createMonitor, monitorNotice, MONITOR_PATH } from "./monitor.ts";
 import {
   getSessionName,
   lanAddress,
@@ -48,29 +49,83 @@ const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 await app.prepare();
 
+/**
+ * The public games on this server.
+ *
+ * There is no room-list route in Colyseus 0.16 — its HTTP matchmaking endpoint
+ * exposes only the join methods, and the browser client has no
+ * `getAvailableRooms` — so the listing is served here, from the process that
+ * holds the room directory. `matchMaker.query` *is* that directory.
+ *
+ * Only public lobbies appear. A lobby created with the box unticked is
+ * `setPrivate`, which hides it from this query while leaving its code working,
+ * and a match is always private because it is reached by being moved into it.
+ *
+ * **A game's population is both of its rooms.** Once a match starts, the people
+ * playing are no longer in the lobby, and a count that ignored them would show a
+ * busy game as empty. The lobby publishes its match's id in metadata; the
+ * players are added back here.
+ */
+async function publicGames() {
+  const [lobbies, matches] = await Promise.all([
+    matchMaker.query({ name: "lobby", private: false }),
+    matchMaker.query({ name: "match" }),
+  ]);
+  const inMatch = new Map(matches.map((m) => [m.roomId, m.clients]));
+
+  return lobbies.map((room) => ({
+    code: room.roomId,
+    host: room.metadata?.host ?? "",
+    map: room.metadata?.map ?? "",
+    started: room.metadata?.started === true,
+    players: room.clients + (inMatch.get(room.metadata?.matchId) ?? 0),
+  }));
+}
+
+/**
+ * Colyseus's admin panel, or `null` when it should not be reachable at all.
+ *
+ * Built before the HTTP server so the route below is a plain null check rather
+ * than a per-request decision — and so the banner can say what happened.
+ */
+const admin = createMonitor(dev);
+
 const web = createServer((req, res) => {
-  // The only route the custom server owns. Everything else is Next's.
+  // The panel is express-based, so it is handed the request whole. It comes
+  // first because Next would otherwise answer `/colyseus` with a 404 page.
+  if (admin && req.url?.startsWith(MONITOR_PATH)) {
+    admin(req, res);
+    return;
+  }
+
+  // The only other route the custom server owns. Everything else is Next's.
   if (req.url === "/api/sessions") {
     res.setHeader("content-type", "application/json");
-    res.end(
-      JSON.stringify({
-        self: { id: sessionId, name: getSessionName(), port, gamePort: publicGamePort },
-        sessions: [...peers.values()].map(({ id, name, host, port, gamePort }) => ({
-          id,
-          name,
-          host,
-          port,
-          gamePort,
-        })),
-      }),
-    );
+    void publicGames().then((games) => {
+      res.end(
+        JSON.stringify({
+          self: { id: sessionId, name: getSessionName(), port, gamePort: publicGamePort },
+          sessions: [...peers.values()].map(({ id, name, host, port, gamePort }) => ({
+            id,
+            name,
+            host,
+            port,
+            gamePort,
+          })),
+          games,
+        }),
+      );
+    });
     return;
   }
   handle(req, res);
 });
 
 const gameServer = new Server();
-gameServer.define("game", GameRoom);
+// One class, two names. A lobby is the arena and can start a match; a match is
+// the game proper on the chosen map. See `room.ts`.
+gameServer.define("lobby", GameRoom);
+gameServer.define("match", GameRoom);
 await gameServer.listen(gamePort);
 
 web.listen(port, hostname, () => {
@@ -82,5 +137,7 @@ web.listen(port, hostname, () => {
   if (publicGamePort !== gamePort) {
     console.log(`  public  clients are told :${publicGamePort}`);
   }
+  const notice = monitorNotice(dev);
+  if (notice) console.log(`  ${notice}`);
   if (process.env.LAN_DISCOVERY === "0") console.log("  discovery off");
 });

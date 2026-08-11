@@ -3,9 +3,16 @@
 import type { ComponentType } from "react";
 import { Arena } from "./maps/arena";
 import { Dungeon } from "./maps/dungeon";
-import { DEFAULT_MAP, MAP_IDS, type MapId } from "./mapIds";
+import {
+  DEFAULT_MAP,
+  DEFAULT_MATCH_MAP,
+  LOBBY_MAP,
+  MAP_IDS,
+  MATCH_MAP_IDS,
+  type MapId,
+} from "./mapIds";
 
-export { DEFAULT_MAP, type MapId };
+export { DEFAULT_MAP, DEFAULT_MATCH_MAP, LOBBY_MAP, type MapId };
 
 /**
  * Every map the game can load.
@@ -44,6 +51,15 @@ export const MAPS: Record<MapId, GameMap> = {
 
 export const MAP_LIST: GameMap[] = MAP_IDS.map((id) => MAPS[id]);
 
+/**
+ * The maps a match can be played on — everything a picker should offer.
+ *
+ * The arena is missing on purpose: it is the waiting room every lobby runs, not
+ * a choice. Offering it would mean pressing Start and arriving where you already
+ * were.
+ */
+export const MATCH_MAP_LIST: GameMap[] = MATCH_MAP_IDS.map((id) => MAPS[id]);
+
 // Adding an id without a map, or a map without an id, fails here rather than
 // showing an empty menu entry or silently refusing a legitimate choice.
 for (const id of MAP_IDS) {
@@ -54,3 +70,6 @@ for (const id of MAP_IDS) {
 export function safeMapId(id: unknown): MapId {
   return typeof id === "string" && id in MAPS ? (id as MapId) : DEFAULT_MAP;
 }
+
+/** The menu label for an id off the wire — a lobby listing carries the id only. */
+export const mapName = (id: unknown) => MAPS[safeMapId(id)].name;

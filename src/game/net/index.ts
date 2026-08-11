@@ -6,16 +6,21 @@
  * modules below a given function lives in.
  */
 
-export { connect, disconnect } from "./client";
+export { createLobby, disconnect, joinLobby, rejoin } from "./client";
 export { selfId } from "./connection";
 export {
+  onDropped,
   onMark,
   onGrave,
   onKilled,
+  onMoved,
+  onMoveFailed,
+  onRoom,
   onShot,
   onWhistle,
   type Grave,
   type NetMark,
+  type RoomInfo,
 } from "./events";
 export {
   onRoster,
@@ -23,12 +28,14 @@ export {
   type Remote,
   type RemoteTarget,
 } from "./remotes";
-export { fetchSessions, type Session } from "./sessions";
+export { fetchSessions, type Game, type Session } from "./sessions";
 export {
   sendClearSkin,
   sendKill,
+  sendMap,
   sendPaint,
   sendShoot,
+  sendStart,
   sendState,
   sendWhistle,
 } from "./send";

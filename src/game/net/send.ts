@@ -39,6 +39,20 @@ export function sendWhistle() {
   getRoom()?.send("whistle");
 }
 
+/**
+ * Start the match. Only the host's copy of this does anything — the server
+ * checks `hostId` — so the button is hidden for everyone else rather than the
+ * message being withheld.
+ */
+export function sendStart() {
+  getRoom()?.send("start");
+}
+
+/** Change the map the lobby will start on. Host only, server-checked. */
+export function sendMap(map: string) {
+  getRoom()?.send("setMap", { map });
+}
+
 export function sendClearSkin() {
   getRoom()?.send("clearSkin");
 }

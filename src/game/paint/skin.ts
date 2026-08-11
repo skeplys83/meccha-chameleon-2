@@ -135,6 +135,20 @@ export function clearSkin(id: string) {
 
 
 /**
+ * Everything painted on one body, in wire form.
+ *
+ * The one thing that carries across a room switch. Joining is a clean slate —
+ * `forgetAllSkins` — but being *moved* from a lobby into its match is not
+ * joining: you painted yourself while you waited, and arriving stripped would
+ * make the waiting room pointless. The match room has never heard of these
+ * strokes, so they are replayed into it, and everyone there receives them the
+ * ordinary way.
+ */
+export function encodedHistory(id: string) {
+  return (history.get(id) ?? []).map(encodeStroke);
+}
+
+/**
  * Drop every body's paint, yours included.
  *
  * Joining is a clean slate: you arrive unpainted and so does everyone you can

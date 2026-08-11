@@ -4,7 +4,8 @@
 format for a stroke, and the panel that mixes colours.
 
 **Entry points:** `getSkin` / `paint` / `clearSkin` / `forgetSkin` /
-`forgetAllSkins` / `encodeStroke` / `decodeStroke` / `SELF` from `skin.ts`; `Brush` / `DEFAULT_BRUSH` from
+`forgetAllSkins` / `encodeStroke` / `decodeStroke` / `encodedHistory` / `SELF`
+from `skin.ts`; `Brush` / `DEFAULT_BRUSH` from
 `brush.ts`; `PaintPanel`.
 
 ## Files
@@ -47,13 +48,19 @@ format for a stroke, and the panel that mixes colours.
 7. **Paint does not survive joining, and that includes respawning.** `Game.tsx`
    calls `forgetAllSkins()` on every join: yours goes, and so do the leftover
    skins of whoever was in the last session, keyed by session ids that will never
-   be seen again. There used to be a replay that carried your paint through a
-   respawn; joining is a clean slate now, so it is gone and `encodedHistory` with
-   it. The stroke history remains only as the per-body cap.
-8. **A drag is throttled by UV distance, not by time.** `PAINT_STEP` in
+   be seen again.
+8. **Being *moved* is not joining, and paint does survive it.** The one
+   exception, and the reason `encodedHistory` exists at all: you paint yourself
+   in the waiting room while people arrive — as a seeker, which means through
+   the pin (invariant 5), and before you know which side you will end up on —
+   and arriving in the match stripped would make the waiting room pointless. `net/client.ts` replays your own
+   strokes into the new room and drops every remote skin, because session ids
+   are per room. Nothing else may use `encodedHistory` — a second caller would
+   quietly turn it back into the respawn replay that was deliberately removed.
+9. **A drag is throttled by UV distance, not by time.** `PAINT_STEP` in
    `brushCursor.ts` — a smear at 60 fps would otherwise be hundreds of
    near-identical strokes, all of them sent and stored.
-9. **`createBrushCursor` takes getters, not values.** The figure and the ring
+10. **`createBrushCursor` takes getters, not values.** The figure and the ring
    mount after the handlers are installed, and the brush changes while they are
    live; reading them through getters is what lets the pointer handlers be bound
    exactly once, which is the invariant `Player.tsx` depends on.

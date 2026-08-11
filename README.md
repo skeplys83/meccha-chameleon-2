@@ -18,8 +18,16 @@ npm run dev
 This starts a custom server (`src/game/server/index.ts`, TypeScript run
 directly by Node — no build step): Next.js on `:3000` and a Colyseus
 game server on `:2567`. It prints a LAN URL — other players on the same Wi-Fi
-open that. Sessions on the network are discovered automatically via UDP
-broadcast and listed in the menu.
+open that.
+
+Press **Create game** and you get a waiting room in the arena with a four-letter
+code. Games are public by default and show up in everyone's menu with a player
+count, or untick the box and hand the code out yourself — either way the code is
+what gets you in. Everyone waits armed. When the host presses Start, the whole
+room moves to the chosen map, one player keeps the shotgun and the rest become
+hiders. A match runs for sixty seconds; when it ends everyone is back in the
+waiting room and the host can start another. One server runs as many games at once as you like. A code is the only way
+into a game — nothing is listed.
 
 Env vars: `PORT` (web), `GAME_PORT` (Colyseus), `SESSION_NAME`.
 
@@ -28,9 +36,17 @@ Env vars: `PORT` (web), `GAME_PORT` (Colyseus), `SESSION_NAME`.
 `WASD` to move, mouse to look, `Q`/`E` to turn the figure, `Space` to jump.
 Click the canvas to lock the cursor, `Esc` to release.
 
-- **Hider** — third-person camera, `1`–`5` for poses, left-drag to paint yourself.
+You do not choose a side — the seeker is drawn at random when the match starts.
+
 - **Seeker** — first person with a shotgun, left click to fire (pump-action, so
-  there is a delay between shots).
+  there is a delay between shots). Everyone is one in the waiting room, and
+  exactly one stays one per match. Nobody can be killed while waiting.
+- **Hider** — third-person camera, `1`–`5` for poses, left-drag to paint
+  yourself, and the only side that can climb.
+
+If your connection drops mid-match the server holds your seat for twenty
+seconds — reconnect inside that and you keep your side, your position and your
+paint. Your body stays standing there in the meantime, and can be shot.
 
 Hiders can climb: walk into a wall or an object and you go onto it. `W`/`S` run
 up and down the face, `A`/`D` across it, and `Space` lets go. Climb high enough
@@ -54,7 +70,7 @@ prevents, and its contracts with the folders around it.
 ```
 src/game/
   shared/   Role + the constants both halves must agree on
-  server/   Colyseus room, schema, UDP LAN discovery   <- runs in Node
+  server/   Colyseus rooms, matchmaking, schema, UDP     <- runs in Node
   net/ world/ figure/ paint/ players/ combat/          <- run in the browser
   sound/ hud/
 public/sounds/   four .wav files, all peak-normalised to -1 dBFS
@@ -69,12 +85,12 @@ the doc for the folder you are changing.
 docker compose up -d --build
 ```
 
-The image has not been built on a machine with registry access yet. What *has*
-been checked is the part that could actually be wrong: a directory holding only
-what the runner stage copies — production dependencies, `.next`, `public`, `src`
-and `next.config.ts` — boots the server, serves the page, serves the map and
-sound assets, and accepts a Colyseus join. No `typescript` and no Tailwind at
-runtime.
+Then open `http://localhost:3000` — or the machine's address from anywhere else —
+and press **Create game**.
+
+The image has been built and run: the page is served, a lobby is created, a
+second client joins it by code, Start moves both into one match on the chosen
+map, and no `typescript` or Tailwind is present at runtime.
 
 Two ports are published, because the browser talks to both: the page comes from
 `PORT` (3000) and the game socket connects straight to `GAME_PORT` (2567). Over
@@ -91,7 +107,42 @@ is:
 | `GAME_PORT` | Colyseus port the server **listens** on, default 2567 |
 | `PUBLIC_GAME_PORT` | Colyseus port clients are **told** to use — set this when a proxy fronts it |
 | `LAN_DISCOVERY` | `0` turns off UDP broadcast; it finds nothing on a hosted box |
-| `SESSION_NAME` | name shown in the session list |
+| `SESSION_NAME` | name the server reports for itself |
+| `MONITOR_PASSWORD` | enables the admin panel in production, behind Basic auth |
+| `MONITOR_USER` | username for that, default `admin` |
+| `MONITOR` | `0` turns the panel off in development |
+
+## Watching it run
+
+Colyseus's admin panel is mounted at **`/colyseus`** — open
+<http://localhost:3000/colyseus> while the server is running.
+
+It lists every live room. This game makes two kinds, so the list is the clearest
+picture of what the matchmaking is doing:
+
+- rows named **`lobby`** are waiting rooms. Their `host`, `map` and `started`
+  columns come from the same metadata the menu's game list reads, so a lobby with
+  `started: true` has a match running that its players are in.
+- rows named **`match`** are games in progress. They have no metadata and are
+  never listed in the menu — you reach one by being moved into it.
+
+Click a room to inspect it. You get its state live — every player, their
+position, pose, role and paint strokes, plus `timeLeft` ticking down on a match —
+and the connected clients. Watching a lobby and its match side by side is the
+only way to see the hand-off from outside; a player only ever sees the room they
+are standing in.
+
+**It is not read-only.** The panel can call any method on any room, including
+disposing it, so anyone who can reach it can end anybody's game. That is why:
+
+- in development it is on with no password — only you can reach `localhost`. Set
+  `MONITOR=0` to turn it off.
+- in production it does not exist unless `MONITOR_PASSWORD` is set, and then it
+  is behind HTTP Basic auth. Forgetting the password fails closed rather than
+  exposing it; the startup banner says which happened.
+
+Basic auth sends the password in near-cleartext, so on a hosted box only enable
+it behind the same TLS proxy that fronts the rest.
 
 ## Working on it
 
@@ -114,5 +165,8 @@ git config core.hooksPath .githooks
 
 ## Status
 
-Movement, roles, poses, painting, shooting, kills, positional sound and LAN
-discovery all work. Health, round flow and a lobby are not built yet.
+Movement, roles, poses, painting, shooting, kills, positional sound, LAN
+discovery, reconnection, and many simultaneous games — lobbies, invite codes,
+sixty-second matches and the trip back to the lobby — all work. Health, a hide
+phase, a win condition and ready-up are not built yet: a round has a length but
+no result.

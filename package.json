@@ -13,12 +13,14 @@
     "favicon": "node scripts/make-favicon.mjs"
   },
   "dependencies": {
+    "@colyseus/monitor": "^0.16.7",
     "@colyseus/schema": "^3.0.76",
     "@react-three/drei": "^10.7.8",
     "@react-three/fiber": "^9.7.0",
     "@react-three/rapier": "^2.2.0",
     "colyseus": "^0.16.5",
     "colyseus.js": "^0.16.22",
+    "express": "^5.2.1",
     "next": "16.3.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
@@ -26,6 +28,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/express": "^5.0.6",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

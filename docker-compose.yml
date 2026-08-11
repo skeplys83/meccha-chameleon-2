@@ -20,3 +20,10 @@ services:
       # Set this when a proxy terminates TLS in front of Colyseus: the server
       # keeps listening on GAME_PORT, clients are told to connect here instead.
       # PUBLIC_GAME_PORT: "443"
+      #
+      # The admin panel at /colyseus is off in production until this is set, and
+      # then it is behind HTTP Basic auth. It is not read-only — it can end any
+      # room — so only turn it on behind the same TLS proxy as everything else,
+      # or the password crosses the wire in near-cleartext.
+      # MONITOR_PASSWORD: "change-me"
+      # MONITOR_USER: "admin"
