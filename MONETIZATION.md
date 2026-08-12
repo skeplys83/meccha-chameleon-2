@@ -4,9 +4,9 @@ Scratch analysis from 2026-08-11. **Not a plan, not a commitment** — a set of
 numbers to argue with later. Nothing here is built, and nothing here should be
 read as advice to build it.
 
-The premise being explored: *if* this game ran on the open web instead of a LAN,
-what would ad revenue realistically look like at each scale, and what would it
-cost to serve.
+The premise being explored: now that the game is meant for the open web rather
+than a single room of people, what would ad revenue realistically look like at
+each scale, and what would it cost to serve.
 
 ---
 

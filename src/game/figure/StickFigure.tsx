@@ -32,46 +32,63 @@ const UPPER_LEG = PART_SHAPE.legUpperL.length;
 /** How fast a limb settles into a new pose. Higher is snappier. */
 const POSE_DAMP = 14;
 
-/** Above everything else in the scene, so the walls it ignores draw first. */
+/**
+ * A revealed body is **two stacked meshes**, and the pulse crossfades between
+ * them: solid red at the top of the beat, the player's own paint at the bottom.
+ *
+ * That is the whole point of the reveal, and it needs two layers because no
+ * single material can do it. Tinting a textured material toward red *multiplies*
+ * — red times a green patch is black — so a painted body would go dark rather
+ * than red. Fading to transparent instead was the first attempt and threw away
+ * the more interesting half: what you actually want to see at the end of a round
+ * is the camouflage that worked.
+ *
+ * Both layers ignore depth, so a survivor is visible through the wall they hid
+ * behind, and both are unlit — the paint is a *colour match* against a surface,
+ * so showing it shaded would misrepresent the thing being judged.
+ */
 const REVEAL_ORDER = 20;
-/** The two ends of the pulse. Dark enough to read as a beat, never off. */
-const REVEAL_DIM = new THREE.Color("#5a0008");
-const REVEAL_BRIGHT = new THREE.Color("#ff2a36");
+const REVEAL_COLOR = new THREE.Color("#ff2a36");
 /** Beats per second. Slow enough to read as breathing rather than an alarm. */
 const REVEAL_HZ = 1.15;
 
 /**
- * **One material for every highlighted body in the scene, shared on purpose.**
+ * **One red material for every highlighted body in the scene, shared on purpose.**
  *
  * It is animated, and a material per part per figure would mean twelve times as
- * many colour writes a frame for an identical result — worse, they would drift
+ * many opacity writes a frame for an identical result — worse, they would drift
  * out of phase and the pulse would stop reading as one deliberate signal. One
  * instance means one write and every survivor beating together.
- *
- * Flat and unlit: the point is to be unmissable through forty metres of wall,
- * and a lit material would be shaded by whatever the light is doing and read as
- * just another figure. `depthTest: false` is what makes it show through
- * geometry, and it only reads correctly alongside a high `renderOrder`, because
- * "ignores depth" means "whatever is drawn last wins".
  */
 const revealMaterial = new THREE.MeshBasicMaterial({
-  color: REVEAL_BRIGHT.clone(),
+  color: REVEAL_COLOR,
   toneMapped: false,
   depthTest: false,
+  transparent: true,
+  // Transparent *and* depth-ignoring: without this the parts of one body would
+  // punch holes in each other through a depth buffer they are not consulting.
+  depthWrite: false,
 });
 
-/**
- * Drive the shared pulse. Idempotent, so every highlighted figure may call it.
- *
- * Attached through the mesh's `material` **prop**, never as a child element: a
- * child `<meshStandardMaterial>` attaches to `material` too and, being applied
- * after props, would silently win. The two must never both be present, which is
- * why the paint material below is rendered only when `highlight` is false.
- */
+/** Drive the shared pulse. Idempotent, so every highlighted figure may call it. */
 function pulseReveal(elapsed: number) {
-  const t = (Math.sin(elapsed * Math.PI * 2 * REVEAL_HZ) + 1) / 2;
-  revealMaterial.color.copy(REVEAL_DIM).lerp(REVEAL_BRIGHT, t);
+  revealMaterial.opacity = (Math.sin(elapsed * Math.PI * 2 * REVEAL_HZ) + 1) / 2;
 }
+
+/**
+ * The paint layer of a revealed body: the real texture, unlit and through walls.
+ *
+ * Per part rather than shared, because the whole point is that each part wears
+ * its own canvas.
+ */
+function RevealedPaint({ texture }: { texture: THREE.CanvasTexture }) {
+  return (
+    <meshBasicMaterial map={texture} toneMapped={false} depthTest={false} depthWrite={false} />
+  );
+}
+
+/** The overlay never takes a raycast: a shot must find the body, not its marker. */
+const noRaycast = () => null;
 
 function Segment({
   part,
@@ -83,18 +100,34 @@ function Segment({
   highlight: boolean;
 }) {
   const { radius, length } = PART_SHAPE[part];
+  const geometry = <capsuleGeometry args={[radius, length, 8, 20]} />;
   return (
-    <mesh
-      position={[0, -length / 2, 0]}
-      castShadow
-      renderOrder={highlight ? REVEAL_ORDER : 0}
-      material={highlight ? revealMaterial : undefined}
-      name={`PART:${part}`}
-      userData={{ part }}
-    >
-      <capsuleGeometry args={[radius, length, 8, 20]} />
-      {!highlight && <meshStandardMaterial map={skin[part]} roughness={0.55} />}
-    </mesh>
+    <>
+      <mesh
+        position={[0, -length / 2, 0]}
+        castShadow={!highlight}
+        renderOrder={highlight ? REVEAL_ORDER : 0}
+        name={`PART:${part}`}
+        userData={{ part }}
+      >
+        {geometry}
+        {highlight ? (
+          <RevealedPaint texture={skin[part]} />
+        ) : (
+          <meshStandardMaterial map={skin[part]} roughness={0.55} />
+        )}
+      </mesh>
+      {highlight && (
+        <mesh
+          position={[0, -length / 2, 0]}
+          renderOrder={REVEAL_ORDER + 1}
+          material={revealMaterial}
+          raycast={noRaycast}
+        >
+          {geometry}
+        </mesh>
+      )}
+    </>
   );
 }
 
@@ -210,29 +243,55 @@ export function StickFigure({
         {/* torso */}
         <mesh
           position={[0, TORSO_Y, 0]}
-          castShadow
+          castShadow={!highlight}
           renderOrder={highlight ? REVEAL_ORDER : 0}
-          material={highlight ? revealMaterial : undefined}
           name="PART:torso"
           userData={{ part: "torso" }}
         >
           <capsuleGeometry args={[PART_SHAPE.torso.radius, PART_SHAPE.torso.length, 8, 20]} />
-          {!highlight && <meshStandardMaterial map={skin.torso} roughness={0.55} />}
+          {highlight ? (
+            <RevealedPaint texture={skin.torso} />
+          ) : (
+            <meshStandardMaterial map={skin.torso} roughness={0.55} />
+          )}
         </mesh>
+        {highlight && (
+          <mesh
+            position={[0, TORSO_Y, 0]}
+            renderOrder={REVEAL_ORDER + 1}
+            material={revealMaterial}
+            raycast={noRaycast}
+          >
+            <capsuleGeometry args={[PART_SHAPE.torso.radius, PART_SHAPE.torso.length, 8, 20]} />
+          </mesh>
+        )}
 
         {/* head */}
         <group ref={head} position={[0, HEAD_Y - HEAD_R, 0]}>
           <mesh
             position={[0, HEAD_R, 0]}
-            castShadow
+            castShadow={!highlight}
             renderOrder={highlight ? REVEAL_ORDER : 0}
-            material={highlight ? revealMaterial : undefined}
             name="PART:head"
             userData={{ part: "head" }}
           >
             <sphereGeometry args={[HEAD_R, 24, 24]} />
-            {!highlight && <meshStandardMaterial map={skin.head} roughness={0.55} />}
+            {highlight ? (
+              <RevealedPaint texture={skin.head} />
+            ) : (
+              <meshStandardMaterial map={skin.head} roughness={0.55} />
+            )}
           </mesh>
+          {highlight && (
+            <mesh
+              position={[0, HEAD_R, 0]}
+              renderOrder={REVEAL_ORDER + 1}
+              material={revealMaterial}
+              raycast={noRaycast}
+            >
+              <sphereGeometry args={[HEAD_R, 24, 24]} />
+            </mesh>
+          )}
         </group>
 
         {/* arms */}

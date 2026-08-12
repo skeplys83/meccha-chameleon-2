@@ -39,6 +39,9 @@ const EXEMPT = new Set([
  * how the app boots is exactly the kind that should make somebody re-read it.
  */
 const UNCLAIMED = [
+  // Project-wide prose split out of the root doc. It documents *itself*; gating
+  // it behind the root CLAUDE.md would mean touching one to edit the other.
+  "docs/",
   "public/",
   "scripts/",
   ".githooks/",

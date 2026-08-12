@@ -28,7 +28,7 @@ follows your head, and the footstep derivation.
 1. **Positional sounds must be mono.** A stereo buffer cannot be spatialised —
    left and right are already baked in, so the panner has nothing left to place
    and the sound appears to come from everywhere at once. That is not a theory:
-   `whistle.wav` shipped stereo and sounded exactly like that until it was
+   `whistle` shipped stereo and sounded exactly like that until it was
    converted. Everything positional — `step`, `shotgun`, `squash`, `whistle` —
    is mono. The non-positional ones are not, and need not be: `brush`, because it
    is your own hand at your own ear, and `tick` / `bell` / `gong`, because they
@@ -54,19 +54,44 @@ follows your head, and the footstep derivation.
    `GONG_FALLOFF`; the three together now peak just under 1. **Anything played
    more than once inside its own duration has to be budgeted this way** — read
    the catalogue number as the volume of one copy and multiply.
-4. **Every file is peak-normalised to −1 dBFS.** A `gain` in the catalogue is
-   then a real proportion instead of a guess about how hot that export happened
-   to be. This is not housekeeping: `step.wav` shipped 21 dB below `shotgun.wav`,
-   and multiplied by a cautious gain it sat ~34 dB under the gunshot — perfectly
-   wired, completely inaudible, and easy to misdiagnose as a broken trigger.
-   Normalise anything you add:
+4. **Every file is peak-normalised to −1 dBFS, and normalised *after* encoding.**
+   A `gain` in the catalogue is then a real proportion instead of a guess about
+   how hot that export happened to be. This is not housekeeping: `step` shipped
+   21 dB below `shotgun`, and multiplied by a cautious gain it sat ~34 dB under
+   the gunshot — perfectly wired, completely inaudible, and easy to misdiagnose
+   as a broken trigger.
+
+   **The order is what is easy to get wrong.** A lossy codec does not preserve
+   the peak it was handed: the decoder reconstructs intersample peaks and can
+   land *above* the source. `bell`, normalised to −1 dBFS as a wav, came back
+   from LAME at **0.0 dBFS** — no headroom at all, beneath a gong already tapered
+   to sit just under 1.0 in sum. Normalise what the browser will actually decode,
+   and iterate, because the peak does not move linearly with the pre-gain:
 
    ```bash
-   ffmpeg -i new.wav -af volumedetect -f null /dev/null    # read max_volume
-   ffmpeg -i new.wav -af "volume=<-1 minus that>dB" out.wav
+   ffmpeg -y -i new.wav -c:a libmp3lame -b:a 96k out.mp3
+   ffmpeg -i out.mp3 -af volumedetect -f null /dev/null     # read max_volume
+   ffmpeg -y -i new.wav -af "volume=<-1 minus that>dB" -c:a libmp3lame -b:a 96k out.mp3
+   # repeat until it settles — two or three passes is usual
    ```
 
-5. **A looped file needs its seam closed.** `brush.wav` arrived ending at full
+   Seven of the nine land within 0.1 dB of −1; `step` and `whistle` sit 0.2 dB
+   out and were left there. The spread across the catalogue is 0.3 dB, and the
+   purpose of the rule — a known, consistent level, so a gain means something —
+   is met.
+5. **Everything is MP3: not wav, and not Opus.** Opus is a further 25% smaller
+   and was rejected because its Ogg-container support in Safari is patchy, and a
+   guest opens this game on whatever device is to hand. Same reasoning as trap 3:
+   what matters is that it works for *everyone on the Wi-Fi*, not for whoever is
+   developing. MP3 decodes everywhere through `decodeAudioData`. Bitrates are 64k
+   for the mono positional sounds, 96k for the stereo announcements and 128k for
+   the music, which took `public/sounds/` from **15.6 MB to 1.3 MB**.
+
+   That saving is **download, disk and git only**. A decoded `AudioBuffer` is
+   float32 PCM whatever it came from, so the music still occupies ~29 MB of
+   memory in every client and always will.
+
+6. **A looped file needs its seam closed.** `brush` arrived ending at full
    level while starting near silence, so every 0.78 s the loop stepped straight
    down — an audible click, forever, under the one sound that is supposed to sit
    in the background. Check both ends against the middle and fade whichever one
@@ -77,7 +102,7 @@ follows your head, and the footstep derivation.
    ffmpeg -i loop.wav -af "afade=t=in:st=0:d=0.004,afade=t=out:st=<d-0.012>:d=0.012" out.wav
    ```
 
-6. **The context unlocks on *any* gesture, not just the join click.** Browsers
+7. **The context unlocks on *any* gesture, not just the join click.** Browsers
    start every context suspended and only honour `resume()` from a user gesture.
    `Game.tsx` calls `unlockAudio()` on Create or Join, and that is the intended
    path — but it was a single point of failure for the entire game's audio, and
@@ -86,46 +111,46 @@ follows your head, and the footstep derivation.
    unlocks, and drops them once it is running. `keydown` is the one that matters:
    you cannot walk without pressing a key, so footsteps can never be the first
    thing to discover the context is still locked.
-7. **A dropped sound says why, once — but not when the pause did it.** If
+8. **A dropped sound says why, once — but not when the pause did it.** If
    `playSound` is called while the context is not running it retries the resume,
    drops that one sound, and warns to the console, naming the sound and the
    state. A silent game with a silent cause is the worst thing this module can
    do, and it cost a full debugging round. `setAudioSuspended(true)` records that
    the silence is deliberate, so the whistle firing behind the pause menu does
    not cry wolf — a diagnostic nobody trusts is worse than none.
-8. **The context is created early, resumed late.** Constructing a suspended
+9. **The context is created early, resumed late.** Constructing a suspended
    `AudioContext` needs no gesture, so `SoundStage` builds it on mount and decodes
    the buffers then — otherwise the first shot of the round would be the one
    waiting on a fetch.
-9. **The listener reads `camera.position` / `camera.quaternion`, never
+10. **The listener reads `camera.position` / `camera.quaternion`, never
    `matrixWorld`.** `players/Player.tsx` drives the camera imperatively from its
    own `useFrame`, and matrices are only refreshed at render time — so a
    world-matrix read here would be a frame stale, and *which* frame would depend
    on `useFrame` ordering. The camera has no parent, so its local transform is its
    world transform.
-10. **One-shots are plain Web Audio nodes, not `THREE.PositionalAudio`.** That is
+11. **One-shots are plain Web Audio nodes, not `THREE.PositionalAudio`.** That is
     an `Object3D` you park in the scene graph, which suits a looping hum but would
     mean mounting and unmounting a node per shot. Each play here is a source, a
     gain and optionally a panner, all disconnected in `onended`.
-11. **A missing sound must never break a frame.** `playSound` drops the call if the
+12. **A missing sound must never break a frame.** `playSound` drops the call if the
     buffer has not decoded, the file 404'd, or the context is not running. It never
     throws and never awaits.
-12. **Footsteps are derived, never networked.** Every client already has everyone's
+13. **Footsteps are derived, never networked.** Every client already has everyone's
     position at 20 Hz, so a step is a function of distance travelled — no message,
     no bandwidth, and it cannot drift out of sync with what you can see because it
     *is* what you can see.
-13. **Only horizontal travel counts as walking.** Falling and jumping move you a
+14. **Only horizontal travel counts as walking.** Falling and jumping move you a
     long way in Y and must not tick the stride. This is also why remote figures
     cannot use the ground ray the local player has: nobody else's `grounded` is on
     the wire, so ignoring Y is the approximation that stands in for it.
-14. **Both stride *and* pitch come from `BODY`.** A chameleon is smaller, so they
+15. **Both stride *and* pitch come from `BODY`.** A chameleon is smaller, so they
     take shorter, quicker, higher steps than a hunter: stride 1.9 vs 2.47 and
     pitch 1.3 vs 1.0. At the shared movement speed of 6 that is 3.1 footfalls a
     second against 2.4. Re-proportioning a role changes both automatically.
     This is a gameplay signal, not decoration — hearing a step you cannot see and
     knowing whether it is prey or the hunter is most of what audio contributes to
     hide-and-seek.
-15. **Positions arrive more slowly than frames, and the stepper must not divide
+16. **Positions arrive more slowly than frames, and the stepper must not divide
     by `delta`.** This is the one that cost two rounds of silent footsteps.
     `<Physics>` steps at a fixed 1/60, so `rb.translation()` is unchanged on any
     frame that fell between steps — most of them above 60 Hz. Remote players are
@@ -143,26 +168,26 @@ follows your head, and the footstep derivation.
     version scored 0 in all of them but the artificially aligned one — which is
     the only case the first test covered. **Any test for this must tick positions
     slower than frames**, or it proves nothing.
-16. **Warping is not walking.** Further than `WARP_DISTANCE` (3 units) in one
+17. **Warping is not walking.** Further than `WARP_DISTANCE` (3 units) in one
     frame is a respawn, the under-the-floor catch, or a remote whose patch arrived
     after a stall — it resets rather than stepping, or every respawn would land a
     footfall on arrival. A *distance*, not a speed, for the reason above.
     `MIN_STEP_GAP` is the backstop beneath it.
-17. **No `constructor(private x)` parameter properties in this folder.** Node's
+18. **No `constructor(private x)` parameter properties in this folder.** Node's
     type stripping refuses them outright, and these modules are meant to import
     straight into Node for testing. `Stepper` writes the field out longhand.
-18. **Loops are keyed by name and at most one runs per name.** `startLoop` is
+19. **Loops are keyed by name and at most one runs per name.** `startLoop` is
     therefore idempotent — a caller can fire it every frame of a drag without
     tracking whether it already did — and `stopLoop` is the only thing that ends
     one. Both fade over `LOOP_FADE`: starting or stopping a buffer at full
     amplitude is a step in the waveform, and a brush you can hear clicking on and
     off is worse than no brush at all.
-19. **`startLoop` does not bail on a suspended context, unlike `playSound`.** A
+20. **`startLoop` does not bail on a suspended context, unlike `playSound`.** A
     suspended context has a frozen clock, so the sound and its fade simply begin
     when it wakes. Dropping the loop instead would mean a player who started
     brushing before the first gesture got silence until they released and pressed
     again.
-20. **`once` is how a sound gets a handle without repeating.** `startLoop("…",
+21. **`once` is how a sound gets a handle without repeating.** `startLoop("…",
     { once: true })` plays through a single time but stays in the `loops` map, so
     `stopLoop` and `stopAllLoops` reach it. `playSound` cannot: nothing holds a
     reference to a one-shot, which is right for a gunshot and wrong for
@@ -170,7 +195,7 @@ follows your head, and the footstep derivation.
     early and carry on through the reveal and into the lobby. Its `onended`
     removes the entry, or the idempotence guard above would refuse to play it
     again next round.
-21. **A hot reload can leave a second copy of this module, with its own `loops`
+22. **A hot reload can leave a second copy of this module, with its own `loops`
     map and its own `AudioContext`.** `startLoop`'s "one per name" guard is
     per-instance, so it cannot see what a previous instance started, and the two
     then overlap — which reads as a sound playing twice and is not reproducible
@@ -179,7 +204,7 @@ follows your head, and the footstep derivation.
     so a round always begins from silence whatever the last edit left running.
     **If a sound doubles in development, hard-reload before hunting for a second
     caller.**
-22. **Whoever starts a loop must stop it.** Nothing else will. `Player.tsx` stops
+23. **Whoever starts a loop must stop it.** Nothing else will. `Player.tsx` stops
     the brush on `onDrawingChange(false)` *and* in its effect teardown, so a loop
     cannot outlive the component that began it; `stopAllLoops` is there for any
     future caller that needs the blunt version.

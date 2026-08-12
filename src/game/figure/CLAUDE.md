@@ -16,26 +16,33 @@ dimensions of every limb.
 
 **A figure can be drawn as a marker instead of a body.** `highlight` swaps every
 part onto one flat unlit material with `depthTest` off, so it shows through
-walls, and **pulses** it between a dark and a bright red; the reveal uses it on
+walls, and **pulses its opacity** between almost-gone and solid red; the reveal uses it on
 the chameleons who survived a round. Three things about it are load-bearing:
 
-- **Flat and unlit.** A shaded material would be lit like everything else and
-  read as just another figure.
+- **Both layers are unlit.** The paint is a *colour match* against a surface, so
+  showing it shaded would misrepresent the exact thing being judged — and a lit
+  red would read as just another figure rather than a marker.
+- **Both layers ignore depth**, so a survivor shows through the wall they hid
+  behind. That needs `depthWrite: false` alongside `depthTest: false`, or the
+  parts of one body punch holes in each other through a depth buffer they are not
+  consulting, and it needs the overlay one `renderOrder` above the paint —
+  "ignores depth" means "whatever is drawn last wins".
+- **The overlay never takes a raycast.** It is a second mesh sitting exactly on
+  the body, so without `raycast={() => null}` a shot would hit the marker rather
+  than the player.
 - **A high `renderOrder` goes with the disabled depth test**, because "ignores
   depth" only means "visible through walls" if you are the thing drawn last.
-- **One shared material for every highlighted body in the scene.** It is
-  animated, so a material per part per figure would be twelve times the colour
+- **One shared red material for every highlighted body in the scene.** It is
+  animated, so a material per part per figure would be twelve times the opacity
   writes for an identical result — and worse, they would drift out of phase and
   the pulse would stop reading as one deliberate signal. `pulseReveal` is
-  idempotent so every figure may drive it.
+  idempotent so every figure may drive it. The *paint* layer is per part, because
+  the whole point is that each part wears its own canvas.
 
-It is attached through the mesh's `material` **prop**, and the paint material is
-rendered only when `highlight` is false. The two must never both be present: a
-child `<meshStandardMaterial>` attaches to `material` as well and, being applied
-after props, silently wins.
-
-It also hides the paint deliberately — camouflage is the thing being revealed,
-and leaving it on would conceal the figure this exists to expose.
+The red material is attached through the mesh's `material` **prop** and that mesh
+has no material child. A child `<meshStandardMaterial>` attaches to `material` as
+well and, being applied after props, silently wins — so the two must never both
+be present on one mesh.
 
 ## Invariants
 

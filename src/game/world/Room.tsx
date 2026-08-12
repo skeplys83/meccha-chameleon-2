@@ -1,11 +1,19 @@
 import { Suspense, useEffect } from "react";
-import { useGLTF } from "@react-three/drei";
+import { Sky, useGLTF } from "@react-three/drei";
 import { MAPS, safeMapId, type GameMap } from "./maps";
 import { Solids } from "./Solids";
 import { bumpSurfaces } from "./surface";
 
 export { ROOM_SURFACE } from "./surface";
 export { ROOM_HALF } from "@/game/shared/protocol";
+
+/**
+ * Where the sun sits. High and to one side, so the sky reads as daylight rather
+ * than as a sunset — the arena is white and a low sun turns all of it orange.
+ * It is *only* the sky's sun: the scene's actual light is in `Scene.tsx` and the
+ * two are not linked, which is fine while there is one outdoor map.
+ */
+const SUN: [number, number, number] = [100, 60, 100];
 
 /**
  * Start fetching every map's models at import time, so the floor of a match is
@@ -29,13 +37,25 @@ for (const map of Object.values(MAPS)) {
  */
 export function Room({ map }: { map: string }) {
   const chosen = MAPS[safeMapId(map)];
-  // Scoped tightly around the map and nothing else. A map built from loaded
-  // files suspends while they arrive, and a `Suspense` any higher would blank
-  // the lights and the player with it — the same trap `<Environment>` set.
   return (
-    <Suspense fallback={null}>
-      <Mounted map={chosen} />
-    </Suspense>
+    <>
+      {/* **A sky is a shader, not a download.** drei's `Sky` is Preetham
+          scattering evaluated in a fragment shader with no texture behind it,
+          which is the only kind of sky this game can have: `<Environment>` fetches
+          an HDR from a CDN and blanks the scene on a network with no internet —
+          trap 3, and the reason there is no image here.
+
+          Outside the `Suspense` deliberately, so a map still loading its models
+          has something overhead rather than a void. */}
+      {chosen.sky && <Sky sunPosition={SUN} />}
+      {/* Scoped tightly around the map and nothing else. A map built from loaded
+          files suspends while they arrive, and a `Suspense` any higher would
+          blank the lights and the player with it — the same trap `<Environment>`
+          set. */}
+      <Suspense fallback={null}>
+        <Mounted map={chosen} />
+      </Suspense>
+    </>
   );
 }
 

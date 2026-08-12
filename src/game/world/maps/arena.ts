@@ -57,17 +57,27 @@ const box = (
   rest: Partial<Solid> = {},
 ): Solid => ({ shape: { kind: "box", args }, position, color: ARENA, ...rest });
 
-/** Floor, ceiling and the four walls. */
+/**
+ * Floor, walls, and a ceiling nobody can see.
+ *
+ * **The ceiling is `hidden`, not absent.** The arena is the waiting room and it
+ * is nicer open to the sky, but the lid still has to be there: it is what stops
+ * a jump leaving the room, and a chameleon can cling to it and walk it upside
+ * down, which is one of the better things in the game. Hidden geometry is still
+ * collided with and still raycast — see `Solid.hidden`.
+ */
 const shell: Solid[] = (
   [
-    [[0, -t, 0], [SIZE, THICKNESS, SIZE]],
-    [[0, HEIGHT + t, 0], [SIZE, THICKNESS, SIZE]],
-    [[0, HEIGHT / 2, -half - t], [SIZE, HEIGHT, THICKNESS]],
-    [[0, HEIGHT / 2, half + t], [SIZE, HEIGHT, THICKNESS]],
-    [[-half - t, HEIGHT / 2, 0], [THICKNESS, HEIGHT, SIZE]],
-    [[half + t, HEIGHT / 2, 0], [THICKNESS, HEIGHT, SIZE]],
-  ] as [pos: [number, number, number], size: [number, number, number]][]
-).map(([position, args]) => box(position, args, { color: SHELL, castShadow: false }));
+    [[0, -t, 0], [SIZE, THICKNESS, SIZE], false],
+    [[0, HEIGHT + t, 0], [SIZE, THICKNESS, SIZE], true],
+    [[0, HEIGHT / 2, -half - t], [SIZE, HEIGHT, THICKNESS], false],
+    [[0, HEIGHT / 2, half + t], [SIZE, HEIGHT, THICKNESS], false],
+    [[-half - t, HEIGHT / 2, 0], [THICKNESS, HEIGHT, SIZE], false],
+    [[half + t, HEIGHT / 2, 0], [THICKNESS, HEIGHT, SIZE], false],
+  ] as [pos: [number, number, number], size: [number, number, number], hidden: boolean][]
+).map(([position, args, hidden]) =>
+  box(position, args, { color: SHELL, castShadow: false, hidden }),
+);
 
 /** SE: stairs onto the catwalk. Each tread is 0.9 higher than the last. */
 const stairs: Solid[] = [1.0, 1.9, 2.8, 3.7].map((h, i) =>

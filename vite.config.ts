@@ -10,7 +10,7 @@ import tailwindcss from "@tailwindcss/vite";
  * There is no dev-server config here on purpose: `npm run dev` does not run
  * `vite`, it runs `node src/game/server/index.ts`, which creates this same
  * config in middleware mode and mounts it behind the game server. One port, one
- * process, and the LAN URL the banner prints is the only one anybody needs.
+ * process, and the URL the banner prints is the only one anybody needs.
  */
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -20,7 +20,7 @@ export default defineConfig({
   build: {
     outDir: "dist",
     // three, R3F, rapier and colyseus come to about 3.6 MB, and there is nothing
-    // to route-split in a single-page game. It is all served off the LAN, so the
+    // to route-split in a single-page game. It is all self-hosted, so the
     // size costs a moment on first load and nothing after that.
     chunkSizeWarningLimit: 4000,
   },

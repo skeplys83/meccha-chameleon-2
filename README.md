@@ -3,7 +3,7 @@
 <img width="1914" height="967" alt="image" src="https://github.com/user-attachments/assets/8c62910d-3f56-489e-93d8-7124af27c636" />
 
 
-A LAN-only multiplayer hide-and-seek game. Chameleons are stick figures who can lie
+A multiplayer hide-and-seek game. Chameleons are stick figures who can lie
 on their side to pass as scenery; hunters hunt them in first person with a
 shotgun. No internet, no accounts — everything runs on machines on the same
 Wi-Fi.
@@ -17,7 +17,7 @@ npm run dev
 
 This starts a custom server (`src/game/server/index.ts`, TypeScript run
 directly by Node — no build step): the page on `:3000`, served through Vite in
-middleware mode, and a Colyseus game server on `:2567`. It prints a LAN URL —
+middleware mode, and a Colyseus game server on `:2567`. It prints a local-network URL —
 other players on the same Wi-Fi open that.
 
 Press **Create game** and you get a waiting room in the arena with a four-letter
@@ -58,8 +58,64 @@ Every 45 seconds you whistle, and anyone near enough hears roughly where you are
 
 ## Stack
 
-Vite 8, React 19, TypeScript, Tailwind v4, three.js via
-`@react-three/fiber` / `drei` / `rapier`, and Colyseus 0.16 for netcode.
+About ten thousand lines of TypeScript in one repo, running as **two runtimes
+that share exactly one file** — `src/game/shared/protocol.ts`, which holds the
+roles, the phases and every constant both halves must agree on.
+
+```
+        BROWSER                              NODE
+  ┌──────────────────────┐          ┌──────────────────────┐
+  │ React 19 · Vite 8    │  :3000   │ node:http + express  │
+  │ three.js / R3F       │◀────────▶│ Vite (middleware)    │  page + assets
+  │ rapier (wasm)        │          │ /api/sessions        │
+  │ colyseus.js          │◀════════▶│ Colyseus 0.16  :2567 │  gameplay
+  └──────────────────────┘   ws     │ node:dgram    :41234 │  peer discovery
+                                    └──────────────────────┘
+```
+
+### Browser
+
+| | |
+| --- | --- |
+| **Vite 8** | the bundler — and it runs as *middleware inside the game server*, not on a port of its own |
+| **React 19** | no framework, no router, no SSR. One page, one component tree |
+| **Tailwind v4** | through `@tailwindcss/vite`; one short stylesheet |
+| **three.js** | the renderer |
+| **@react-three/fiber** | a React reconciler for three |
+| **@react-three/drei** | `useGLTF`, `Html`, `KeyboardControls`, `Sky` |
+| **@react-three/rapier** | Rust physics compiled to wasm — about half the JS payload |
+| **colyseus.js** | the game socket |
+
+### Node
+
+**The server is TypeScript that Node runs directly.** Node 22 strips the types
+at load, so `node src/game/server/index.ts` just runs and **there is no build
+step for the server at all** — `npm run build` produces only the client. That is
+why its schema uses `defineTypes()` rather than decorators, why fields are
+`declare x: T` and never `x!: T`, and why its imports name the real file
+(`./room.ts`). Get any of those wrong and it fails at *startup*, not at build.
+
+Colyseus 0.16 is pinned across four packages on purpose; `CLAUDE.md` explains what
+breaks if you bump one of them alone, and it is not obvious.
+
+### Three listeners, deliberately
+
+`:3000` the page · `:2567` Colyseus · `:24678` Vite's HMR socket in development,
+plus UDP `:41234` for finding other servers on the same network.
+
+They are separate because handing a WebSocket server the HTTP server's `upgrade`
+event destroys every non-matching upgrade — which killed HMR once, which stopped
+the client bootstrap, which meant nothing mounted and no button on the page
+worked. Nothing in the web server touches `upgrade`.
+
+### Tooling
+
+`tsc --noEmit`, ESLint flat config (`typescript-eslint` + `react-hooks`), and
+`vite build`. Plus three checks of this project's own, run by a pre-commit hook:
+`check:docs` fails a commit that stages code without the folder doc covering it,
+`check:constants` fails a constant defined twice, and `check:maps` checks map
+assets. Hosting is a Node 22 Docker image carrying `dist/` and `src/`, installed
+`--omit=dev`.
 
 ## Layout
 
@@ -73,7 +129,7 @@ src/game/
   server/   Colyseus rooms, matchmaking, schema, UDP     <- runs in Node
   net/ world/ figure/ paint/ players/ combat/          <- run in the browser
   sound/ hud/
-public/sounds/   four .wav files, all peak-normalised to -1 dBFS
+public/sounds/   nine .mp3 files, all peak-normalised to -1 dBFS
 ```
 
 Start at [CLAUDE.md](CLAUDE.md) for the map and the project-wide traps, then read
@@ -165,7 +221,7 @@ git config core.hooksPath .githooks
 
 ## Status
 
-Movement, roles, poses, painting, shooting, kills, positional sound, LAN
+Movement, roles, poses, painting, shooting, kills, positional sound, local-network
 discovery, reconnection, and many simultaneous games — lobbies, invite codes,
 sixty-second matches and the trip back to the lobby — all work. Health, a hide
 phase, a win condition and ready-up are not built yet: a round has a length but

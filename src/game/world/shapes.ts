@@ -64,6 +64,18 @@ export type Solid = {
    * makes the cover read as solid.
    */
   castShadow?: boolean;
+  /**
+   * Built and collided with, but never drawn.
+   *
+   * **Not the same as leaving the piece out.** The geometry is still there, so
+   * rapier still generates its collider and — this is the part that matters —
+   * three still *raycasts* it: `Raycaster` tests an object's layers and its
+   * material's existence, never its visibility, so a hidden surface can still be
+   * shot, climbed and bumped into by the camera. The arena's ceiling uses it, so
+   * the waiting room is open to the sky without becoming a room you can jump out
+   * of.
+   */
+  hidden?: boolean;
 };
 
 /** Every model file a list of solids needs, deduplicated, in first-use order. */

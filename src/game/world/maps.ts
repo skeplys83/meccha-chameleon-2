@@ -1,9 +1,11 @@
 import { ARENA_ROUND_SECONDS, ARENA_SOLIDS, ARENA_SPAWN } from "./maps/arena.ts";
 import {
+  DUNGEON_BOUND,
   DUNGEON_ROUND_SECONDS,
   DUNGEON_SOLIDS,
   DUNGEON_SPAWN,
 } from "./maps/dungeon.ts";
+import { ROOM_HALF, ROOM_LIMIT } from "../shared/protocol.ts";
 import { modelsIn, type Solid } from "./shapes.ts";
 import {
   DEFAULT_MAP,
@@ -65,6 +67,25 @@ export type GameMap = {
    */
   roundSeconds: number;
   /**
+   * Half-extent of this map's playable footprint, and the reason a map may now
+   * be a different size from the arena.
+   *
+   * The server clamps every position a client reports to `mapLimit(id)`, which
+   * is this minus the same 0.1 of slack `ROOM_LIMIT` has always carried. It used
+   * to clamp to `ROOM_LIMIT` for *every* room, so a map bigger than 40 × 40 had
+   * its far end quietly amputated: you could walk there, and everybody else
+   * watched you stop at the arena's edge and slide along it.
+   */
+  bound: number;
+  /**
+   * Whether this map is open to the sky.
+   *
+   * A flag rather than an asset: the sky is a shader, so "which sky" is not a
+   * question yet and a boolean is the whole of it. Only worth setting on a map
+   * whose ceiling is `hidden` — anywhere sealed, it is drawn and then covered.
+   */
+  sky?: boolean;
+  /**
    * Every glTF this map needs, derived from `solids` rather than listed.
    *
    * `Room` loads all of them in one `useGLTF` call before a single `RigidBody`
@@ -82,6 +103,8 @@ const map = (
   solids: Solid[],
   spawn: [number, number, number],
   roundSeconds: number,
+  bound: number,
+  sky = false,
 ): GameMap => ({
   id,
   name,
@@ -89,6 +112,8 @@ const map = (
   solids,
   spawn,
   roundSeconds,
+  bound,
+  sky,
   models: modelsIn(solids),
 });
 
@@ -100,14 +125,18 @@ export const MAPS: Record<MapId, GameMap> = {
     ARENA_SOLIDS,
     ARENA_SPAWN,
     ARENA_ROUND_SECONDS,
+    ROOM_HALF,
+    // The waiting room has no visible lid, so there is something up there to see.
+    true,
   ),
   dungeon: map(
     "dungeon",
     "Dungeon",
-    "One 12×12 chamber, split by a low wall. Very small, very close quarters.",
+    "Nine rooms, a gallery and a grate pit. 52×52, and easy to lose somebody in.",
     DUNGEON_SOLIDS,
     DUNGEON_SPAWN,
     DUNGEON_ROUND_SECONDS,
+    DUNGEON_BOUND,
   ),
 };
 
@@ -141,3 +170,22 @@ export const mapSpawn = (id: unknown) => MAPS[safeMapId(id)].spawn;
 
 /** How long a round on this map runs. Read by the server, which is the point. */
 export const mapRoundSeconds = (id: unknown) => MAPS[safeMapId(id)].roundSeconds;
+
+/**
+ * The slack between the wall and the bound a reported position is clamped to.
+ *
+ * `ROOM_LIMIT` is 19.9 against the arena's `ROOM_HALF` of 20, and the 0.1 is not
+ * a rounding slip: a chameleon's collider is narrower than their figure, so
+ * pressing into a corner legitimately puts them at ~19.7 and clamping harder
+ * showed everyone else a body floating off the wall it was hiding against. Every
+ * map wants the same allowance, so it is expressed once rather than per map.
+ */
+const CHEAT_MARGIN = ROOM_HALF - ROOM_LIMIT;
+
+/**
+ * How far out a player on this map may claim to be.
+ *
+ * Read by `server/messages.ts` for every `state` and every `kill`. A map bigger
+ * than the arena needs this or its far half is unreachable — see `GameMap.bound`.
+ */
+export const mapLimit = (id: unknown) => MAPS[safeMapId(id)].bound - CHEAT_MARGIN;

@@ -4,8 +4,8 @@ A multiplayer hide-and-seek game. Chameleons are stick figures who can lie on th
 side to pass as scenery; hunters hunt them in first person with a shotgun. No
 accounts, no third-party services.
 
-It runs two ways, and both matter. **On a LAN**, every machine runs the whole app
-and UDP discovery lists the machines on the Wi-Fi. **On a single hosted server**,
+It runs two ways, and both matter. **On one machine per player**, every machine
+runs the whole app and UDP discovery lists the others on the same network. **On a single hosted server**,
 one container serves everybody and discovery is switched off — see "Hosting it"
 in the README. It is **not deployed to a serverless platform**: the game is one
 long-lived process holding websocket rooms, which is the opposite of what those
@@ -16,7 +16,7 @@ playable, with a four-letter invite code and a size between 2 and 12 chosen when
 it was created — and a round begins on a **ten-second countdown**, started either
 by the lobby filling up or by the host pressing Start.
 
-**A round has four phases and the map decides how long it is** (two minutes for
+**A round has four phases and the map decides how long it is** (five minutes for
 the dungeon, hiding included):
 
 1. **countdown**, 10s, in the lobby. At zero the server draws one player at
@@ -28,10 +28,11 @@ the dungeon, hiding included):
    **Being caught does not put you out**: you become a hunter yourself, at the
    spawn point, stripped back to white, and you join the hunt. So the hunt grows
    and the last chameleon is hardest to catch.
-4. **reveal**, 30s. Whoever is left standing is where they hid, and every grave
-   marks where somebody was found. **Everyone still walks** — the round is
-   decided but the world is not frozen, so you can go and look at the spot that
-   beat you. Nobody can be caught: `kill` is refused outside the hunt. Then
+4. **reveal**, 30s. The survivors pulse red through the walls, standing exactly
+   where they hid, and every grave marks where somebody was found. **The
+   survivors are rooted** — they are the exhibit, and a spot they walk away from
+   is not a spot — but they keep their camera, and everyone else walks over to
+   look at the thing that beat them. Nobody can be caught: `kill` is refused outside the hunt. Then
    everyone goes back to the lobby and can start another.
 
 **Chameleons win** if the clock runs out with one of them still free;
@@ -67,70 +68,39 @@ the client's side of the move.
 
 ## How the docs work
 
-**This is the only doc that is not about one folder.** Everything else lives next
-to the code it describes: each folder under `src/game/` has its own `CLAUDE.md`
-holding that folder's invariants — the rule with the bug it prevents attached —
-and its contracts with the folders around it.
+**Every folder documents itself.** Each folder under `src/game/` has its own
+`CLAUDE.md` holding that folder's invariants — the rule with the bug it prevents
+attached — and its contracts with the folders around it. This file is the
+orientation: what the game is, what it is built from, and where everything lives.
+
+The rest of the project-wide prose is split out, because it is reference rather
+than orientation and this file was becoming a thing nobody finishes:
+
+| | |
+| --- | --- |
+| [docs/TRAPS.md](docs/TRAPS.md) | eight project-wide traps, each one a debugging session already paid for. **Numbered, and referenced by number from code all over the repo.** |
+| [docs/RUNNING.md](docs/RUNNING.md) | the scripts, the ports, the env vars, and how `public/` and `dist/` relate |
+| [docs/VERIFYING.md](docs/VERIFYING.md) | the gates, and what can and cannot be checked without a browser |
 
 **Read the doc for the folder you are about to edit, and update it in the same
 change.** The pre-commit hook enforces the second half: staging code without
 staging the `CLAUDE.md` that covers it fails the commit. It also runs
 `scripts/check-constants.mjs`, which fails if a `shared/protocol.ts` constant is
 *defined* a second time anywhere — the one class of bug this layout exists to
-prevent, and one I have already reintroduced once. Enable it once per clone
-with `git config core.hooksPath .githooks`; run it any time with
-`npm run check:docs`. The escape hatch for a genuine no-op is
+prevent, and one I have already reintroduced once. It also runs
+`scripts/check-map-assets.mjs` (`npm run check:maps`), which fails if a model
+committed under `public/maps/` is never placed by a map, or if a map places a
+file that is not committed — the dungeon is meant to hold the whole KayKit pack,
+and a missing file leaves the map suspended forever rather than erroring. Enable
+the hook once per clone with `git config core.hooksPath .githooks`; run the doc
+half any time with `npm run check:docs`. The escape hatch for a genuine no-op is
 `SKIP_DOC_CHECK=1 git commit`.
 
 Anything not inside a documented folder — `Game.tsx`, `Scene.tsx`, `index.html`,
-`src/main.tsx`, `src/index.css` — is covered by this file.
-
-## Run it
-
-```bash
-npm run dev     # node src/game/server/index.ts — page on :3000, Colyseus on :2567
-npm run build   # vite build -> dist/
-npm start       # same server, NODE_ENV=production, serving dist/
-```
-
-**The server is TypeScript with no build step.** Node 22.18+ / 23.6+ strips the
-types itself, so `node src/game/server/index.ts` just runs. `"type": "module"` in
-package.json is what stops Node reparsing it as CommonJS first. `vite build`
-builds the *client* only.
-
-`npm run dev` does **not** run `vite`. It runs the custom server, which creates
-Vite in **middleware mode** and mounts it as the fall-through behind
-`/api/sessions` and `/monitor` — so there is one port, one process, and the LAN
-URL the banner prints is the only one anybody needs. The banner also prints the
-Colyseus port and, in development, the HMR port.
-
-**Vite's HMR websocket gets a port of its own** (`HMR_PORT`, default 24678), for
-exactly the reason Colyseus has one — see trap 2. `server.allowedHosts: true` in
-the middleware config is what lets a guest open the LAN URL; Vite checks the Host
-header and refuses names it does not recognise, which would otherwise be a dead
-page for everybody who is not the developer. It replaces Next's
-`allowedDevOrigins`, and it is one line rather than a startup scan of the
-machine's addresses because Vite checks the *host* once rather than the origin of
-every asset request.
-
-Useful env vars: `PORT` (web, default 3000), `GAME_PORT` (Colyseus, default 2567),
-`HMR_PORT` (Vite's dev socket, default 24678), `PUBLIC_GAME_PORT` (what clients
-are *told* to connect to, when a proxy fronts Colyseus), `LAN_DISCOVERY=0` (skip
-UDP broadcast on a hosted box), `SESSION_NAME`, `MONITOR_PASSWORD` /
-`MONITOR_USER` / `MONITOR=0` (the admin panel — see "Watching it run" in the
-README).
-
-**The admin panel is at `/monitor`** and is the only way to see the matchmaking
-from outside: a lobby and its match are two rooms, and a player only ever sees
-the one they are standing in. It is on in development and, because it can end any
-room, absent in production unless `MONITOR_PASSWORD` is set.
-
-`Dockerfile` and `docker-compose.yml` are the hosted path. The image is Node 22
-because the server is TypeScript that Node strips at load — there is no build
-step for it, and an older Node fails to parse rather than misbehaving. The
-runtime stage carries `dist/` and `src/` and installs `--omit=dev`, which works
-because the production server never touches Vite: the import is
-`await import("vite")` *inside* the development branch, not a top-level one.
+`src/main.tsx`, `src/index.css` — is covered by this file. **The composition
+roots stay here deliberately**: this is the only doc loaded into a session
+automatically, so what an agent needs without being told to go looking for it
+belongs in it.
 
 ## Stack
 
@@ -151,7 +121,9 @@ line. Bump all three together or not at all.
 depends on `@colyseus/core@^0.17`, which npm installs *alongside* our 0.16 rather
 than refusing — giving a second matchMaker in the same process that knows about
 none of our rooms. The panel loads and lists nothing, with no error to explain
-it. Four things move together now, not three.
+it. **Four things move together**, and the check after any bump is
+`find node_modules -type d -name core -path "*@colyseus*"` — expect exactly one
+line.
 
 ## The map
 
@@ -166,37 +138,9 @@ src/game/
 public/sounds/      the five .wav files
 public/maps/        model assets for maps that use them
 public/icon.svg     the favicon — generated, see below
-scripts/            check-docs.mjs, check-constants.mjs, make-favicon.mjs
+scripts/            check-docs.mjs, check-constants.mjs, check-map-assets.mjs,
+                    make-favicon.mjs
 ```
-
-**`public/` is the source, `dist/` is the build — they are *meant* to hold the
-same assets.** Vite copies `public/` into `dist/` verbatim at build time, so
-after `npm run build` the sounds and the dungeon models exist in both. That is
-not duplication to clean up: `public/` is committed and edited, `dist/` is
-generated, gitignored, and wiped on every build (`emptyOutDir`, on by default —
-a file deleted from `public/` cannot linger in `dist/`). In development Vite
-serves `public/` directly and `dist/` is not consulted at all; in production the
-server serves `dist/` and never looks at `public/`. Either way the URLs are the
-same, which is why `sound/catalogue.ts` can say `/sounds/step.wav` and be right
-in both.
-
-**Those three asset kinds stay in `public/` rather than being imported through
-the bundler**, and the glTF is the reason the rule is worth writing down: a
-`.gltf` references its `.bin` and its texture by relative path, and importing one
-as a module leaves those two references pointing nowhere. Sounds and the favicon
-could go either way; they sit beside the models for consistency and because
-neither benefits from fingerprinting.
-
-**The favicon is generated, not drawn.** `npm run favicon` paints a chameleon's head
-— a shaded sphere with a few random brush drags — and writes `public/icon.svg`.
-It reads the real `PAINT` table from `paint/palette.ts`, so the icon can never
-drift from the game's palette, and it projects each dot onto the sphere (squashed
-along the radial direction by its angle from the viewer) so the paint sits on a
-ball rather than on a sticker. Every run prints its seed; re-roll until you like
-one, then pin it with `npm run favicon <seed>`. The committed one is seed 33.
-It lives in `public/`, so `vite build` copies it verbatim; the single
-`<link rel="icon">` in `index.html` is the only wiring, and there is no
-`favicon.ico`.
 
 | folder     | owns                                                    | read it before touching                       |
 | ---------- | ------------------------------------------------------- | --------------------------------------------- |
@@ -211,8 +155,11 @@ It lives in `public/`, so `vite build` copies it verbatim; the single
 | `sound/`   | the audio engine, the catalogue, footsteps              | anything that makes a noise                   |
 | `hud/`     | the 2D overlays outside the Canvas                      | menus, legends, name entry                    |
 
-`Game.tsx` and `Scene.tsx` are the composition roots and belong to no folder.
-`Scene.tsx` also owns the `<Physics>` and `<Canvas>` settings — see trap 4 for
+`Scene.tsx` passes the round's phase down as three separate facts rather than
+one — `reveal` (light the survivors), `hunting` (drop their name badges) and
+`frozen` (root them where they stand) — because each is read by a different part
+of the tree and collapsing them into "the phase" would make every consumer
+re-derive the same conditions. `Scene.tsx` also owns the `<Physics>` and `<Canvas>` settings — see trap 4 for
 why the timestep is not the library default, and note that `shadows` is spelled
 `"percentage"` rather than left bare, because three has deprecated the
 `PCFSoftShadowMap` that a bare `shadows` selects and downgrades it to exactly
@@ -285,132 +232,6 @@ Both are acyclic at the module level. `hud/` is the one folder with a hard rule:
 it renders outside the Canvas and must not import from `world/`, `figure/`,
 `players/` or `combat/` — it talks to the game through `Game.tsx` props and
 through `net/`. Reading `POSES` for a label is the allowed exception.
-
-## Traps already hit — do not reintroduce
-
-The folder docs hold the rest. These eight are project-wide:
-
-1. **Never wrap the tree in `<StrictMode>`.** R3F's `Canvas` does not survive
-   StrictMode's dev-only double mount: the discarded mount calls
-   `forceContextLoss()` and the canvas stays dead. Symptom is a black screen and
-   `THREE.WebGLRenderer: Context Lost.` This used to be spelled
-   `reactStrictMode: false` in `next.config.ts`; it now lives as the *absence* of
-   a wrapper in `src/main.tsx`, which is easier to reintroduce by accident —
-   every React starter template has one.
-2. **Never let a WebSocket server own the HTTP server's `upgrade` event.**
-   `new WebSocketServer({ server, path })` destroys every non-matching upgrade,
-   including the dev HMR socket, which stops the client bootstrap so **nothing
-   mounts and no button works**. Both Colyseus and Vite's HMR are on their own
-   ports precisely to avoid this — `server.hmr.server` would hand Vite this one.
-   Symptom is "connection refused" plus a completely dead UI.
-3. **No CDN assets, at runtime *or* at build time.** `<Environment preset="city" />`
-   fetches an HDR at runtime and, under one `Suspense`, blanks the whole scene.
-   Lighting is plain lights. Name labels use drei `Html`, not `Text` (troika
-   fetches a font). This is a LAN game; there may be no internet at all — which
-   is also why the Geist webfonts went with Next: `next/font/google` downloaded
-   them during `npm run build`, so the build itself needed the internet. The HUD
-   is `font-mono` throughout and now resolves to Tailwind's system stack. To put
-   a real font back, commit the files under `public/` and `@font-face` them.
-4. **`<Physics timeStep="vary">` in `Scene.tsx` is load-bearing, and more so
-   now.** On the default fixed 1/60 step, @react-three/rapier renders every body
-   at an *interpolated* transform each frame while `rb.translation()` — which the
-   camera and every raycast in `players/Player.tsx` read — only changes on a
-   step. Two clocks, drifting apart by up to one step, which shows as the figure
-   jittering against the camera at one-frame intervals. Stepping once per
-   rendered frame makes the interpolation alpha 1 and the two always agree. The
-   player is now a *kinematic* body driven by one
-   `setNextKinematicTranslation` per frame, so a fixed step would also mean
-   frames that compute a new target and then do not move — the same stutter,
-   arrived at from the other direction.
-5. **Never call into rapier from a React effect — only from `useFrame`, and
-   never cache a rapier handle across a world reset.** This is why
-   `players/controller.ts` builds the character controller lazily on first frame
-   rather than in a mount effect — *and* why it re-checks the cached one against
-   `world.characterControllers` before reusing it. `useRapier().world` is a
-   **singleton proxy**: a stable JS object whose inner world @react-three/rapier
-   can free and rebuild, so a `WeakMap` keyed on it happily survives the reset
-   and hands back a controller belonging to a world that is gone. A handle
-   touched after its world is gone (an HMR remount is enough) panics inside wasm:
-   one `RuntimeError: unreachable`, then an endless flood of `recursive use of an
-   object detected which would lead to unsafe aliasing in rust`. The module is
-   then poisoned, *every* later rapier call throws, physics is dead and the frame
-   loop aborts halfway — which looks like the player teleporting into the ground
-   and the screen going white. Colliders are swapped by React (a `key` on
-   `CuboidCollider`) rather than mutated in place.
-6. **Write TypeScript that Node can strip.** Node blanks type syntax out rather
-   than re-emitting, which forbids `enum`, `namespace`, decorators and
-   `constructor(private x)` parameter properties. It applies to `server/`, which
-   Node runs, *and* to any module you want to import into Node for testing.
-   Two specific bites, both already paid for:
-   - Colyseus schema fields must be `declare x: T`, never `x!: T` — the latter
-     survives as the class field `x;`, an own property that shadows the accessor
-     `defineTypes` installs, and every state encode then dies with `Cannot read
-     properties of undefined (reading 'Symbol(Symbol.metadata)')`, taking the
-     server down on the first join.
-   - A parameter property throws `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX` the moment
-     the module is loaded outside the bundler.
-7. **Nothing here deploys to a serverless platform.** The game is one long-lived
-   process holding websocket rooms in memory. Ignore advice shaped around
-   request-scoped functions, and ignore the Vercel-shaped advice this repo used
-   to attract by being a Next app — a LAN game should not round-trip the
-   internet. The hosted path is the Dockerfile.
-8. **No secure-context-only browser API.** `crypto.randomUUID`,
-   `navigator.clipboard`, `crypto.subtle`, geolocation and the rest exist on
-   `localhost` and over HTTPS and **nowhere else** — including
-   `http://192.168.x.x:3000`, which is how every guest opens this game. The
-   failure only ever hits the people who are not the developer, and it is not
-   subtle: `crypto.randomUUID is not a function` killed every LAN join the day
-   player ids were added. Use `crypto.getRandomValues`, which carries no such
-   restriction; where there is no unrestricted equivalent, feature-detect and
-   fall back (`LobbyPanel`'s Copy button falls back to `execCommand`, deprecated
-   and therefore unrestricted). Testing on localhost cannot catch this.
-
-## Verifying changes
-
-```bash
-npx tsc --noEmit && npx eslint . && npm run build
-```
-
-Those three are the gates; run `npm run build` before calling anything done.
-
-**Do not drive the game in a browser.** Chrome automation is not part of this
-project's workflow — **the user tests the running game manually and reports what
-they see and hear.** It also cannot work: the agent's tab reports
-`visibilityState: "hidden"`, so Chrome refuses `requestPointerLock()` — putting a
-hunter's aim and trigger out of reach — and withholds the user activation an
-`AudioContext` needs, so nothing is ever audible. Time spent there is wasted.
-
-What you *can* verify on your own, and should:
-
-- **Types, lint and build.** They catch most of a refactor.
-- **The protocol, headlessly.** Drive two or three `colyseus.js` clients from a
-  scratch `.mjs` script in the project root (so `node_modules` resolves) against a
-  running server, assert what each client sees, then delete the script. Join,
-  clamping, relay-and-not-echo, the late-joiner backlog, kill rules and fire-rate
-  limiting are all checkable this way in about 60 lines.
-- **Pure logic, headlessly.** Modules with no React or WebGL in them — the
-  footstep stepper, stroke encoding, pose extents — import straight into Node,
-  since it strips types. A throwaway resolve hook maps the `@/` alias:
-
-  ```js
-  export async function resolve(spec, ctx, next) {
-    if (!spec.startsWith("@/")) return next(spec, ctx);
-    /* map "@/x" -> "./src/x", append .ts if missing, then */ return next(mapped, ctx);
-  }
-  ```
-
-- **Audio levels, with ffmpeg.** `ffmpeg -i f.wav -af volumedetect -f null /dev/null`
-  reports peak and mean. A sound nobody can hear is usually 20 dB down, not
-  unwired — see `sound/CLAUDE.md`.
-- **SVG, with `qlmanage`, never ImageMagick.** `qlmanage -t -s 512 -o outdir
-  file.svg` renders through WebKit and is what a browser will show. ImageMagick's
-  built-in SVG renderer ignores gradients and will report a perfectly good icon as
-  a black circle — it cost a wrong diagnosis once already.
-
-Anything about feel — figure proportions, camera behaviour, gun placement, whether
-a sound sits right in the mix, whether the arena plays well — **is the user's
-call**. Say plainly what you checked and what you did not, rather than implying it
-was all confirmed.
 
 ## Not built yet
 

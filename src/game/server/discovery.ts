@@ -3,7 +3,7 @@ import { networkInterfaces, userInfo } from "node:os";
 import dgram from "node:dgram";
 
 /**
- * LAN discovery.
+ * Same-network discovery.
  *
  * A browser cannot scan a network, so the *server* does it: every instance
  * shouts `{id, name, port, gamePort}` over UDP once a second and keeps a table
@@ -38,7 +38,7 @@ let sessionName =
 export const getSessionName = () => sessionName;
 
 /**
- * Renamed once, by the first player to join — so the LAN list shows
+ * Renamed once, by the first player to join — so the session list shows
  * "Martin's Session" rather than the OS account name. An explicit SESSION_NAME
  * always wins, which is why the caller checks it too.
  */
@@ -46,7 +46,7 @@ export function setSessionName(name: string) {
   sessionName = `${capitalize(name)}'s Session`;
 }
 
-/** Everyone else on the LAN, id → session, pruned on the announce tick. */
+/** Every other server on this network, id → session, pruned on the announce tick. */
 export const peers = new Map<string, Peer>();
 
 /** The .255 address of every real IPv4 interface — a broadcast has to be aimed. */
@@ -60,7 +60,7 @@ const broadcastAddresses = () =>
       return addr.map((o, k) => (o & mask[k]) | (~mask[k] & 255)).join(".");
     });
 
-/** This machine's first non-loopback IPv4, for the LAN URL in the banner. */
+/** This machine's first non-loopback IPv4, for the network URL in the banner. */
 export const lanAddress = () =>
   Object.values(networkInterfaces())
     .flat()

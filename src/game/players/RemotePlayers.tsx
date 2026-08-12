@@ -18,7 +18,15 @@ const targetPos = new THREE.Vector3();
 const targetEuler = new THREE.Euler(0, 0, 0, "YXZ");
 const targetQuat = new THREE.Quaternion();
 
-function RemotePlayer({ id, reveal }: { id: string; reveal: boolean }) {
+function RemotePlayer({
+  id,
+  reveal,
+  hunting,
+}: {
+  id: string;
+  reveal: boolean;
+  hunting: boolean;
+}) {
   const group = useRef<THREE.Group>(null);
   const visual = useRef<THREE.Group>(null);
   const remote = remotes.get(id);
@@ -76,16 +84,32 @@ function RemotePlayer({ id, reveal }: { id: string; reveal: boolean }) {
           highlight={reveal && remote.role === "chameleon"}
         />
       </group>
-      <Html position={[0, hy + 0.55, 0]} center distanceFactor={14}>
-        <div className="whitespace-nowrap rounded bg-black/60 px-2 py-0.5 font-mono text-[13px] text-white">
-          {remote.name}
-        </div>
-      </Html>
+      {/* **A chameleon has no name badge during the hunt.**
+          drei's `Html` is DOM over the canvas, so it is not occluded by anything
+          — a label hovering above a hidden player is a marker drawn *through* the
+          wall they are hiding behind, which hands the hunter every spot in the
+          room for free. Hunters keep theirs: they are not hiding, and knowing
+          where the gun is is most of what a chameleon plays on. It comes back for
+          the reveal, where naming the survivors is the entire point. */}
+      {!(hunting && remote.role === "chameleon") && (
+        <Html position={[0, hy + 0.55, 0]} center distanceFactor={14}>
+          <div className="whitespace-nowrap rounded bg-black/60 px-2 py-0.5 font-mono text-[13px] text-white">
+            {remote.name}
+          </div>
+        </Html>
+      )}
     </group>
   );
 }
 
-export function RemotePlayers({ reveal = false }: { reveal?: boolean }) {
+export function RemotePlayers({
+  reveal = false,
+  hunting = false,
+}: {
+  reveal?: boolean;
+  /** The hunt is on, so hidden players must not be labelled. */
+  hunting?: boolean;
+}) {
   const [ids, setIds] = useState<string[]>([]);
 
   useEffect(() => onRoster(setIds), []);
@@ -93,7 +117,7 @@ export function RemotePlayers({ reveal = false }: { reveal?: boolean }) {
   return (
     <>
       {ids.map((id) => (
-        <RemotePlayer key={id} id={id} reveal={reveal} />
+        <RemotePlayer key={id} id={id} reveal={reveal} hunting={hunting} />
       ))}
     </>
   );

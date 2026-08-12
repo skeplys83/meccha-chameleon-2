@@ -22,7 +22,11 @@ halves of the app disagreed about them.
    constants is just a second global object, and the point here is the opposite.
 2. **`ROOM_LIMIT` is deliberately not `ROOM_HALF`.** 19.9 vs 20 is a real
    distinction, not a rounding slip — see the comment on the constant and
-   `players/CLAUDE.md` for why the margin is that thin.
+   `players/CLAUDE.md` for why the margin is that thin. **The pair now describes
+   the arena only.** Every room is clamped to `mapLimit(id)` from
+   `world/maps.ts`, which is that map's own `bound` less the same 0.1; these two
+   supply the arena's number and the size of the margin. Clamping every map to
+   `ROOM_LIMIT` is what kept the dungeon at 40×40 until it was made per map.
 3. **Nothing here may be defined twice.** `scripts/check-constants.mjs` runs in
    the pre-commit hook and fails if any name exported from this file is also
    *defined* elsewhere under `src/game`. Re-exports are fine and deliberate —
@@ -54,8 +58,8 @@ halves of the app disagreed about them.
   this range and it becomes that room's `maxClients`. The create panel builds its
   stepper from the same two numbers, which is why they live here.
 - `world/maps/arena.ts` builds the arena shell from `ROOM_HALF`.
-- `server/room.ts` clamps movement to `ROOM_LIMIT` and pose indices to
-  `POSE_COUNT`.
+- `server/messages.ts` clamps movement to `mapLimit(room.state.map)` — per map,
+  not to `ROOM_LIMIT` — and pose indices to `POSE_COUNT`.
 - `figure/poses.ts` **throws at import time** if `POSES.length !== POSE_COUNT`,
   the drift guard against a fifth pose that silently never reaches anyone else's
   screen. **That guard got weaker when the app moved to Vite and nobody has

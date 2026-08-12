@@ -22,7 +22,7 @@ import {
  * development Vite's HMR websocket gets a port of its own as well. Handing a
  * WebSocket server this server's `upgrade` event destroys every non-matching
  * upgrade — which is how HMR died once already, taking the client bootstrap and
- * every button on the page with it. See trap 2 in the root CLAUDE.md. Nothing
+ * every button on the page with it. See trap 2 in `docs/TRAPS.md`. Nothing
  * here touches `upgrade`, and that is the whole reason the ports are separate.
  */
 
@@ -35,7 +35,7 @@ const hostname = "0.0.0.0";
  * Vite's HMR websocket, in development only.
  *
  * It gets its own port for exactly the reason Colyseus has one: the alternative
- * is handing Vite this server's `upgrade` event. Guests on the LAN need to reach
+ * is handing Vite this server's `upgrade` event. Guests on the network need to reach
  * it as well as the page, so it binds the same wildcard address.
  */
 const hmrPort = Number(process.env.HMR_PORT ?? 24678);
@@ -43,7 +43,7 @@ const hmrPort = Number(process.env.HMR_PORT ?? 24678);
 /**
  * The Colyseus port to *advertise*, which is not always the one we listen on.
  *
- * On a LAN they are the same and this is a no-op. Behind a reverse proxy they
+ * Served directly they are the same and this is a no-op. Behind a reverse proxy they
  * are not: the proxy terminates TLS on 443 and forwards to 2567, so clients must
  * be told 443 while the server still binds 2567. Without this the browser is
  * handed an internal port it cannot reach — and on an HTTPS page it would be
@@ -52,7 +52,7 @@ const hmrPort = Number(process.env.HMR_PORT ?? 24678);
 const publicGamePort = Number(process.env.PUBLIC_GAME_PORT ?? gamePort);
 
 /**
- * UDP discovery is a LAN feature and only a LAN feature. On a hosted server
+ * UDP discovery only works between machines on the same network. On a hosted server
  * there are no peers to shout at, so it is off unless asked for. `/api/sessions`
  * still answers with `self`, which is the entry the menu actually joins.
  */
@@ -207,7 +207,7 @@ web.listen(port, hostname, () => {
   const lan = lanAddress();
   console.log(`  ${getSessionName()}`);
   console.log(`  ready   http://localhost:${port}`);
-  if (lan) console.log(`  LAN     http://${lan}:${port}`);
+  if (lan) console.log(`  network http://${lan}:${port}`);
   console.log(`  game    colyseus on :${gamePort}`);
   if (dev) console.log(`  hmr     vite on :${hmrPort}`);
   if (publicGamePort !== gamePort) {

@@ -20,8 +20,8 @@ cover, and the `ROOM_SURFACE` name that shots and the camera filter on.
 - `surface.ts` — `ROOM_SURFACE`, alone for the same reason.
 - `maps/arena.ts` — the 40×40 arena as a table of primitives: twenty-five pieces
   of cover plus a six-piece shell, no downloaded assets, exact palette colours.
-- `maps/dungeon.ts` — a 12×12 KayKit chamber as a table of model placements.
-  Assets in `public/maps/dungeon/`.
+- `maps/dungeon.ts` — a 52×52 KayKit warren: nine rooms, a gallery and a grate
+  pit, generated from a 13×13 character plan. Assets in `public/maps/dungeon/`.
 
 ## A map is data, not a component
 
@@ -33,9 +33,27 @@ name, the shadow flags, the collider default, the fact that the transform sits o
 the *mesh* rather than the body: a new map cannot get any of them wrong, because
 it does not spell any of them out.
 
+**A map says whether it is open to the sky, and hides its own lid.** The arena's
+ceiling is `hidden` rather than absent: the lid still stops a jump leaving the
+room and a chameleon can still cling to it and walk it upside down, but nothing
+draws it, so the waiting room has weather. `sky` is a boolean rather than an
+asset because the sky is a *shader* — drei's `Sky`, Preetham scattering with no
+texture behind it. `<Environment>` is the one that fetches an HDR from a CDN and
+blanks the scene on a network with no internet; see trap 3.
+
 **A map carries its own round length.** `roundSeconds` is the whole playable
 round — the hiding phase is carved out of it, not added to it — because a 40×40
-arena and a 12×12 chamber want very different amounts of time.
+arena and a 52×52 warren want very different amounts of time.
+
+**A map carries its own size, and the server reads it.** `bound` is the
+half-extent of the playable footprint and `mapLimit(id)` is what
+`server/messages.ts` clamps every reported position to, minus the same 0.1 of
+slack `ROOM_LIMIT` has always carried. This used to be `ROOM_LIMIT` for every
+room in the game, which silently capped **every** map at the arena's 40×40: the
+dungeon's outer rooms would have been walkable but unreportable, so everyone else
+watched you stop dead at ±19.9 and slide along an invisible wall while your own
+screen showed you walking on. Adding a map bigger than the arena means setting
+`bound`; forgetting it is not a build error, it is that bug.
 
 **A map carries its own spawn point.** `GameMap.spawn` is where a body's centre
 starts, and it belongs to the map because it is a fact about that map's floor:
@@ -156,24 +174,68 @@ empty menu entry or silently refusing a legitimate choice.
     shares geometry and materials, so every piece still draws from the one 17 KB
     atlas.
 11. **Assets are committed uncompressed, beside their `.bin` and their texture.**
-    No Draco: drei's decoder is fetched from a Google CDN, which a LAN game cannot
-    reach. And `.gltf` rather than `.glb` on purpose here — the pack shares one
+    No Draco: drei's decoder is fetched from a Google CDN, which trap 3 forbids.
+     And `.gltf` rather than `.glb` on purpose here — the pack shares one
     atlas across every piece, so keeping it external means one download and one
     GPU texture, where `.glb` would embed a copy per file.
-12. **Only the pieces a map uses are copied in.** KayKit's pack is 6.3 MB across
-    211 models; the dungeon needs seven, which is 204 KB including the atlas.
-13. **Nine pieces are painted in exact `PAINT` hexes.** Same table the swatch row
+12. **The dungeon places every model in the pack, and a script enforces it both
+    ways.** All 211 KayKit models are committed (6.3 MB) and all 211 are placed.
+    `scripts/check-map-assets.mjs` — `npm run check:maps`, and in the pre-commit
+    hook — fails if a committed `.gltf` under `public/maps/` is never placed, or
+    if a placement names a file that is not committed. The second direction is
+    the one that bites: a missing file leaves `Room` suspended forever, so the
+    map simply never appears and the only clue is a failed fetch in the network
+    tab. It reads `world/maps.ts` directly, which is only possible because that
+    file and everything under it stay free of React and three.js.
+13. **No wall in this pack is a door a hunter fits through, so hunter routes are
+    gaps in the plan.** Measured off the geometry: the tallest aperture in any of
+    the 32 wall models is `wall_open_scaffold` at 2.35 and the doorway frames are
+    2.20, against a 2-tall chameleon and a **2.6-tall hunter**. `wall_doorway`
+    and `wall_doorway_scaffold` are worse — they carry a door *leaf* inside the
+    frame, so as built they are solid for everybody, which the old chamber's
+    divider did not account for. A corridor is therefore floored cells with no
+    wall between them. Put a doorway piece across a corridor and the hunt cannot
+    reach the room behind it; nothing errors, the round is just unwinnable.
+14. **The three pieces with a real hole go inside rooms, never in a seal.**
+    `wall_doorway_Tsplit`, `wall_doorway_sides` and `wall_open_scaffold` are the
+    only models with an unobstructed opening. Interior, they are a chameleon-only
+    squeeze with a way round for everyone else, which is a good asymmetry. In the
+    perimeter they are a hole a chameleon leaves the map through — which is why
+    `wall_open_scaffold` is kept out of the `DROP_IN` list that the generator
+    scatters along wall runs, despite being the right 4-unit width for it.
+15. **A tall room next to a short one must be sealed above the short one's lid.**
+    The generator walls the *difference* in courses from the taller side. Without
+    it the volume between 4 and 8 above every corridor is an open attic: a
+    chameleon climbs the hall wall, steps over the corridor's ceiling and walks
+    the whole map at roof level. The bottom course stays open, which is the
+    passage.
+16. **Anything hung on a wall is positioned from the generated wall list, not by
+    hand.** `spread()` distributes the 42 banners, the torches, the trophies and
+    the shelves evenly over the ground-course wall slots the plan actually
+    produced. Hand coordinates would be a banner floating in mid-air the first
+    time a cell in `PLAN` changed from a room to rock, and nothing would report
+    it.
+17. **Nine pieces are painted in exact `PAINT` hexes.** Same table the swatch row
     renders. Pick the matching swatch, paint yourself, and you can test camouflage
     against a true match instead of eyeballing it. That is the whole point; do not
     "tidy" an arena colour to something off-palette.
-14. **The transform belongs to the mesh, not to the rigid body** — for
+18. **`hidden` is not the same as leaving a piece out.** The geometry stays, so
+    rapier still builds its collider and — the part that matters — three still
+    *raycasts* it. `Raycaster` tests an object's layers and that its material
+    exists; it never looks at `visible`, on the object or on the material. So a
+    hidden surface is still shot, still climbed, and still stops the camera. That
+    is the whole reason the arena can be open to the sky without becoming a room
+    you can jump out of. It is spelled on the *material* rather than the mesh —
+    both work identically, and the material is the honest place to say "this
+    surface has no appearance".
+19. **The transform belongs to the mesh, not to the rigid body** — for
     primitives. Rapier derives the collider from the geometry as it stands
     relative to the body, so a body at the origin holding a placed mesh and a
     placed body holding a mesh at its origin are *not* interchangeable once
     rotation is involved: the arena's 18° ramp is the piece that moves. Models are
     the other way round, because a cloned glTF scene is placed whole. Both are in
     `Solids.tsx` and neither is a free choice.
-15. **The arena's shell does not cast shadows, and that is not a perf tweak.**
+20. **The arena's shell does not cast shadows, and that is not a perf tweak.**
     The one directional light is overhead, so a ceiling that cast would drop a
     shadow across the entire room and every interior would go black. `castShadow:
     false` on those six pieces is the fix; they still receive, which is what makes
@@ -181,10 +243,14 @@ empty menu entry or silently refusing a legitimate choice.
 
 ## Contracts
 
-- **Reads `ROOM_HALF` from `shared/protocol.ts`**, which `server/room.ts` also
-  reads as `ROOM_LIMIT`. They describe the same bound and are no longer two
-  constants — but they are deliberately *different numbers* (20 vs 19.9); see
+- **Reads `ROOM_HALF` and `ROOM_LIMIT` from `shared/protocol.ts`.** `arena.ts`
+  builds its shell from `ROOM_HALF` and the arena's `bound` is the same number;
+  the gap between the two (20 vs 19.9) is the slack every map now gets through
+  `mapLimit`, and it is deliberate rather than a rounding slip — see
   `shared/CLAUDE.md`.
+- **`server/messages.ts` clamps to `mapLimit(room.state.map)`**, so the registry
+  is read on every `state` and every `kill`. It was `ROOM_LIMIT` for all rooms
+  until the dungeon outgrew the arena.
 - **Reads `PAINT` from `paint/palette.ts`.**
 - `players/Player.tsx` collects `ROOM_SURFACE` meshes from the scene graph
   whenever `surfaceRevision()` moves, which `Room` bumps on mount and unmount.
@@ -194,7 +260,9 @@ empty menu entry or silently refusing a legitimate choice.
 ## Not built yet
 
 The layout is fixed — no variants and no randomisation. The arena is 40×40×12
-and lit by two plain lights in `Scene.tsx`. Nothing reads the map tables outside
+and lit by two plain lights in `Scene.tsx`, which are **not** linked to the sky's
+sun — `SUN` in `Room.tsx` only aims the shader, so moving one does not move the
+other. Fine while one map is outdoors; a second would want them tied. Nothing reads the map tables outside
 the browser yet, though nothing stops it. There is exactly *one* spawn point per
 map and everybody uses it, so a full lobby arrives in a match stacked on the same
 square — and since players have no colliders against each other, they simply

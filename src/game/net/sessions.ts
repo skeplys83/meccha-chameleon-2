@@ -1,5 +1,5 @@
 /**
- * LAN discovery, client half. A browser cannot scan a network, so the local
+ * Server discovery, client half. A browser cannot scan a network, so the local
  * server does it over UDP and hands the result back here — see `server/`.
  *
  * It also carries the server's list of public games. A lobby created with the
@@ -35,7 +35,7 @@ export type Game = {
   maxPlayers: number;
 };
 
-/** The local server's identity, its LAN peers, and its public games. */
+/** The local server's identity, its peers on the same network, and its public games. */
 export async function fetchSessions(): Promise<{
   self: Session | null;
   sessions: Session[];

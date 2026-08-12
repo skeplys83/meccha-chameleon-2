@@ -1,7 +1,7 @@
 # server — the authoritative half
 
-**Owns:** the Colyseus rooms and their state, the matchmaking between them, LAN
-discovery over UDP, and the HTTP bootstrap that serves the client.
+**Owns:** the Colyseus rooms and their state, the matchmaking between them,
+same-network discovery over UDP, and the HTTP bootstrap that serves the client.
 
 **Entry point:** `node src/game/server/index.ts`, which is what both `npm run
 dev` and `npm start` run. Vite has no dev server of its own here — it runs as
@@ -19,13 +19,39 @@ code never reaches the browser, and nothing here may import from `world/`,
   and hands everything else to the app (Vite in middleware mode in development,
   `express.static("dist")` in production), defines both room types, starts
   Colyseus, prints the banner.
-- `room.ts` — `GameRoom`: every message handler, the clamping, the kill rules,
-  and the lobby → match hand-off.
+- `room.ts` — `GameRoom`: the shape of a round. Which phase it is in, who is in
+  it, when it ends, and every hand-off between the two rooms.
+- `messages.ts` — everything a client may *say*, and the trust model that decides
+  what to believe. Movement, paint, the trigger, the whistle, and the clamping
+  that keeps a `NaN` off the wire.
+- `host.ts` — `HostRule`: who holds the Start button. Three pieces that only make
+  sense together, kept together.
 - `schema.ts` — `Player` and `GameState`, the synced state.
 - `code.ts` — the invite alphabet and a code no live room is using.
 - `monitor.ts` — Colyseus's admin panel at `/monitor`, and the rule for when it
   is allowed to exist.
 - `discovery.ts` — the UDP socket, the peer table, the session name.
+
+## Why it is four files and not one
+
+`room.ts` was eleven hundred lines, and the seams it split along are real ones
+rather than lines drawn to shorten a file:
+
+- **A round's shape** (`room.ts`) and **the traffic inside it** (`messages.ts`)
+  barely touch. One owns phases, capacity and the two hand-offs; the other owns
+  what arrives twenty times a second from each browser. The handlers reach back
+  for four things, marked `@internal`, and nothing else.
+- **The host rule** (`host.ts`) knows nothing about rooms, clients or schema.
+  `room.ts` tells it who is standing here and whether a match is running; it
+  answers with a session id. It was three fields and a method tangled through
+  `onCreate`, `onJoin`, `onLeave` and the sweep, and reading it meant finding all
+  four.
+
+The rate limiters moved with the handlers, because a trigger-pull sends exactly
+one of `shoot` or `kill` and **one clock rate-limits the pair** — a fact that
+only ever mattered to the code that is now in `messages.ts`. `room.ts` keeps a
+single `forgetFire` callback so a departing seat is dropped from them, rather
+than a reference to the maps.
 
 ## Lobbies and matches
 
@@ -85,9 +111,18 @@ both can end the phase, and only one of these can.
 
 **A round's length is a property of the map**, read through `mapRoundSeconds`
 from `world/maps.ts`. The hiding phase is carved out of it rather than added to
-it, so "two minutes" means two minutes. That import is the first thing outside
+it, so "five minutes" means five minutes. That import was the first thing outside
 the browser to read map data, and it only works because the registry and
 everything under it are free of React and three.js and use relative `.ts` paths.
+
+**So is a map's size.** `messages.ts` clamps every reported position to
+`mapLimit(room.state.map)` rather than to a single `ROOM_LIMIT`, because the
+dungeon is 52 across and the arena 40. A global bound did not error — it just
+amputated whichever map was bigger, so a player walking the dungeon's outer rooms
+appeared to everybody else to be stuck sliding along an invisible wall at ±19.9.
+Both clamps are in the `state` and `kill` handlers and must move together: `kill`
+records where a body was found, and a grave outside the bound is a marker nobody
+can walk to.
 
 ## The countdown, and how a round begins
 
@@ -102,6 +137,21 @@ everybody. And it **cancels back to `waiting` if the roster drops below
 `MIN_PLAYERS`**, checked both on the tick and in `onLeave` — the tick alone would
 leave the panel counting for up to a second after the room stopped being able to
 start.
+
+## The monitor is the only window into the matchmaking
+
+`/monitor` is the server's view: which rooms exist right now, how many clients
+each holds, and this game's own metadata — `host` and `map` are only ever set on
+a lobby, so a row with them filled in is a waiting room and a row without is a
+match. Opening a room shows its **full state tree**, live, through
+`getInspectData`, which is the only way to watch `phase`, `timeLeft` and each
+player's `role` change without being in the room.
+
+That last part matters: it observes **without taking a seat**. Colyseus's
+`@colyseus/playground` was tried here and removed for exactly that reason — its
+client is a real player, so it counts toward `maxPlayers`, enters the hunter
+draw, and cannot follow the `moveTo` hand-off into a match. Using it to watch a
+round is using it to break the round. Anything observational belongs here.
 
 ## Capacity
 
@@ -127,7 +177,8 @@ A match is created with the same cap.
    `defineTypes(...)` rather than `@type`. Imports must name the real file
    (`./room.ts`), which is what `allowImportingTsExtensions` in tsconfig permits.
 3. **Nothing here touches `upgrade`.** This HTTP server carries the page and
-   `/api/sessions`; Colyseus binds `GAME_PORT`; and in development Vite's HMR
+   `/api/sessions`; Colyseus binds `GAME_PORT` and builds its own server there;
+   and in development Vite's HMR socket binds `HMR_PORT` of its own. and in development Vite's HMR
    socket binds `HMR_PORT` of its own rather than being handed this server via
    `server.hmr.server`. Handing a WebSocket server the HTTP server's `upgrade`
    event destroys every non-matching upgrade, including the dev HMR socket —
@@ -292,11 +343,12 @@ A match is created with the same cap.
    mean patching the package or proxying the font, and it is admin UI rather than
    the game.
 29. **The panel is pinned to `@colyseus/monitor@0.16.x`.** Its 0.17 line depends
-   on `@colyseus/core@^0.17`, which npm would install *alongside* our 0.16 — a
-   second matchMaker, in the same process, that knows about none of our rooms.
-   The panel would load and list nothing. This is the same version constraint as
-   the rest of the stack (see the root doc); bump it with everything else or not
-   at all.
+   on `@colyseus/core@^0.17`, which npm installs *alongside* our 0.16 rather than
+   refusing — a second matchMaker, in the same process, that knows about none of
+   our rooms. The panel loads and lists nothing, with no error to explain it.
+   Four things move together; the check after any bump is
+   `find node_modules -type d -name core -path "*@colyseus*"`, which must return
+   exactly one line.
 30. **The panel's route is checked before `/api/sessions` and before the app.**
    The app is the fall-through and it answers *everything*: Vite's SPA middleware
    in development, and in production an `express.static` that falls back to
@@ -368,7 +420,7 @@ A match is created with the same cap.
 
 - **`cling` is trusted like movement** — it only decides whether other clients
   play footsteps for you, so a liar makes themselves quiet and nothing else.
-- **Reads `../shared/protocol.ts`** for `Role`, `ROOM_LIMIT`, `POSE_COUNT`,
+- **Reads `../shared/protocol.ts`** for `Role`, `POSE_COUNT`,
   `MAX_STROKES`, `MAX_STROKE_LENGTH`, `MAX_STROKE_BATCH`, and the fire and
   whistle intervals. Do not re-declare any of them here — a pre-commit gate
   fails the commit if you do.
@@ -401,7 +453,7 @@ A match is created with the same cap.
   still answers with `self`, and `self` is the entry the menu actually joins, so
   the game works with discovery off.
 - **`PUBLIC_GAME_PORT` is what clients are told, `GAME_PORT` is what we bind.**
-  They are the same on a LAN. Behind a reverse proxy they are not: TLS is
+  They are the same when served directly. Behind a reverse proxy they are not: TLS is
   terminated on 443 and forwarded to 2567, so the browser must be handed 443 —
   both because it cannot reach the internal port, and because a `wss://` page is
   forbidden from opening a plain `ws://` socket.

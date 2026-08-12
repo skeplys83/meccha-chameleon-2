@@ -16,7 +16,7 @@ import { monitor } from "@colyseus/monitor";
  * The panel is not read-only. Its API exposes `matchMaker.remoteRoomCall`, which
  * invokes **any method on any room by name** — including `disconnect`, and
  * including this project's own `matchEnded`. Anyone who can reach it can end
- * anybody's game. On a LAN that is a shrug; on a hosted box it is a hole.
+ * anybody's game — which is a hole in anything reachable from outside the room.
  *
  * So the rule is: **a password is what turns it on in production.**
  *

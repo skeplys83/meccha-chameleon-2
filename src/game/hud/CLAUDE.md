@@ -126,10 +126,10 @@ costs nothing.
    beside every name and gave away a decision nobody had made. `showRoles` is
    false while a lobby waits or counts down and true from the hiding phase on.
 14. **The lobby's Copy button feature-detects the clipboard.**
-   `navigator.clipboard` is secure-context only, so over the LAN URL it is
+   `navigator.clipboard` is secure-context only, so over a plain-http address it is
    absent and a bare call left the button silently dead for everyone except
    whoever was testing on localhost. It falls back to `execCommand("copy")` —
-   deprecated, and therefore unrestricted. Root doc, trap 8.
+   deprecated, and therefore unrestricted. `docs/TRAPS.md`, trap 8.
 15. **The clock is displayed, never counted.** `PhaseBanner` renders
    `room.timeLeft` straight from state, and so does `LobbyPanel`. A local
    `setInterval` alongside it would drift out of step with the counter that
@@ -155,7 +155,7 @@ costs nothing.
 20. **`fetchSessions` is polled every 2 s for two things: `self` and `games`.**
    `self` because the menu needs the Colyseus port, which is not the page's port
    and is not always the one the server listens on. `games` because the listing
-   has no push channel — it is a plain fetch, not a second websocket. The LAN
+   has no push channel — it is a plain fetch, not a second websocket. The
    peer list it also returns is not shown anywhere.
 
 ## Contracts

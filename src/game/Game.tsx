@@ -677,6 +677,7 @@ export function Game() {
         room={room?.code ?? ""}
         role={room ? role : null}
         reveal={room?.phase === "reveal"}
+        hunting={room?.phase === "hunt"}
         // The survivors are the exhibit, so they hold their spot while everyone
         // else walks over to look at it. They keep their camera.
         frozen={rooted}

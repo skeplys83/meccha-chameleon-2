@@ -24,6 +24,7 @@ export default function Scene({
   room,
   role,
   reveal,
+  hunting,
   frozen,
   graves,
   painting,
@@ -44,6 +45,8 @@ export default function Scene({
   role: Role | null;
   /** The round is over and the survivors are being shown. */
   reveal: boolean;
+  /** The hunt is on. Hidden players lose their name badges for the duration. */
+  hunting: boolean;
   /** This player is rooted to the spot but may still look around. */
   frozen: boolean;
   /**
@@ -172,7 +175,7 @@ export default function Scene({
             />
           )}
         </Physics>
-        <RemotePlayers reveal={reveal} />
+        <RemotePlayers reveal={reveal} hunting={hunting} />
         {/* Needs the camera every frame to keep the audio listener on your head. */}
         <SoundStage />
         <Marks marks={marks} />

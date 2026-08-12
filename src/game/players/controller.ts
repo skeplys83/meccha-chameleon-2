@@ -6,7 +6,7 @@ import type { World } from "@dimforge/rapier3d-compat";
  * ## Why this file exists at all
  *
  * Creating the controller is a rapier call, and **rapier may only be called from
- * the frame loop** — trap 5 in the root doc. A handle touched after its world is
+ * the frame loop** — trap 5, `docs/TRAPS.md`. A handle touched after its world is
  * gone (an HMR remount is enough) panics inside wasm, and the module is poisoned
  * for the rest of the session. So it cannot be made in an effect, and it cannot
  * be disposed in one either.

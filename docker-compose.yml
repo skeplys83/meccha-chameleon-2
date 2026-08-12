@@ -15,7 +15,7 @@ services:
     environment:
       # Name shown in the session list.
       SESSION_NAME: "Meccha Chameleon"
-      # No LAN peers on a hosted box, so nothing to broadcast to.
+      # No same-network peers on a hosted box, so nothing to broadcast to.
       LAN_DISCOVERY: "0"
       # Set this when a proxy terminates TLS in front of Colyseus: the server
       # keeps listening on GAME_PORT, clients are told to connect here instead.

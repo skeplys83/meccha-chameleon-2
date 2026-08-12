@@ -71,11 +71,19 @@ function Primitive({
         position={solid.position}
         rotation={solid.rotation}
         name={ROOM_SURFACE}
-        castShadow={solid.castShadow !== false}
-        receiveShadow
+        castShadow={solid.castShadow !== false && !solid.hidden}
+        receiveShadow={!solid.hidden}
       >
         {geometryFor(shape)}
-        <meshStandardMaterial color={solid.color ?? DEFAULT_COLOR} roughness={0.85} />
+        {/* `visible` on the *material*, not on the mesh. Both stop it drawing,
+            but three's raycaster never looks at either — so this is a choice
+            about clarity rather than behaviour, and the material is the honest
+            place to say "this surface has no appearance". */}
+        {solid.hidden ? (
+          <meshBasicMaterial visible={false} />
+        ) : (
+          <meshStandardMaterial color={solid.color ?? DEFAULT_COLOR} roughness={0.85} />
+        )}
       </mesh>
     </RigidBody>
   );

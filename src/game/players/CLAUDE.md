@@ -321,6 +321,18 @@ win:
   down the 18° ramp. It also eats jumps unless it is disabled on the way up, and
   the small hop coming down the ramp is what the map already plays like.
 
+## A chameleon has no name badge during the hunt
+
+drei's `Html` is DOM drawn over the canvas, so it is **not occluded by
+anything** — a label hovering above a hidden player is a marker drawn straight
+*through* the wall they are behind, which hands the hunter every spot in the room
+for free. `RemotePlayers` therefore drops the badge for chameleons while
+`phase === "hunt"`.
+
+Hunters keep theirs throughout: they are not hiding, and reading where the gun is
+is most of what a chameleon has to play on. Badges come back for everyone at the
+reveal, where naming the survivors is the entire point.
+
 ## `frozen` is not `paused`
 
 A **paused** player has handed the game back: they see a menu, the mouse belongs

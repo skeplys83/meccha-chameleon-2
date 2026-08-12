@@ -8,22 +8,15 @@ import {
 } from "../world/mapIds.ts";
 import { mapRoundSeconds } from "../world/maps.ts";
 import { freeRoomCode } from "./code.ts";
+import { HostRule } from "./host.ts";
+import { clamp, registerMessages } from "./messages.ts";
 import { setSessionName } from "./discovery.ts";
 import {
   COUNTDOWN_SECONDS,
   HIDE_SECONDS,
-  REVEAL_SECONDS,
-  FIRE_INTERVAL_MS,
-  FIRE_INTERVAL_TOLERANCE,
   MAX_PLAYERS,
-  MAX_STROKE_BATCH,
   MIN_PLAYERS,
-  WHISTLE_INTERVAL_MS,
-  WHISTLE_TOLERANCE,
-  MAX_STROKES,
-  MAX_STROKE_LENGTH,
-  POSE_COUNT,
-  ROOM_LIMIT,
+  REVEAL_SECONDS,
 } from "../shared/protocol.ts";
 
 /**
@@ -50,7 +43,6 @@ import {
 // the client reads the same definitions, and each used to exist here as a second
 // copy with a comment asking the next person to change both.
 const PATCH_MS = 50; // 20 Hz state patches
-const MAX_GRAVES = 200; // server-only: the client just renders what it is sent
 /** How often an empty lobby checks whether it still has a reason to exist. */
 const SWEEP_MS = 15_000;
 /**
@@ -70,22 +62,8 @@ const SWEEP_MS = 15_000;
  * throttled; short enough that a match this brief is not mostly ghosts.
  */
 const RECONNECT_SECONDS = 20;
-/**
- * How long the host's seat is held for them after a match ends.
- *
- * Everyone comes back at once, in whatever order their seat reservations land,
- * and the host is not necessarily first through the door. Without this pause the
- * first arrival would be handed the button a moment before its owner walked in
- * and kept it — the exact reshuffle the host rule exists to prevent.
- */
-const HOST_GRACE_MS = 10_000;
 
-/** Anything non-finite off the wire becomes 0 rather than poisoning the state. */
-const clamp = (n: number, lo: number, hi: number) =>
-  Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : 0;
 
-const MIN_FIRE_GAP_MS = FIRE_INTERVAL_MS * FIRE_INTERVAL_TOLERANCE;
-const MIN_WHISTLE_GAP_MS = WHISTLE_INTERVAL_MS * WHISTLE_TOLERANCE;
 
 /**
  * A room directory entry, as `matchMaker` hands them back.
@@ -105,30 +83,8 @@ type RoomCache = Awaited<ReturnType<typeof matchMaker.createRoom>>;
  */
 type Reconnection = { reject(): void };
 
-type StateMsg = { p?: unknown; yaw?: unknown; pitch?: unknown; pose?: unknown; cling?: unknown };
-type PaintMsg = { strokes?: unknown };
-type KillMsg = { id?: unknown; position?: unknown };
-type ShootMsg = {
-  position: [number, number, number];
-  rotation: [number, number, number];
-  origin: [number, number, number];
-};
 
 export class GameRoom extends Room<GameState> {
-  /** When each client last got a shot through, so a spammed trigger is dropped
-   *  here as well as on the client. Rate is the one property of a shot that
-   *  reaches everybody — an unlimited one is a wall of noise for the whole room. */
-  private lastShot = new Map<string, number>();
-  /** When each client last whistled, so nobody can turn theirs into a siren. */
-  private lastWhistle = new Map<string, number>();
-
-  /** True at most once per FIRE_INTERVAL_MS per client, and records the shot. */
-  private canFire(sessionId: string) {
-    const now = Date.now();
-    if (now - (this.lastShot.get(sessionId) ?? 0) < MIN_FIRE_GAP_MS) return false;
-    this.lastShot.set(sessionId, now);
-    return true;
-  }
 
   /** The match this lobby started, if it has started one. Lobbies only. */
   private matchId: string | null = null;
@@ -153,34 +109,18 @@ export class GameRoom extends Room<GameState> {
    * killed while away can be let go of rather than returning to a room they are
    * no longer in.
    */
-  private pendingReturn = new Map<string, Reconnection>();
+  /** @internal Read by `messages.ts`, to let go of a caught player's seat. */
+  pendingReturn = new Map<string, Reconnection>();
+  /** The host rule, which is a whole thing of its own — see `host.ts`. */
+  private hosts = new HostRule();
   /**
-   * Which tab each seat belongs to, by session id.
+   * Drops a departed client from the fire and whistle limiters.
    *
-   * A session id identifies a connection to *this* room and is replaced every
-   * time a player changes rooms, so it cannot answer "is this the person who
-   * opened the game". The player id can, and this is where the two are tied
-   * together for as long as the connection lasts.
+   * Assigned by `registerMessages`, which owns those maps. It is a function
+   * rather than the maps themselves so this class cannot reach into them for
+   * anything else.
    */
-  private pidOf = new Map<string, string>();
-  /**
-   * When each player id was first seen in this room, for the room's whole life.
-   *
-   * This is what "longest participating" has to mean. Arrival *order* is no use:
-   * everybody leaves the lobby when a match starts and comes back with fresh
-   * session ids in whatever order their seat reservations happened to land, so
-   * ordering by the current join would just be "first back from the match" —
-   * exactly the arbitrary thing the host rule exists to avoid.
-   *
-   * Entries are kept after their player leaves. Someone who steps out and comes
-   * back is still the same length of participating, and the map is a handful of
-   * timestamps.
-   */
-  private firstSeen = new Map<string, number>();
-  /** The tab currently holding the Start button. Empty while nobody does. */
-  private hostPid = "";
-  /** Until when the button waits for an absent host rather than moving on. */
-  private hostGraceUntil = 0;
+  private forgetFire: (sessionId: string) => void = () => {};
   /**
    * The lobby's countdown, while one is running. Lobbies only.
    *
@@ -206,7 +146,8 @@ export class GameRoom extends Room<GameState> {
   /** The hunt's length, from the map, minus the hiding phase. Matches only. */
   private huntSeconds = 0;
 
-  private get isLobby() {
+  /** @internal Read by `messages.ts`. */
+  get isLobby() {
     return this.roomName !== "match";
   }
 
@@ -231,43 +172,10 @@ export class GameRoom extends Room<GameState> {
    */
   private reassignHost() {
     if (!this.isLobby) return;
-
     const here = this.clients
-      .map((c) => ({ sessionId: c.sessionId, pid: this.pidOf.get(c.sessionId) ?? "" }))
+      .map((c) => ({ sessionId: c.sessionId, pid: this.hosts.pidFor(c.sessionId) }))
       .filter((c) => this.state.players.has(c.sessionId));
-
-    // The holder is here: nothing to decide, but their session id has changed if
-    // they have just come back from the match.
-    const holder = here.find((c) => c.pid !== "" && c.pid === this.hostPid);
-    if (holder) {
-      this.state.hostId = holder.sessionId;
-      return;
-    }
-
-    // They are away. If a match is running they are in it, and if one has just
-    // ended they are on their way back through the door — either way the button
-    // waits rather than falling to whoever happens to be standing here.
-    if (this.matchId || Date.now() < this.hostGraceUntil) {
-      this.state.hostId = "";
-      return;
-    }
-
-    // Gone for good, as far as this room can tell. Longest-participating wins,
-    // measured from when each *player* first arrived rather than from when their
-    // current connection did.
-    let best: { sessionId: string; pid: string } | null = null;
-    let bestSeen = Infinity;
-    for (const candidate of here) {
-      if (candidate.pid === "") continue;
-      const seen = this.firstSeen.get(candidate.pid) ?? Infinity;
-      if (seen < bestSeen) {
-        best = candidate;
-        bestSeen = seen;
-      }
-    }
-
-    this.hostPid = best?.pid ?? "";
-    this.state.hostId = best?.sessionId ?? "";
+    this.state.hostId = this.hosts.resolve(here, this.matchId !== null);
   }
 
   /**
@@ -282,7 +190,7 @@ export class GameRoom extends Room<GameState> {
   matchEnded(id: string) {
     if (!this.isLobby || this.matchId !== id) return;
     this.matchId = null;
-    this.hostGraceUntil = Date.now() + HOST_GRACE_MS;
+    this.hosts.beginGrace();
     this.publish();
   }
 
@@ -382,7 +290,7 @@ export class GameRoom extends Room<GameState> {
       // the room exists — through the match and back again. `onJoin` is too late
       // for this: by then a returning player is indistinguishable from a
       // latecomer, which is precisely the confusion this is here to end.
-      this.hostPid = String(options?.pid ?? "");
+      this.hosts.claim(String(options?.pid ?? ""));
       this.publish();
     } else {
       this.state.mode = "match";
@@ -449,149 +357,9 @@ export class GameRoom extends Room<GameState> {
       this.publish();
     });
 
-    this.onMessage("state", (client: Client, msg: StateMsg) => {
-      const player = this.state.players.get(client.sessionId);
-      if (!player || !msg) return;
-      const [x, y, z] = Array.isArray(msg.p) ? (msg.p as number[]) : [0, 0, 0];
-      player.x = clamp(x, -ROOM_LIMIT, ROOM_LIMIT);
-      player.y = clamp(y, -5, 30);
-      player.z = clamp(z, -ROOM_LIMIT, ROOM_LIMIT);
-      player.yaw = Number.isFinite(msg.yaw) ? (msg.yaw as number) : 0;
-      player.pitch = Number.isFinite(msg.pitch) ? (msg.pitch as number) : 0;
-      player.pose = clamp(Math.trunc(msg.pose as number), 0, POSE_COUNT - 1);
-      // Coerced, never stored raw: schema "boolean" will happily encode whatever
-      // truthy junk arrives and hand it to every client. Chameleons only, because
-      // clinging is what silences your footsteps for everyone else — a hunter
-      // who could set it would simply hunt without making a sound.
-      player.cling = player.role === "chameleon" && msg.cling === true;
-    });
-
-    // Paint is cosmetic and self-applied: it is stored on the painter and
-    // relayed to everyone else, who already have the same brush code.
-    this.onMessage("paint", (client: Client, msg: PaintMsg) => {
-      const player = this.state.players.get(client.sessionId);
-      if (!player || !Array.isArray(msg?.strokes)) return;
-
-      const strokes = (msg.strokes as unknown[])
-        .filter((s): s is string => typeof s === "string" && s.length <= MAX_STROKE_LENGTH)
-        .slice(0, MAX_STROKE_BATCH);
-      if (!strokes.length) return;
-
-      for (const stroke of strokes) player.strokes.push(stroke);
-      const overflow = player.strokes.length - MAX_STROKES;
-      if (overflow > 0) player.strokes.splice(0, overflow);
-
-      this.broadcast("paint", { id: client.sessionId, strokes }, { except: client });
-    });
-
-    /**
-     * A catch, called by the hunter who made it — the same trust model as
-     * movement. The server checks the shooter is a hunter and the victim is a
-     * chameleon, then **converts** rather than kills.
-     *
-     * Being caught does not put you out of the game: you become a hunter, at the
-     * map's spawn, stripped back to white, and you join the hunt for whoever is
-     * left. That is why there is no death screen and no respawn any more, and
-     * why the hunt gets harder the longer it runs.
-     */
-    this.onMessage("kill", (client: Client, msg: KillMsg) => {
-      // Nobody is caught in the waiting room. Everyone there is armed — that is
-      // what a lobby *is* — and being converted while queuing for a game you
-      // have not started would be nonsense. The shot still bangs and still marks
-      // the wall; only the consequence is withheld.
-      if (this.isLobby) return;
-      // The round is decided. The reveal is a thirty-second look at where
-      // everybody was, not extra time.
-      if (this.state.phase !== "hunt") return;
-
-      const shooter = this.state.players.get(client.sessionId);
-      const victimId = String(msg?.id ?? "");
-      const victim = this.state.players.get(victimId);
-      if (
-        !shooter ||
-        shooter.role !== "hunter" ||
-        !victim ||
-        // A hunter cannot catch a hunter, which also makes this safe to send
-        // twice: the second one finds a victim who has already converted.
-        victim.role !== "chameleon" ||
-        victimId === client.sessionId
-      ) {
-        return;
-      }
-      if (!this.canFire(client.sessionId)) return;
-
-      const [rawX, rawY, rawZ] = Array.isArray(msg.position)
-        ? (msg.position as number[])
-        : [victim.x, victim.y, victim.z];
-      const x = clamp(rawX, -ROOM_LIMIT, ROOM_LIMIT);
-      const y = clamp(rawY, -5, 30);
-      const z = clamp(rawZ, -ROOM_LIMIT, ROOM_LIMIT);
-
-      // Where somebody was found, and who. The name rides along so the reveal
-      // can label the spot rather than showing anonymous markers.
-      this.state.graves.push(
-        [x.toFixed(2), y.toFixed(2), z.toFixed(2), victim.name].join(","),
-      );
-      if (this.state.graves.length > MAX_GRAVES) {
-        this.state.graves.splice(0, this.state.graves.length - MAX_GRAVES);
-      }
-
-      /**
-       * The conversion itself.
-       *
-       * Paint goes with the side: a chameleon's camouflage is the thing they
-       * spent the lobby on, and carrying it into the hunt would leave a hunter
-       * wearing the pattern of the wall they were caught against.
-       * `clearSkin` tells everyone else, because they are the ones who have to
-       * stop seeing it.
-       */
-      victim.role = "hunter";
-      victim.cling = false;
-      victim.pose = 0;
-      victim.strokes.clear();
-      this.broadcast("clearSkin", { id: victimId });
-
-      // A catching shot is still a shot: it makes the same bang as one that hit
-      // a wall, and it is the only bang for it, since this path relays no mark.
-      this.broadcast("shot", { id: client.sessionId });
-      this.broadcast("caught", { id: victimId, by: shooter.name, position: [x, y, z] });
-
-      // The last one caught ends the round then and there.
-      if (this.chameleonsLeft === 0) this.finish("hunters");
-    });
-
-    this.onMessage("clearSkin", (client: Client) => {
-      const player = this.state.players.get(client.sessionId);
-      if (!player) return;
-      player.strokes.clear();
-      this.broadcast("clearSkin", { id: client.sessionId }, { except: client });
-    });
-
-    // Marks are cosmetic and expire in three seconds, so they are simply relayed
-    // and never stored. The bang is a separate broadcast: a mark is at the wall
-    // the pellets hit, and a gunshot has to come from the gun.
-    this.onMessage("shoot", (client: Client, msg: ShootMsg) => {
-      if (!msg || !this.canFire(client.sessionId)) return;
-      this.broadcast("mark", {
-        id: randomUUID(),
-        position: msg.position,
-        rotation: msg.rotation,
-        origin: msg.origin,
-      });
-      this.broadcast("shot", { id: client.sessionId });
-    });
-
-    // A whistle is only a position given away, so it is relayed like a shot:
-    // everyone hears it, at whoever let it out. Chameleons only — the mirror of the
-    // kill check below, which refuses anyone who is not a hunter.
-    this.onMessage("whistle", (client: Client) => {
-      const player = this.state.players.get(client.sessionId);
-      if (!player || player.role !== "chameleon") return;
-      const now = Date.now();
-      if (now - (this.lastWhistle.get(client.sessionId) ?? 0) < MIN_WHISTLE_GAP_MS) return;
-      this.lastWhistle.set(client.sessionId, now);
-      this.broadcast("whistle", { id: client.sessionId });
-    });
+    // Everything a client may say — movement, paint, the trigger, the whistle
+    // — is wired up in `messages.ts`. See there for the trust model.
+    this.forgetFire = registerMessages(this).forget;
   }
 
   /**
@@ -711,7 +479,7 @@ export class GameRoom extends Room<GameState> {
               pass: this.roundPass,
               // Carried through so the match can hand it back on the way home.
               // Without it the host returns as a stranger and the button moves.
-              pid: this.pidOf.get(client.sessionId) ?? "",
+              pid: this.hosts.pidFor(client.sessionId),
             }),
           ),
       );
@@ -766,7 +534,7 @@ export class GameRoom extends Room<GameState> {
       name: this.state.players.get(hunter.sessionId)?.name ?? "player",
       role: "hunter",
       pass: this.roundPass,
-      pid: this.pidOf.get(hunter.sessionId) ?? "",
+      pid: this.hosts.pidFor(hunter.sessionId),
     });
 
     /**
@@ -802,7 +570,8 @@ export class GameRoom extends Room<GameState> {
   }
 
   /** How many players are still hiding. Zero of them ends the round. */
-  private get chameleonsLeft() {
+  /** @internal Read by `messages.ts`. */
+  get chameleonsLeft() {
     let n = 0;
     this.state.players.forEach((p) => {
       if (p.role === "chameleon") n += 1;
@@ -823,7 +592,8 @@ export class GameRoom extends Room<GameState> {
    * enough for somebody to reconnect inside it and still need telling what they
    * are looking at.
    */
-  private finish(winner: "chameleons" | "hunters") {
+  /** @internal Called by `messages.ts` when the last chameleon is caught. */
+  finish(winner: "chameleons" | "hunters") {
     if (this.isLobby || this.ending) return;
     this.ending = true;
 
@@ -868,7 +638,7 @@ export class GameRoom extends Room<GameState> {
           name: this.state.players.get(client.sessionId)?.name ?? "player",
           // The other half of the round trip: this is what tells the lobby that
           // the player walking back in is the one who opened it.
-          pid: this.pidOf.get(client.sessionId) ?? "",
+          pid: this.hosts.pidFor(client.sessionId),
         }),
       ),
     );
@@ -948,10 +718,10 @@ export class GameRoom extends Room<GameState> {
      * would be left in a room that is about to dispose, holding a `moveFailed`
      * and no way back. Refusing the stranger is the cheap end of that trade.
      *
-     * `firstSeen` is the test because it is already the record of who has been
-     * part of this game, kept for the room's whole life for the host rule.
+     * `HostRule` is asked because it is already the record of who has been part
+     * of this game, kept for the room's whole life for the host rule.
      */
-    if (this.isLobby && this.matchId && (!pid || !this.firstSeen.has(pid))) {
+    if (this.isLobby && this.matchId && (!pid || !this.hosts.knows(pid))) {
       client.leave(4001);
       return;
     }
@@ -959,10 +729,7 @@ export class GameRoom extends Room<GameState> {
     // Tie this seat to the tab behind it before anything else looks at either.
     // A player with no id — an old client, or storage refused — simply never
     // holds the button; they can still play.
-    if (pid) {
-      this.pidOf.set(client.sessionId, pid);
-      if (!this.firstSeen.has(pid)) this.firstSeen.set(pid, Date.now());
-    }
+    this.hosts.seat(client.sessionId, pid);
 
     const player = new Player();
     player.name = String(options?.name ?? "player").slice(0, 16);
@@ -997,7 +764,7 @@ export class GameRoom extends Room<GameState> {
     this.reassignHost();
     this.publish();
 
-    // The first person to join names the session, so it shows up on the LAN as
+    // The first person to join names the session, so it shows up in the list as
     // "Martin's Session" rather than the OS account name.
     if (this.state.players.size === 1 && !process.env.SESSION_NAME) {
       setSessionName(player.name);
@@ -1040,11 +807,10 @@ export class GameRoom extends Room<GameState> {
     }
 
     this.state.players.delete(client.sessionId);
-    this.lastShot.delete(client.sessionId);
-    this.lastWhistle.delete(client.sessionId);
+    this.forgetFire(client.sessionId);
     // The seat is gone; the *player* is remembered in `firstSeen`, because
     // stepping out and coming back does not shorten how long you have been here.
-    this.pidOf.delete(client.sessionId);
+    this.hosts.release(client.sessionId);
 
     // A countdown that outlived its second player would open a round for one
     // person. The interval checks this too, but doing it here means the panel

@@ -2,16 +2,26 @@
  * Every sound in the game, and how loud it is relative to the others.
  *
  * Files live in `public/sounds/` and are served by this machine's own server —
- * a LAN game must never reach for a CDN.
+ * nothing here is ever fetched from a third party. See trap 3, `docs/TRAPS.md`.
  *
- * **Every file is peak-normalised to −1 dBFS**, so a `gain` here is a real
- * proportion rather than a guess about how hot that particular export happened
- * to be. `step.wav` arrived 21 dB below `shotgun.wav`; multiplied by a cautious
- * gain it was ~34 dB under the gunshot and simply could not be heard. If you add
- * a sound, normalise it the same way:
+ * **Every file is MP3, and peak-normalised to −1 dBFS *after* encoding.** The
+ * gain here is then a real proportion rather than a guess about how hot that
+ * export happened to be — `step` arrived 21 dB below `shotgun` once, and
+ * multiplied by a cautious gain it sat ~34 dB under the gunshot: perfectly
+ * wired, completely inaudible.
  *
- *     ffmpeg -i new.wav -af volumedetect -f null /dev/null   # read max_volume
- *     ffmpeg -i new.wav -af "volume=<-1 minus that>dB" out.wav
+ * The order matters. A lossy codec does not preserve the peak it was given —
+ * the decoder reconstructs intersample peaks and can land *above* the source,
+ * so `bell` normalised to −1 came back at 0.0 dBFS. Normalise the **encoded**
+ * file, and iterate, because the peak does not move linearly with the pre-gain:
+ *
+ *     ffmpeg -y -i new.wav -c:a libmp3lame -b:a 96k out.mp3
+ *     ffmpeg -i out.mp3 -af volumedetect -f null /dev/null   # read max_volume
+ *     ffmpeg -y -i new.wav -af "volume=<-1 minus that>dB" -c:a libmp3lame -b:a 96k out.mp3
+ *     # repeat until it settles; two or three passes is usual
+ *
+ * Bitrates: 64k for the mono positional sounds, 96k for the stereo announcements,
+ * 128k for the music. That took `public/sounds/` from 15.6 MB to 1.3 MB.
  *
  * **Positional sounds must be mono.** A stereo buffer cannot be spatialised: the
  * panner has nothing to place, because left and right are already baked in. That
@@ -40,26 +50,26 @@ export type SoundSpec = {
 
 export const SOUNDS: Record<SoundName, SoundSpec> = {
   /** A shot, at the shooter. Fires whether it hit a wall or a person. */
-  shotgun: { url: "/sounds/shotgun.wav", gain: 0.9, positional: true },
+  shotgun: { url: "/sounds/shotgun.mp3", gain: 0.9, positional: true },
   /** Someone died, at the body. Everyone hears it — it is how a chameleon learns
    *  the hunter is finding people, and roughly where. */
-  squash: { url: "/sounds/squash.wav", gain: 1.0, positional: true },
+  squash: { url: "/sounds/squash.mp3", gain: 1.0, positional: true },
   /** One footfall. Pitched by body size, see `footsteps.ts`. */
-  step: { url: "/sounds/step.wav", gain: 0.6, positional: true },
+  step: { url: "/sounds/step.mp3", gain: 0.6, positional: true },
   /**
    * Looped while you are dragging the brush across your own body. Deliberately
    * the quietest thing in the game: it runs continuously, and a continuous sound
    * reads far louder than its peak suggests. Not positional — it is your own
    * hand, at your own ear — so stereo is right for it.
    */
-  brush: { url: "/sounds/brush.wav", gain: 0.28, positional: false },
+  brush: { url: "/sounds/brush.mp3", gain: 0.28, positional: false },
   /**
    * Every player's periodic tell, at whoever let it out. Positional, so it is
    * mono like the rest — a stereo file already carries its own left/right image
    * and a panner has nothing left to place, which is why this used to sound like
    * it came from everywhere at once.
    */
-  whistle: { url: "/sounds/whistle.wav", gain: 0.9, positional: true },
+  whistle: { url: "/sounds/whistle.mp3", gain: 0.9, positional: true },
 
   /**
    * The three round sounds. **None of them is positional, and that is the point:
@@ -81,10 +91,10 @@ export const SOUNDS: Record<SoundName, SoundSpec> = {
    * row, and a repeating sound reads far louder than its peak suggests — the
    * same reasoning as `brush`. If it is annoying it is too loud, not too long.
    */
-  tick: { url: "/sounds/tick.wav", gain: 0.3, positional: false },
+  tick: { url: "/sounds/tick.mp3", gain: 0.3, positional: false },
   /** The hiding phase is over and the hunter is coming. The one sound in the
    *  game that changes what you should be doing. */
-  bell: { url: "/sounds/bell.wav", gain: 0.85, positional: false },
+  bell: { url: "/sounds/bell.mp3", gain: 0.85, positional: false },
   /**
    * The round is decided, either way. Followed by the reveal.
    *
@@ -95,7 +105,7 @@ export const SOUNDS: Record<SoundName, SoundSpec> = {
    * never do. This is the volume of *one* strike, chosen so the chord of three
    * lands where a single loud sound would.
    */
-  gong: { url: "/sounds/gong.wav", gain: 0.42, positional: false },
+  gong: { url: "/sounds/gong.mp3", gain: 0.42, positional: false },
   /**
    * Seventy-six seconds of music, played once `MUSIC_DELAY_MS` after the bell.
    *
@@ -115,7 +125,7 @@ export const SOUNDS: Record<SoundName, SoundSpec> = {
    * cut it by roughly ninety per cent and `decodeAudioData` reads mp3 and ogg as
    * happily as wav.
    */
-  ambient: { url: "/sounds/ambient-music.wav", gain: 0.2, positional: false },
+  ambient: { url: "/sounds/ambient-music.mp3", gain: 0.2, positional: false },
 };
 
 export const SOUND_NAMES = Object.keys(SOUNDS) as SoundName[];

@@ -1,7 +1,7 @@
 # net — the client half of the network
 
 **Owns:** the Colyseus connection, everyone else's live transforms, the event
-streams the scene subscribes to, and the LAN session list.
+streams the scene subscribes to, and the session list.
 
 **Entry point:** `@/game/net` (`index.ts`). Import from there, not from the
 individual modules — the split is an implementation detail.
@@ -113,7 +113,7 @@ runs once per *room*, not once per session.
 13. **The player id is generated with `crypto.getRandomValues`, not
    `crypto.randomUUID`.** The latter is secure-context only — it exists on
    localhost and over HTTPS and nowhere else — so it threw for every guest who
-   opened the LAN URL and worked perfectly for whoever was testing. See trap 8
+   opened a plain-http address and worked perfectly for whoever was testing. See trap 8
    in the root doc.
 14. **The player id is `sessionStorage`, never `localStorage`.** Two tabs on one
    machine is how this game gets tested, and `localStorage` is shared across
