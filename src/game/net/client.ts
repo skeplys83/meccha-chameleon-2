@@ -1,5 +1,10 @@
 import { Client, getStateCallbacks, type Room } from "colyseus.js";
-import type { Phase, Role } from "@/game/shared/protocol";
+import {
+  LEAVE_IN_PROGRESS,
+  LEAVE_STARTING,
+  type Phase,
+  type Role,
+} from "@/game/shared/protocol";
 import { clearSkin, decodeStroke, forgetSkin, paint } from "@/game/paint/skin";
 import { getClient, getRoom, getToken, setClient, setRoom, setToken } from "./connection";
 import { playerId } from "./identity";
@@ -74,24 +79,7 @@ type Seat = {
   };
 };
 
-/**
- * Open a lobby of your own. `create`, never `joinOrCreate` — the latter is what
- * used to glue every player on a machine into one room, and it is exactly the
- * behaviour a second game must not have.
- *
- * No role goes out. Everybody waits as a hunter and the draw at Start turns all
- * but one of them into chameleons, so a role sent from here would be either ignored
- * or a lie.
- *
- * `listed` is the one thing only the creator can decide, and only now: it puts
- * the game in the menu's list for anyone on this server. Unlisted games are
- * reached by their code exactly as listed ones are.
- *
- * The `pid` is what makes *this tab* the lobby's host for as long as the lobby
- * lives — see `identity.ts`. It goes out on every way in, because the server has
- * no other way to tell that the tab coming back from a match is the one that
- * opened the game.
- */
+/** Open a lobby of your own. */
 export async function createLobby(
   name: string,
   target: Session,
@@ -111,20 +99,7 @@ export async function joinLobby(name: string, target: Session, code: string) {
   );
 }
 
-/**
- * Get back into a room you were in — after a drop, or after being shot.
- *
- * It tries the reconnection token first, which is the good outcome: the server
- * held the seat, so the *same* session id comes back and with it the position,
- * the side and the paint that were already there. That only works inside the
- * window the server holds it for, and only for a drop — a player who was shot
- * had their seat deleted deliberately.
- *
- * The fall-back is a plain join by room id, which is a fresh player: new session
- * id, spawn position, and a chameleon, because the server will not take a role from
- * a client. That is exactly right for the case that reaches it, since the only
- * player who ever needs it is a dead chameleon — a hunter cannot be shot.
- */
+/** Get back into a room you were in — after a drop, or after being shot. */
 export async function rejoin(name: string, target: Session, roomId: string) {
   const token = getToken();
   return open(target, async (client) => {
@@ -148,15 +123,21 @@ async function open(target: Session, join: (client: Client) => Promise<Room>) {
   return attach(joined);
 }
 
-/**
- * Wire a room up and wait for it to have said something.
- *
- * Called once per *room*, not once per session — being moved from a lobby into
- * its match runs all of this again against the new handle. Everything it
- * installs is therefore scoped to `joined` and dies with it; the only state that
- * outlives a room is your own paint.
- */
+/** Why a join was refused, as a sentence rather than a number. */
+function refusal(code?: number) {
+  if (code === LEAVE_STARTING) {
+    return "That game is starting — it will take players again once the round is over.";
+  }
+  if (code === LEAVE_IN_PROGRESS) {
+    return "That game has a round in progress. Try again when it finishes.";
+  }
+  return "The server closed the connection.";
+}
+
 async function attach(joined: Room): Promise<RoomInfo> {
+  /** Set only while we are waiting to be seated, and read by `onLeave`. */
+  let rejectJoin: ((e: Error) => void) | null = null;
+
   setRoom(joined);
   // Captured now, while the room is healthy. After a drop there is no room left
   // to read it from, which is the only time it is any use.
@@ -271,7 +252,16 @@ async function attach(joined: Room): Promise<RoomInfo> {
     emitMoveFailed(msg?.reason ?? "the match could not be reached");
   });
 
-  joined.onLeave(() => {
+  joined.onLeave((code) => {
+    /** Refused before we were ever seated. */
+    if (rejectJoin) {
+      setRoom(null);
+      clearRemotes();
+      emitLeftRoom();
+      rejectJoin(new Error(refusal(code)));
+      return;
+    }
+
     // Every deliberate exit clears the room handle before it leaves — quitting,
     // dying, being handed to another room — so reaching here still holding it
     // means nobody asked for this. Two consequences: do not wipe the room we
@@ -310,29 +300,36 @@ async function attach(joined: Room): Promise<RoomInfo> {
   };
   joined.onStateChange(publish);
 
-  /**
-   * Wait for the room to have said who we are before handing it back.
-   *
-   * Two things must have landed, not one. The **map**, because the caller
-   * renders geometry from it and drawing the wrong one for even a frame puts
-   * players inside walls their opponents cannot see. And **our own player**,
-   * because that is where the role lives — describing a room we are not yet in
-   * would report the wrong side, which is a camera in the wrong place and a
-   * pointer lock that should not have been taken.
-   */
+  /** Wait for the room to have said who we are before handing it back. */
   const seated = () => {
     const state = joined.state as StateSchema;
     return Boolean(state.map) && Boolean(state.players?.get(joined.sessionId));
   };
   if (!seated()) {
-    await new Promise<void>((resolve) => {
-      const check = () => {
-        if (!seated()) return;
-        joined.onStateChange.remove(check);
-        resolve();
-      };
-      joined.onStateChange(check);
-    });
+    /** Closed before we could listen. */
+    if (!joined.connection.isOpen) {
+      setRoom(null);
+      clearRemotes();
+      throw new Error(refusal());
+    }
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        // Armed for exactly as long as the wait lasts. Cleared in the `finally`,
+        // so a socket that dies *after* we are seated is a drop again — which is
+        // the ordinary case and wants the reconnect panel, not an error on a
+        // menu the player has long since left.
+        rejectJoin = reject;
+        const check = () => {
+          if (!seated()) return;
+          joined.onStateChange.remove(check);
+          resolve();
+        };
+        joined.onStateChange(check);
+      });
+    } finally {
+      rejectJoin = null;
+    }
   }
   publish();
   return describe(joined);
@@ -364,19 +361,7 @@ function describe(room: Room): RoomInfo {
 /** The phases a room may claim to be in. Anything else is treated as waiting. */
 const PHASES: Phase[] = ["waiting", "countdown", "hiding", "hunt", "reveal"];
 
-/**
- * Take the seat the lobby reserved for us in its match.
- *
- * The two rooms overlap for a moment — the match is consumed before the lobby is
- * left — which is deliberate: leaving first would make a failed hand-off a
- * silent exit from the game rather than a message on screen.
- *
- * Nothing comes with you. `emitLeftRoom` fires before the new room is attached
- * and every piece of room-scoped state hangs off it — paint, marks, graves,
- * remotes — so a match opens on a clean slate and so does the lobby you come
- * home to. Session ids are per room anyway, so the ids remote skins were keyed
- * by would never be seen again.
- */
+/** Take the seat the lobby reserved for us in its match. */
 async function move(from: Room, seat: Seat) {
   const client = getClient();
   if (!client || getRoom() !== from) return;

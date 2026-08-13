@@ -5,15 +5,7 @@ import { Shotgun } from "./Shotgun";
 import { getSkin, SELF } from "@/game/paint/skin";
 import type { Part } from "@/game/figure/parts";
 
-/**
- * The hunter's own arms and shotgun, held out in front of the camera. It rides
- * the camera each frame rather than being parented to it, since the camera is
- * driven imperatively.
- *
- * Everything below is in camera space: -Z is forward, so the arms run from
- * roughly shoulder height at the bottom of the screen out to the grip and the
- * pump, and the barrel carries on past them into the room.
- */
+/** The hunter's own arms and shotgun, held out in front of the camera. */
 
 const GUN = new THREE.Vector3(0.16, -0.2, -0.52);
 const GRIP = new THREE.Vector3(0.17, -0.25, -0.42);

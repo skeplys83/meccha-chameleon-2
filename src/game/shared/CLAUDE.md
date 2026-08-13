@@ -53,11 +53,19 @@ halves of the app disagreed about them.
   on purpose: the union is the design, and a phase the server can produce but the
   client has never heard of is exactly what this prevents. `net/client.ts`
   validates an incoming phase against the list and falls back to `waiting`.
+- **`LEAVE_IN_PROGRESS` / `LEAVE_STARTING` are why a join was refused.**
+  `server/room.ts` picks one and closes the socket with it; `net/client.ts` turns
+  it into the sentence shown on the menu. They start at 4000 because Colyseus
+  reserves everything below that. A refusal is the one thing both halves must
+  agree on that is *not* a message — the server accepts the socket and then drops
+  it — so the codes are the whole protocol for it, and a bare number written on
+  each side would be precisely the mirrored constant this file exists to end.
 - **`MIN_PLAYERS` / `MAX_PLAYERS` are the bounds, not the size of any lobby.**
   The host picks a cap when they open a game; `server/room.ts` clamps it into
   this range and it becomes that room's `maxClients`. The create panel builds its
   stepper from the same two numbers, which is why they live here.
-- `world/maps/arena.ts` builds the arena shell from `ROOM_HALF`.
+- `world/maps.ts` gives the arena a `bound` of `ROOM_HALF`, and
+  `levels/arena.blend` is built to the same 40×40 by hand.
 - `server/messages.ts` clamps movement to `mapLimit(room.state.map)` — per map,
   not to `ROOM_LIMIT` — and pose indices to `POSE_COUNT`.
 - `figure/poses.ts` **throws at import time** if `POSES.length !== POSE_COUNT`,

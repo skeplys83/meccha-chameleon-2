@@ -2,25 +2,7 @@ import { useEffect, useState } from "react";
 import { onRoster, remotes } from "@/game/net";
 import type { Role } from "@/game/shared/protocol";
 
-/**
- * Who is in this room, you included.
- *
- * You are on the list because the two things it answers — how many of us are
- * there, and who is the hunter — both have you in the answer. `remotes` holds
- * everybody *else* by design (it is a table of things to interpolate and draw,
- * and you are neither), so your own row is passed in from `Game.tsx`, which is
- * where the name you typed and the side the room gave you both live.
- */
-
-/**
- * A colour per side, and *only* a colour.
- *
- * There were emoji here — a gun and a lizard — on the reasoning that a glyph is
- * easier to skim than a word. They came out because the operating system draws
- * them, so the row's weight, baseline and width changed per machine, and on
- * several of them the lizard simply is not a lizard. The word is already there
- * and does the job; the colour is the redundancy.
- */
+/** A colour per side, and *only* a colour. */
 const MARK: Record<Role, { tone: string }> = {
   hunter: { tone: "text-blue-300" },
   chameleon: { tone: "text-rose-300" },
@@ -56,14 +38,7 @@ export function PlayerList({
 }: {
   name: string;
   role: Role;
-  /**
-   * Whether sides exist yet.
-   *
-   * False in a lobby that is waiting or counting down, because there are no
-   * sides to show: `onJoin` makes everybody a hunter and the draw has not
-   * happened, so the labels would read "hunter" all the way down and give away
-   * a decision nobody has made. True from the hiding phase on.
-   */
+  /** Whether sides exist yet. */
   showRoles: boolean;
 }) {
   const [ids, setIds] = useState<string[]>([]);

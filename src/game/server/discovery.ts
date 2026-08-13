@@ -2,18 +2,7 @@ import { randomUUID } from "node:crypto";
 import { networkInterfaces, userInfo } from "node:os";
 import dgram from "node:dgram";
 
-/**
- * Same-network discovery.
- *
- * A browser cannot scan a network, so the *server* does it: every instance
- * shouts `{id, name, port, gamePort}` over UDP once a second and keeps a table
- * of everyone it has heard from in the last few seconds. The page asks its own
- * server for that table via `GET /api/sessions` — see `game/net/sessions.ts` for
- * the other end.
- *
- * A peer that stops broadcasting simply ages out; there is no goodbye message,
- * because a machine that closes its lid never gets to send one.
- */
+/** Same-network discovery. */
 
 const DISCOVERY_PORT = 41234;
 const ANNOUNCE_MS = 1000;
@@ -37,11 +26,6 @@ let sessionName =
 
 export const getSessionName = () => sessionName;
 
-/**
- * Renamed once, by the first player to join — so the session list shows
- * "Martin's Session" rather than the OS account name. An explicit SESSION_NAME
- * always wins, which is why the caller checks it too.
- */
 export function setSessionName(name: string) {
   sessionName = `${capitalize(name)}'s Session`;
 }

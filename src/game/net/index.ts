@@ -1,8 +1,4 @@
-/**
- * The networking surface every other folder imports. Keeping it here means a
- * caller writes `from "@/game/net"` and never has to know which of the five
- * modules below a given function lives in.
- */
+// The networking surface every other folder imports.
 
 export { createLobby, disconnect, joinLobby, rejoin } from "./client";
 export { selfId } from "./connection";

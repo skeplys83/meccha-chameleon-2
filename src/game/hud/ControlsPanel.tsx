@@ -3,12 +3,7 @@ import { POSES } from "@/game/figure/poses";
 
 type Row = [key: string, action: string];
 
-/**
- * The two roles do not share a control scheme, so they do not share a legend
- * either. Anything listed here must actually be wired up in `Player.tsx` for
- * that role — a chameleon has no shoot, and a hunter has no pose, no Q/E and no
- * zoom, so none of those appear on the wrong card.
- */
+/** The two roles do not share a control scheme, so they do not share a legend either. */
 const CHAMELEON: Row[] = [
   ["W A S D", "Move · climb a surface you walk into"],
   ["Space", "Jump · let go of a surface"],

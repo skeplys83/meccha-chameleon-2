@@ -1,38 +1,13 @@
 import * as THREE from "three";
-import { SOUNDS, SOUND_NAMES, type SoundName } from "./catalogue";
+import { DEFERRED_SOUNDS, EAGER_SOUNDS, SOUNDS, type SoundName } from "./catalogue";
 
-/**
- * The Web Audio plumbing: one context, one master gain, a decoded buffer per
- * sound, and fire-and-forget playback.
- *
- * Deliberately not `THREE.PositionalAudio`. That is an `Object3D` you park in the
- * scene graph, which suits a looping engine hum but not a shotgun — every shot
- * would mean mounting and unmounting a node. A one-shot here is three plain Web
- * Audio nodes that disconnect themselves when the sound ends.
- */
-
-/**
- * How far a positional sound carries before it starts to fade.
- *
- * Inside this radius there is *no* attenuation at all, so it doubles as "how big
- * the room sounds". At 6 it was a quarter of the arena's width at full volume,
- * which is why distance barely read; 3.5 puts the fade inside normal fighting
- * range. The Web Audio default of 1 is the other extreme — everything inaudible
- * two steps away.
- *
- * Resulting curve, inverse model: 1.0 at 3.5 units, −7 dB at 7, −13 dB at 14,
- * −23 dB across the arena.
- */
+/** How far a positional sound carries before it starts to fade. */
 const REF_DISTANCE = 3.5;
 /** Clamps the distance used in the falloff. Just past the arena's diagonal. */
 const MAX_DISTANCE = 60;
 /** How sharply it falls once past `REF_DISTANCE`. Higher is a smaller-sounding room. */
 const ROLLOFF = 1.25;
-/**
- * Ramp on either end of a loop. Starting or stopping a buffer at full amplitude
- * puts a step in the waveform, which is a click — and a brush you can click on
- * and off is worse than no brush at all.
- */
+/** Ramp on either end of a loop. */
 const LOOP_FADE = 0.05;
 
 let ctx: AudioContext | null = null;
@@ -40,28 +15,17 @@ let master: GainNode | null = null;
 const buffers = new Map<SoundName, AudioBuffer>();
 /** Looping sounds currently running, at most one per name. */
 const loops = new Map<SoundName, { source: AudioBufferSourceNode; gain: GainNode }>();
-let loading: Promise<void> | null = null;
+/** One entry per sound that has been asked for, so no file is fetched twice. */
+const loading = new Map<SoundName, Promise<void>>();
 let unlockBound = false;
 let warnedSuspended = false;
 /** Suspended by the pause menu rather than by never having been unlocked. */
 let pausedByGame = false;
 
-/**
- * Anything the browser counts as a user gesture. `keydown` matters most: you
- * cannot walk without pressing one, so footsteps can never be the first thing
- * that finds the context still locked.
- */
+/** Anything the browser counts as a user gesture. */
 const GESTURES = ["pointerdown", "keydown", "touchstart"] as const;
 
-/**
- * Keep trying to unlock on any gesture until one works, then stop listening.
- *
- * `Game.tsx` already unlocks on the role click, and that is the intended path —
- * but it is a single point of failure for the entire game's audio, and when it
- * fails it fails *silently*, which is exactly what happened here. These
- * listeners are the safety net: they live beside the context they unlock, so
- * they cannot go looking at the wrong one.
- */
+/** Keep trying to unlock on any gesture until one works, then stop listening. */
 function installUnlockListeners() {
   if (unlockBound || typeof window === "undefined") return;
   unlockBound = true;
@@ -107,52 +71,57 @@ function ensureContext() {
   return ctx;
 }
 
-/**
- * Fetch and decode every sound. Safe to call repeatedly — the work happens once.
- * Called on mount, well before anything wants to play.
- */
-export function preloadSounds() {
-  const context = ensureContext();
-  if (!context || loading) return loading ?? Promise.resolve();
+/** Fetch and decode one sound, once. */
+function load(context: AudioContext, name: SoundName) {
+  const existing = loading.get(name);
+  if (existing) return existing;
 
-  loading = Promise.all(
-    SOUND_NAMES.map(async (name) => {
-      const spec = SOUNDS[name];
-      try {
-        const res = await fetch(spec.url);
-        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-        const buffer = await context.decodeAudioData(await res.arrayBuffer());
+  const spec = SOUNDS[name];
+  const started = (async () => {
+    try {
+      const res = await fetch(spec.url);
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      const buffer = await context.decodeAudioData(await res.arrayBuffer());
 
-        // A positional sound has to be mono or the panner has nothing to place.
-        // Worth shouting about: the symptom is a sound that plays fine but never
-        // seems to come from anywhere, which is easy to mistake for "3D audio is
-        // just subtle".
-        if (spec.positional && buffer.numberOfChannels !== 1) {
-          console.warn(
-            `sound: "${name}" is positional but has ${buffer.numberOfChannels} channels. ` +
-              `It will not be spatialised. Re-export it as mono ` +
-              `(ffmpeg -i ${spec.url.split("/").pop()} -ac 1 out.wav).`,
-          );
-        }
-        buffers.set(name, buffer);
-      } catch (e) {
-        broken.add(name);
-        console.warn(`sound: could not load "${name}" from ${spec.url}`, e);
+      // A positional sound has to be mono or the panner has nothing to place.
+      // Worth shouting about: the symptom is a sound that plays fine but never
+      // seems to come from anywhere, which is easy to mistake for "3D audio is
+      // just subtle".
+      if (spec.positional && buffer.numberOfChannels !== 1) {
+        console.warn(
+          `sound: "${name}" is positional but has ${buffer.numberOfChannels} channels. ` +
+            `It will not be spatialised. Re-export it as mono ` +
+            `(ffmpeg -i ${spec.url.split("/").pop()} -ac 1 out.wav).`,
+        );
       }
-    }),
-  ).then(() => undefined);
+      buffers.set(name, buffer);
+    } catch (e) {
+      broken.add(name);
+      console.warn(`sound: could not load "${name}" from ${spec.url}`, e);
+    }
+  })();
 
-  return loading;
+  loading.set(name, started);
+  return started;
 }
 
-/**
- * Hand the audio context the user gesture it has been waiting for.
- *
- * **Must be called from inside a real click handler.** Browsers start every
- * context suspended and only `resume()` succeeds from a gesture; call it from an
- * effect and the promise rejects silently, leaving the whole game mute. The
- * gesture this game uses is Create or Join in `StartMenu`.
- */
+function loadAll(names: SoundName[]) {
+  const context = ensureContext();
+  if (!context) return Promise.resolve();
+  return Promise.all(names.map((name) => load(context, name))).then(() => undefined);
+}
+
+/** Fetch and decode everything except the music. */
+export function preloadSounds() {
+  return loadAll(EAGER_SOUNDS);
+}
+
+/** Fetch and decode the music, which is 1.2 MB and is not wanted until a hunt begins. */
+export function preloadMusic() {
+  return loadAll(DEFERRED_SOUNDS);
+}
+
+/** Hand the audio context the user gesture it has been waiting for. */
 export function unlockAudio() {
   const context = ensureContext();
   if (!context) return;
@@ -170,16 +139,7 @@ export function setAudioSuspended(suspended: boolean) {
   if (!suspended && ctx.state === "suspended") void ctx.resume();
 }
 
-/**
- * Point the listener at wherever the camera is now.
- *
- * Read straight off `camera.position` / `camera.quaternion` rather than
- * `matrixWorld` or `getWorldDirection`: `players/Player.tsx` drives the camera
- * imperatively from its own `useFrame`, and matrices are only refreshed at render
- * time — so a world-matrix read here would be one frame stale, and which frame
- * would depend on `useFrame` ordering. The local transform is always current, and
- * the camera has no parent, so local *is* world.
- */
+/** Point the listener at wherever the camera is now. */
 export function updateListener(camera: THREE.Camera) {
   if (!ctx) return;
   const l = ctx.listener;
@@ -215,11 +175,7 @@ export type PlayOptions = {
   gain?: number;
 };
 
-/**
- * Play one shot of a sound. Never throws and never blocks: if the buffer has not
- * finished decoding, or the file was missing, the call is simply dropped. A
- * missing sound must not be able to break a frame.
- */
+/** Play one shot of a sound. */
 export function playSound(name: SoundName, options: PlayOptions = {}) {
   const context = ctx;
   const out = master;
@@ -286,17 +242,7 @@ export function playSound(name: SoundName, options: PlayOptions = {}) {
   source.start();
 }
 
-/**
- * Start a sound looping, or do nothing if it already is.
- *
- * Loops are keyed by name, so `startLoop` is idempotent and callers can fire it
- * on every frame of a drag without checking. `stopLoop` is the only way one
- * ends.
- *
- * Unlike `playSound` this does *not* bail when the context is suspended: it
- * starts anyway and asks for a resume. A suspended context has a frozen clock,
- * so the sound and its fade simply begin when the context wakes.
- */
+/** Start a sound looping, or do nothing if it already is. */
 export function startLoop(
   name: SoundName,
   options: { gain?: number; rate?: number; once?: boolean } = {},
@@ -309,16 +255,6 @@ export function startLoop(
 
   const source = context.createBufferSource();
   source.buffer = buffer;
-  /**
-   * `once` plays a sound through a single time but **keeps the handle**, which
-   * is the whole reason it lives here rather than in `playSound`.
-   *
-   * A `playSound` one-shot cannot be stopped: nothing holds a reference to it.
-   * That is right for a gunshot and wrong for seventy-six seconds of music,
-   * which would otherwise carry on through the reveal and into the lobby when a
-   * round ends early. Registered in `loops`, it is reached by `stopAllLoops`
-   * along with everything else scoped to a room.
-   */
   source.loop = options.once !== true;
   source.playbackRate.value = options.rate ?? 1;
 

@@ -3,19 +3,6 @@ import type { Part } from "@/game/figure/parts";
 import { encodeStroke, paint, SELF } from "./skin";
 import type { Brush } from "./brush";
 
-/**
- * The cursor end of painting: raycast your own figure, show the ring where the
- * dot would land, and lay down strokes as the mouse drags.
- *
- * It is a factory rather than a set of functions because all of it hangs off the
- * same four things — the canvas, the camera, your figure and the ring mesh — and
- * threading those through five call sites was most of what made `Player.tsx`
- * hard to read.
- *
- * Painting needs no mode, only a free cursor: anyone whose pointer is not locked
- * (always a chameleon, or a hunter who pinned the palette) can draw.
- */
-
 /** Minimum UV travel before a drag lays down another dot — a smear at 60 fps
  *  would otherwise be hundreds of near-identical strokes. */
 const PAINT_STEP = 0.012;
@@ -50,14 +37,7 @@ export function createBrushCursor({
   brush: () => Brush;
   /** Called with the encoded stroke, for the caller to batch and send. */
   onStroke: (encoded: string) => void;
-  /**
-   * Fires when a drag starts and when it ends, and only on the change.
-   *
-   * It exists so the brush *sound* can be driven from one place. Doing it at the
-   * call sites in `Player.tsx` would mean remembering `begin`, `end` *and*
-   * `cancel`, and the one that gets forgotten is `cancel` — which is how you end
-   * up with a brush that keeps scrubbing after the pause menu opens.
-   */
+  /** Fires when a drag starts and when it ends, and only on the change. */
   onDrawingChange?: (drawing: boolean) => void;
 }) {
   let drawing = false;
@@ -69,11 +49,7 @@ export function createBrushCursor({
     onDrawingChange?.(next);
   };
 
-  /**
-   * Whatever part of your own body is under the cursor. The raycast hands back
-   * a UV, which is exactly the coordinate that part's canvas texture is drawn
-   * in, so no unwrapping is needed.
-   */
+  /** Whatever part of your own body is under the cursor. */
   function hit(e: MouseEvent): THREE.Intersection | null {
     const group = figure();
     if (!group) return null;

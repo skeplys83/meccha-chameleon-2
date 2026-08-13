@@ -15,11 +15,7 @@ function hsvToHex(h: number, s: number, v: number) {
   return `#${f(5)}${f(3)}${f(1)}`;
 }
 
-/**
- * The wheel carries hue and saturation, the slider carries value. Reading all
- * three back out of the chosen colour is what keeps the marker, the slider and
- * the swatches agreeing with each other.
- */
+/** The wheel carries hue and saturation, the slider carries value. */
 function hexToHsv(hex: string) {
   const n = parseInt(hex.slice(1), 16);
   const r = ((n >> 16) & 255) / 255;
@@ -129,12 +125,7 @@ function ColorWheel({
   );
 }
 
-/**
- * The palette. It opens by itself the moment the cursor touches your figure
- * and then stays open until the ▾ button minimises it. The collapsed pill
- * opens it too — which is how a hunter gets to it, since they hold the pointer
- * lock and have no cursor to hover with.
- */
+/** The palette. */
 export function PaintPanel({
   open,
   onOpenChange,

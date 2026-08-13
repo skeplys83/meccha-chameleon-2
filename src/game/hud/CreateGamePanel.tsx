@@ -2,19 +2,7 @@ import { useEffect, useState } from "react";
 import { DEFAULT_MATCH_MAP, MATCH_MAP_LIST, type MapId } from "@/game/world/maps";
 import { MAX_PLAYERS, MIN_PLAYERS } from "@/game/shared/protocol";
 
-/**
- * The three choices you only get to make once, in a modal over the menu.
- *
- * They are together because they are the same decision — *what game is this* —
- * and because none of them can be changed afterwards in the same way. The map
- * moves (the host can pick a different `nextMap` from inside), but the public
- * flag and the size are fixed at creation: a game that went public while people
- * were already in it would be a surprise nobody consented to, and a cap that
- * moved under a room that was already filling would be a race with no right
- * answer.
- *
- * Escape closes it, because a modal that traps you is worse than no modal.
- */
+/** The three choices you only get to make once, in a modal over the menu. */
 export function CreateGamePanel({
   onCreate,
   onCancel,

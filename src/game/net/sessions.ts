@@ -1,11 +1,4 @@
-/**
- * Server discovery, client half. A browser cannot scan a network, so the local
- * server does it over UDP and hands the result back here — see `server/`.
- *
- * It also carries the server's list of public games. A lobby created with the
- * box unticked is absent from it — and still perfectly joinable by its code,
- * which is the difference between unlisted and locked.
- */
+/** Server discovery, client half. */
 
 export type Session = {
   id: string;
@@ -25,11 +18,8 @@ export type Game = {
   map: string;
   /** Whether its match is already running. */
   started: boolean;
-  /**
-   * Everyone in the game, across both of its rooms. Once a match starts its
-   * players are no longer in the lobby, so counting only the lobby would show a
-   * game in full swing as empty.
-   */
+  starting: boolean;
+  /** Everyone in the game, across both of its rooms. */
   players: number;
   /** The cap the host chose, so the menu can show "4 / 8". */
   maxPlayers: number;

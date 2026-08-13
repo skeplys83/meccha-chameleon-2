@@ -13,28 +13,7 @@ import {
 } from "../shared/protocol.ts";
 import { mapLimit } from "../world/maps.ts";
 
-/**
- * Everything a client may say, and what the server does about it.
- *
- * Split out of `room.ts` because it is a different *kind* of thing: the room
- * owns a round's shape — who is in it, which phase it is in, when it ends — and
- * this owns the moment-to-moment traffic. The two barely touch, which is what
- * makes the seam a real one rather than a line drawn to shorten a file.
- *
- * **The trust model lives here and is not symmetrical.** Clients simulate their
- * own movement and simply tell the server where they are; the server clamps the
- * result into the arena and believes it. Everything that affects *somebody else*
- * — a catch above all — is checked, because a client asserting another client's
- * fate is the one message where being wrong is not cosmetic.
- */
-
-/**
- * Anything non-finite off the wire becomes 0 rather than poisoning the state.
- *
- * Exported because `room.ts` clamps a lobby's chosen size with it. A `NaN`
- * written into schema propagates to every client, so this is the one shape every
- * number arriving from a browser has to pass through.
- */
+/** Anything non-finite off the wire becomes 0 rather than poisoning the state. */
 export const clamp = (n: number, lo: number, hi: number) =>
   Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : 0;
 
@@ -53,17 +32,7 @@ type ShootMsg = {
   origin: [number, number, number];
 };
 
-/**
- * Wire up one room's message handlers.
- *
- * The two rate limiters are per room and live in this closure, because they are
- * only ever read by the handlers below — a trigger-pull sends exactly one of
- * `shoot` or `kill`, never both, so **one clock rate-limits the pair**. The gap
- * is `FIRE_INTERVAL_MS` times a tolerance, so a shot a few milliseconds early is
- * treated as jitter rather than eaten. The client enforces the same interval for
- * feel; this is here because fire *rate* is the property of a shot that reaches
- * everybody else.
- */
+/** Wire up one room's message handlers. */
 export function registerMessages(room: GameRoom) {
   const lastShot = new Map<string, number>();
   const lastWhistle = new Map<string, number>();
@@ -120,16 +89,7 @@ export function registerMessages(room: GameRoom) {
     room.broadcast("paint", { id: client.sessionId, strokes }, { except: client });
   });
 
-  /**
-   * A catch, called by the hunter who made it — the same trust model as
-   * movement. The server checks the shooter is a hunter and the victim is a
-   * chameleon, then **converts** rather than kills.
-   *
-   * Being caught does not put you out of the game: you become a hunter, at the
-   * map's spawn, stripped back to white, and you join the hunt for whoever is
-   * left. That is why there is no death screen and no respawn any more, and
-   * why the hunt gets harder the longer it runs.
-   */
+  // A catch, called by the hunter who made it — the same trust model as movement.
   room.onMessage("kill", (client: Client, msg: KillMsg) => {
     // Nobody is caught in the waiting room. Everyone there is armed — that is
     // what a lobby *is* — and being converted while queuing for a game you
@@ -173,15 +133,7 @@ export function registerMessages(room: GameRoom) {
       room.state.graves.splice(0, room.state.graves.length - MAX_GRAVES);
     }
 
-    /**
-     * The conversion itself.
-     *
-     * Paint goes with the side: a chameleon's camouflage is the thing they
-     * spent the lobby on, and carrying it into the hunt would leave a hunter
-     * wearing the pattern of the wall they were caught against.
-     * `clearSkin` tells everyone else, because they are the ones who have to
-     * stop seeing it.
-     */
+    // The conversion itself.
     victim.role = "hunter";
     victim.cling = false;
     victim.pose = 0;

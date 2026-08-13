@@ -1,9 +1,4 @@
-/**
- * One dark panel along the bottom edge. There is still no full-screen scrim or
- * blur — the arena stays visible and readable while you are paused — but the
- * menu itself needs a solid ground of its own: it floats over a white room, and
- * the old translucent pills left the session name almost unreadable.
- */
+/** One dark panel along the bottom edge. */
 export function PauseMenu({
   sessionName,
   mode,
@@ -11,14 +6,7 @@ export function PauseMenu({
   onLeave,
 }: {
   sessionName: string;
-  /**
-   * Which room is paused, because backing out means different things in each.
-   *
-   * From a match, leaving means leaving *the match* — you are still in that game
-   * and its waiting room is where you land. From the waiting room there is
-   * nothing left to back out of, so it means the menu. The label has to say
-   * which, or the button is a lie about where it takes you.
-   */
+  /** Which room is paused, because backing out means different things in each. */
   mode: "lobby" | "match";
   onResume: () => void;
   onLeave: () => void;
@@ -37,11 +25,6 @@ export function PauseMenu({
           </div>
         </div>
 
-        {/* Leaving sits on the left and resuming on the right, and both are the
-            same width. `flex-1` over a shared `basis-0` is what makes them equal
-            rather than merely aligned: the labels differ in length and differ
-            again by mode, so sizing to content made the pair jump about between
-            a lobby and a match. */}
         <div className="flex w-full gap-2">
           <button
             onClick={onLeave}

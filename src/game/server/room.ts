@@ -14,30 +14,12 @@ import { setSessionName } from "./discovery.ts";
 import {
   COUNTDOWN_SECONDS,
   HIDE_SECONDS,
+  LEAVE_IN_PROGRESS,
+  LEAVE_STARTING,
   MAX_PLAYERS,
   MIN_PLAYERS,
   REVEAL_SECONDS,
 } from "../shared/protocol.ts";
-
-/**
- * One class, two registered names: `"lobby"` and `"match"`.
- *
- * A **lobby** is where a game starts. It is the arena, and it is playable — you
- * walk around and paint yourself while people arrive — and it owns a short
- * invite code, which is its `roomId`. A **match** is the game proper on the
- * chosen map, created by a lobby and unlisted, since it is reached by being
- * moved into it rather than by being found.
- *
- * The two differ in three things: which map they run, whether Start exists, and
- * whether they appear in the listing. Everything else — movement, paint, kills,
- * whistles — is identical, which is why it is one class.
- *
- * The trust model is friends-on-a-couch, not anti-cheat: clients simulate their
- * own movement and simply tell the server where they are, and the server clamps
- * the result into the arena. Everything that affects *someone else* — a kill —
- * is checked here, because a client asserting another client's death is the one
- * message where being wrong is not cosmetic.
- */
 
 // ROOM_LIMIT, POSE_COUNT, MAX_STROKES and MAX_STROKE_LENGTH are imported above:
 // the client reads the same definitions, and each used to exist here as a second
@@ -45,47 +27,16 @@ import {
 const PATCH_MS = 50; // 20 Hz state patches
 /** How often an empty lobby checks whether it still has a reason to exist. */
 const SWEEP_MS = 15_000;
-/**
- * How long a round runs is a property of the *map* — `world/maps.ts`, read here
- * through `mapRoundSeconds`.
- *
- * That import is only possible because the map registry and everything under it
- * are free of React and three.js and use relative `.ts` paths: plain Node can
- * load them. It is the first thing outside the browser to read map data, and the
- * reason `world/` keeps that constraint.
- */
-/**
- * How long a dropped player's seat is held for them, in a match.
- *
- * Their body stays standing in the world for the duration — which is the honest
- * outcome, and shootable. Long enough for a wifi blip or a tab that got
- * throttled; short enough that a match this brief is not mostly ghosts.
- */
+/** How long a dropped player's seat is held for them, in a match. */
 const RECONNECT_SECONDS = 20;
 
-
-
-/**
- * A room directory entry, as `matchMaker` hands them back.
- *
- * Derived rather than imported: `IRoomCache` is not on the package's public type
- * surface, and reaching into `@colyseus/core/build/...` for it would break on a
- * patch release. This says exactly the same thing and cannot drift.
- */
+/** A room directory entry, as `matchMaker` hands them back. */
 type RoomCache = Awaited<ReturnType<typeof matchMaker.createRoom>>;
 
-/**
- * What `allowReconnection` hands back — a promise that can also be abandoned.
- *
- * Derived for the same reason as `RoomCache`: Colyseus's `Deferred` types its
- * `reject` as the bare `Function`, which the lint rules refuse, and only the one
- * call is needed here.
- */
+/** What `allowReconnection` hands back — a promise that can also be abandoned. */
 type Reconnection = { reject(): void };
 
-
 export class GameRoom extends Room<GameState> {
-
   /** The match this lobby started, if it has started one. Lobbies only. */
   private matchId: string | null = null;
   /** Start is async and Start is a button. Two presses would open two matches
@@ -93,52 +44,17 @@ export class GameRoom extends Room<GameState> {
   private starting = false;
   /** True from the moment the clock runs out, so the trip home happens once. */
   private ending = false;
-  /**
-   * The secret that makes a role trustworthy.
-   *
-   * A seat reservation's options and a client's own join options arrive at
-   * `onJoin` in the same argument, indistinguishable by shape — so a match that
-   * simply believed `options.role` would let any chameleon leave and come back as
-   * the hunter, and every player in a match knows its id. The lobby mints this,
-   * passes it in `createRoom`, and includes it in each reservation; a join
-   * without it is a chameleon no matter what it claims.
-   */
+  /** The secret that makes a role trustworthy. */
   private pass = "";
-  /**
-   * Reconnections currently being waited on, by session id, so a player who is
-   * killed while away can be let go of rather than returning to a room they are
-   * no longer in.
-   */
   /** @internal Read by `messages.ts`, to let go of a caught player's seat. */
   pendingReturn = new Map<string, Reconnection>();
   /** The host rule, which is a whole thing of its own — see `host.ts`. */
   private hosts = new HostRule();
-  /**
-   * Drops a departed client from the fire and whistle limiters.
-   *
-   * Assigned by `registerMessages`, which owns those maps. It is a function
-   * rather than the maps themselves so this class cannot reach into them for
-   * anything else.
-   */
+  /** Drops a departed client from the fire and whistle limiters. */
   private forgetFire: (sessionId: string) => void = () => {};
-  /**
-   * The lobby's countdown, while one is running. Lobbies only.
-   *
-   * Held so it can be *cancelled*: a countdown that kept running after the room
-   * dropped below two players would start a round with one person in it.
-   */
+  /** The lobby's countdown, while one is running. */
   private counting: ReturnType<GameRoom["clock"]["setInterval"]> | null = null;
-  /**
-   * The lobby's display mirror of the hiding countdown, and the hunter it is
-   * waiting to send.
-   *
-   * The hunter does *not* travel with the chameleons: they stay here and play
-   * the arena alone while the others hide. The match decides when that ends —
-   * it calls `sendHunter` — and this interval only paints the number they are
-   * watching. **It decides nothing**, which is what keeps invariant 17 ("one
-   * clock, not two") intact: two clocks would be a problem if both could end the
-   * phase, and only one of these can.
-   */
+  /** The lobby's display mirror of the hiding countdown, and the hunter it is waiting to send. See invariant 17. */
   private hiding: ReturnType<GameRoom["clock"]["setInterval"]> | null = null;
   private hunterId = "";
   /** The pass minted for this round, kept so the hunter's later seat carries it. */
@@ -146,30 +62,12 @@ export class GameRoom extends Room<GameState> {
   /** The hunt's length, from the map, minus the hiding phase. Matches only. */
   private huntSeconds = 0;
 
-  /** @internal Read by `messages.ts`. */
+  // @internal Read by `messages.ts`.
   get isLobby() {
     return this.roomName !== "match";
   }
 
-  /**
-   * Decide who holds the Start button, and put their session id in state.
-   *
-   * The rule is one line: **the present player who has been part of this game
-   * longest holds it.** The creator satisfies that by construction, so they keep
-   * it for the room's whole life without being a special case — and if they
-   * leave for good it passes to whoever has been here next-longest, which is
-   * the behaviour anyone would expect.
-   *
-   * The gate is what makes it work: **nothing is reassigned while a match is
-   * running.** A lobby is deliberately empty for that whole minute, so without
-   * the gate the button would fall to the first stranger to wander in on the
-   * invite code — and, before `start` learned to refuse, let them open a second
-   * match. With it, an absent host during a match simply means nobody holds the
-   * button until the group comes back.
-   *
-   * Called from every place the answer can change: a join, a leave, and the
-   * sweep, which is where a match is noticed to have ended.
-   */
+  /** Decide who holds the Start button, and put their session id in state. */
   private reassignHost() {
     if (!this.isLobby) return;
     const here = this.clients
@@ -178,15 +76,7 @@ export class GameRoom extends Room<GameState> {
     this.state.hostId = this.hosts.resolve(here, this.matchId !== null);
   }
 
-  /**
-   * Our match telling us it is over, over the matchmaker.
-   *
-   * Public because `matchMaker.remoteRoomCall` reaches it by name. The sweep
-   * would notice the same thing within fifteen seconds, which is fine for
-   * bookkeeping and much too slow for a person: the host walks back in, presses
-   * Start, and nothing happens because this room still believes its match is
-   * running. The grace window starts here too — everyone is mid-return.
-   */
+  /** Our match telling us it is over, over the matchmaker. */
   matchEnded(id: string) {
     if (!this.isLobby || this.matchId !== id) return;
     this.matchId = null;
@@ -194,21 +84,15 @@ export class GameRoom extends Room<GameState> {
     this.publish();
   }
 
-  /**
-   * What the menu's listing reads off this lobby.
-   *
-   * The room directory is the only thing a listing can be built from — Colyseus
-   * 0.16 has no room-list route — and `metadata` is the part of a directory
-   * entry a room may write. `matchId` is here so the listing can add the players
-   * who have already gone through to the match: a game's population is both
-   * rooms, not just the one people are still waiting in.
-   */
+  /** What the menu's listing reads off this lobby. */
   private publish() {
     if (!this.isLobby) return;
     this.setMetadata({
       host: this.state.players.get(this.state.hostId)?.name ?? "",
       map: this.state.nextMap,
       started: this.matchId !== null,
+      /** Counting down, and therefore closed to strangers — see the gate in `onJoin`. */
+      starting: this.counting !== null,
       matchId: this.matchId ?? "",
       // So the menu can show "4 / 8" rather than a bare count, and grey out a
       // game there is no room in.
@@ -227,18 +111,7 @@ export class GameRoom extends Room<GameState> {
     this.setState(new GameState());
     this.setPatchRate(PATCH_MS);
 
-    /**
-     * How many people this game holds.
-     *
-     * Clamped rather than trusted: it arrives from a client, and a lobby of 0 or
-     * of 10,000 are both one hand-typed number away. `maxClients` is what
-     * actually refuses the join — Colyseus enforces it before `onJoin` ever runs
-     * — and the schema copy exists so the panel can display it and the countdown
-     * knows what full means.
-     *
-     * A match is created with the same number so a full lobby cannot arrive at a
-     * room that will not take all of it.
-     */
+    /** How many people this game holds. */
     const cap = clamp(Math.trunc(Number(options?.maxPlayers)), MIN_PLAYERS, MAX_PLAYERS);
     this.maxClients = cap || MAX_PLAYERS;
     this.state.maxPlayers = this.maxClients;
@@ -261,22 +134,10 @@ export class GameRoom extends Room<GameState> {
       // The invite code is the room id, and `roomId` may only be replaced here —
       // the setter throws at any later point in the room's life.
       this.roomId = await freeRoomCode();
-      /**
-       * A lobby outlives its own emptiness on purpose. Starting a match moves
-       * every client out at once, and an auto-disposing room would take the
-       * invite code down in that gap — so the sweep below is what ends it: no
-       * players, and no live match to come back to.
-       */
+      // A lobby outlives its own emptiness on purpose.
       this.autoDispose = false;
       this.clock.setInterval(() => void this.sweep(), SWEEP_MS);
-      /**
-       * Listed unless the creator said otherwise, and only ever decided here.
-       *
-       * `setPrivate` hides a room from the directory the listing queries; it
-       * does **not** lock it, so the invite code works exactly the same either
-       * way. Unlisted therefore means "you need the code from me", not "you
-       * cannot get in".
-       */
+      // Listed unless the creator said otherwise, and only ever decided here.
       this.state.listed = options?.listed !== false;
       this.setPrivate(!this.state.listed);
       // A lobby is its own home. Everything downstream — a client leaving a
@@ -307,18 +168,7 @@ export class GameRoom extends Room<GameState> {
       // works, which is what a respawn uses.
       this.setPrivate(true);
 
-      /**
-       * The match clock, and the only thing that moves a round forward.
-       *
-       * **One `clock.setInterval` drives all three phases.** Not a timer each:
-       * two timers are two things that can disagree, and the number on screen
-       * must be the same one that decides what happens next. Each phase sets the
-       * seconds for the one after it and the same tick keeps counting.
-       *
-       * `this.clock` is Colyseus's own timing, which advances with the room — it
-       * is ticked from the patch loop, so it stops when the room does and cannot
-       * outlive it the way a stray `setInterval` would.
-       */
+      // The match clock, and the only thing that moves a round forward.
       this.state.timeLeft = HIDE_SECONDS;
       this.clock.setInterval(() => {
         if (this.state.timeLeft <= 0) return;
@@ -362,29 +212,12 @@ export class GameRoom extends Room<GameState> {
     this.forgetFire = registerMessages(this).forget;
   }
 
-  /**
-   * Whether this lobby could begin a round right now.
-   *
-   * Two players is the floor and it is not arbitrary: a round needs a hunter and
-   * something to hunt, and the draw at the end of the countdown takes one of the
-   * people standing here.
-   */
+  /** Whether this lobby could begin a round right now. */
   private get canStart() {
     return this.isLobby && !this.matchId && !this.starting && this.state.players.size >= MIN_PLAYERS;
   }
 
-  /**
-   * Start the ten seconds before a round.
-   *
-   * Two things ask for this and they are deliberately the same path: **the lobby
-   * filling up**, and **the host pressing Start** before it does. Neither opens a
-   * match directly — the countdown is what does, when it reaches zero — so there
-   * is exactly one place a round can begin from and exactly one thing to cancel.
-   *
-   * Idempotent: asking again while it runs is ignored rather than restarting it,
-   * which is what stops the last player to join resetting the clock for
-   * everybody.
-   */
+  /** Start the ten seconds before a round. */
   private beginCountdown() {
     if (this.counting || !this.canStart) return;
     this.state.phase = "countdown";
@@ -415,25 +248,7 @@ export class GameRoom extends Room<GameState> {
     this.publish();
   }
 
-  /**
-   * Take everyone in this lobby to a match.
-   *
-   * A seat reservation is the only supported way to hand a client to another
-   * room: the match is created, a seat is held in it for each player, and each
-   * client is told to go and consume theirs. The lobby itself stays behind, so
-   * its invite code keeps working and anyone arriving late has somewhere to
-   * land.
-   *
-   * Seats are held for fifteen seconds by default, which is the whole budget for
-   * every client to make the trip. One that does not simply stays here — which
-   * is why the client surfaces the failure rather than assuming it worked.
-   *
-   * **This is where sides are decided.** Nobody picks one: everybody waits as a
-   * hunter, and exactly one of them is drawn at random to stay one — the rest
-   * become chameleons as the match opens. It happens here rather than in the match
-   * room because the draw needs the whole roster at once, and the match has no
-   * players yet — its seats are what is being handed out.
-   */
+  /** Take everyone in this lobby to a match. */
   private async start() {
     // A match already running is the third way this can be asked for wrongly,
     // after "not a lobby" and "asked twice". It used to be reachable: a lobby is
@@ -461,14 +276,7 @@ export class GameRoom extends Room<GameState> {
         ? going[Math.floor(Math.random() * going.length)].sessionId
         : "";
 
-      /**
-       * **Only the chameleons make the trip.** The hunter stays exactly where
-       * they are, in a lobby that is a playable arena, for the whole hiding
-       * phase — which is the entire point of it: they cannot watch anybody
-       * choose a spot, because they are not in the room where spots are chosen.
-       *
-       * They are fetched by `sendHunter` when the match rings the bell.
-       */
+      // Only the chameleons make the trip.
       await Promise.all(
         going
           .filter((client) => client.sessionId !== this.hunterId)
@@ -501,17 +309,7 @@ export class GameRoom extends Room<GameState> {
     }
   }
 
-  /**
-   * The match ringing the bell: send the hunter in.
-   *
-   * Public because `matchMaker.remoteRoomCall` reaches it by name, and checked
-   * against `matchId` for the same reason `matchEnded` is — a call naming a
-   * match this lobby does not own is not ours to act on.
-   *
-   * The role goes out on the seat reservation with the round's pass, which is
-   * the only thing that makes it trustworthy: a match takes a role from a seat
-   * its lobby reserved and from nowhere else.
-   */
+  /** The match ringing the bell: send the hunter in. */
   async sendHunter(id: string) {
     if (!this.isLobby || this.matchId !== id) return;
     this.hiding?.clear();
@@ -537,29 +335,13 @@ export class GameRoom extends Room<GameState> {
       pid: this.hosts.pidFor(hunter.sessionId),
     });
 
-    /**
-     * **The lobby stays in `hiding` until the hunter has been handed over.**
-     *
-     * The bell is not a message — it is the phase changing from `hiding` to
-     * `hunt`, which every client reads for itself. Clearing this to `waiting`
-     * first meant the hunter's last sight of the lobby was `waiting`, so their
-     * arrival in the match read as `waiting → hunt` and no bell rang for the one
-     * person it is actually about. Setting it after leaves them `hiding → hunt`,
-     * the same transition the chameleons already see.
-     */
+    // The lobby stays in `hiding` until the hunter has been handed over.
     this.state.phase = "waiting";
     this.state.timeLeft = 0;
     this.publish();
   }
 
-  /**
-   * Reach the lobby that owns this match, by name.
-   *
-   * Both directions of the round talk this way — `sendHunter` on the way in,
-   * `matchEnded` on the way out — so the lookup and the swallowed failure live
-   * in one place. A failure is never worth breaking the round for: the lobby's
-   * own fifteen-second sweep is the backstop for everything said here.
-   */
+  /** Reach the lobby that owns this match, by name. */
   private async callLobby(method: string, ...args: unknown[]) {
     if (this.isLobby) return;
     const [lobby] = await matchMaker.query({ roomId: this.state.lobby });
@@ -569,8 +351,8 @@ export class GameRoom extends Room<GameState> {
     });
   }
 
-  /** How many players are still hiding. Zero of them ends the round. */
-  /** @internal Read by `messages.ts`. */
+  // How many players are still hiding. Zero of them ends the round.
+  // @internal Read by `messages.ts`.
   get chameleonsLeft() {
     let n = 0;
     this.state.players.forEach((p) => {
@@ -579,19 +361,6 @@ export class GameRoom extends Room<GameState> {
     return n;
   }
 
-  /**
-   * The round is decided. Nobody moves yet.
-   *
-   * **This does not send anyone home** — it opens the reveal, and the same match
-   * clock counts that down before `goHome` runs. Thirty seconds with the world
-   * still standing is the difference between a hunt that ends with an answer and
-   * one that cuts to a menu: the surviving chameleons are still in their spots,
-   * and the graves are still where people were found.
-   *
-   * `winner` goes into state rather than a broadcast because the reveal is long
-   * enough for somebody to reconnect inside it and still need telling what they
-   * are looking at.
-   */
   /** @internal Called by `messages.ts` when the last chameleon is caught. */
   finish(winner: "chameleons" | "hunters") {
     if (this.isLobby || this.ending) return;
@@ -606,17 +375,7 @@ export class GameRoom extends Room<GameState> {
     this.state.timeLeft = REVEAL_SECONDS;
   }
 
-  /**
-   * The reveal is over: everybody goes back to the waiting room.
-   *
-   * The same hand-off as `start`, in reverse, and for the same reason — a seat
-   * reservation is the only supported way to move a client. The lobby is still
-   * there because it deliberately never auto-disposed, so the group lands back
-   * where their invite code still works and can start another round.
-   *
-   * There is no separate "the round is over" message: `moveTo` *is* the news,
-   * and `winner` was in state for the thirty seconds before it.
-   */
+  /** The reveal is over: everybody goes back to the waiting room. */
   private async goHome() {
     if (this.isLobby) return;
 
@@ -644,18 +403,7 @@ export class GameRoom extends Room<GameState> {
     );
   }
 
-  /**
-   * Hold a seat for one client in another room and tell them where to go.
-   *
-   * The payload is trimmed to what `consumeSeatReservation` actually reads — the
-   * cache entry carries a process id and a creation date besides, which mean
-   * nothing to a browser.
-   *
-   * A seat is held for fifteen seconds by default, which is the whole budget for
-   * the trip. One client failing is *that* client's problem and nobody else's,
-   * so the failure is sent rather than thrown: they stay where they are and are
-   * told why.
-   */
+  /** Hold a seat for one client in another room and tell them where to go. */
   private async handOver(client: Client, to: RoomCache, options: Record<string, string>) {
     try {
       const seat = await matchMaker.reserveSeatFor(to, options);
@@ -674,17 +422,7 @@ export class GameRoom extends Room<GameState> {
     }
   }
 
-  /**
-   * End a lobby that has nothing left to wait for.
-   *
-   * `autoDispose` is off, so this is the only thing that closes one. Empty is
-   * not enough on its own: during a start every client is momentarily out of the
-   * room while consuming their seat, and a lobby that vanished in that window
-   * would take its invite code with it. A live match is a reason to stay.
-   *
-   * It doubles as the match's death certificate — once the match is gone the
-   * lobby forgets it, so a group that comes back can start another one.
-   */
+  /** End a lobby that has nothing left to wait for. */
   private async sweep() {
     if (!this.isLobby) return;
     if (this.matchId && (await matchMaker.query({ roomId: this.matchId })).length === 0) {
@@ -705,24 +443,15 @@ export class GameRoom extends Room<GameState> {
   ) {
     const pid = String(options?.pid ?? "");
 
-    /**
-     * **While a round is running, a lobby admits only people who were already in
-     * this game.** Someone walking back out of the match keeps their seat;
-     * a stranger with the invite code is turned away until the round ends.
-     *
-     * This is a capacity rule, not a privacy one, and it is load-bearing. A
-     * lobby's `maxClients` is the cap the host chose, and `reserveSeatFor`
-     * *respects* it — `Room._reserveSeat` returns false once
-     * `hasReachedMaxClients()` — so a stranger who took a seat while the match
-     * was out would make the trip home fail for whoever reserved last. They
-     * would be left in a room that is about to dispose, holding a `moveFailed`
-     * and no way back. Refusing the stranger is the cheap end of that trade.
-     *
-     * `HostRule` is asked because it is already the record of who has been part
-     * of this game, kept for the room's whole life for the host rule.
-     */
+    /** While a round is running, a lobby admits only people who were already in this game. */
     if (this.isLobby && this.matchId && (!pid || !this.hosts.knows(pid))) {
-      client.leave(4001);
+      client.leave(LEAVE_IN_PROGRESS);
+      return;
+    }
+
+    /** A countdown is closed too. */
+    if (this.isLobby && this.counting && (!pid || !this.hosts.knows(pid))) {
+      client.leave(LEAVE_STARTING);
       return;
     }
 
@@ -733,20 +462,7 @@ export class GameRoom extends Room<GameState> {
 
     const player = new Player();
     player.name = String(options?.name ?? "player").slice(0, 16);
-    /**
-     * Nobody picks a side.
-     *
-     * Everybody waits as a **hunter** — armed, first person, upright — and one
-     * of them stays that way when the match opens while the rest become chameleons.
-     * A match therefore takes a role only from a seat its lobby reserved, which
-     * is what the pass proves: the two arrive in the same argument and are
-     * otherwise indistinguishable, so without it any chameleon could leave a match
-     * and rejoin by its id claiming the gun.
-     *
-     * A join with no valid pass is a chameleon, and that is the right answer for the
-     * only case that reaches it — a dead player respawning, who is necessarily a
-     * chameleon, since a hunter cannot be shot.
-     */
+    /** Nobody picks a side. */
     const vouched = this.pass !== "" && options?.pass === this.pass;
     player.role = this.isLobby || (vouched && options?.role === "hunter") ? "hunter" : "chameleon";
     player.x = 0;
@@ -779,20 +495,7 @@ export class GameRoom extends Room<GameState> {
   }
 
   async onLeave(client: Client, consented?: boolean) {
-    /**
-     * A drop is not a departure.
-     *
-     * `consented` is true when the client asked to leave — quitting, or being
-     * handed to another room — and false when the socket simply died. Only the
-     * second is worth waiting on, and only in a match: a lobby is cheap to walk
-     * back into by its code, while a match has your side, your position and your
-     * paint in it, none of which a fresh join can restore.
-     *
-     * The player stays in state while we wait, so their body is still standing
-     * where they left it. That is the honest outcome and it is shootable — a
-     * drop should not be a way to become invulnerable — which is why the kill
-     * handler lets go of any pending return for its victim.
-     */
+    /** A drop is not a departure. */
     if (!this.isLobby && !consented && !this.ending && this.state.players.has(client.sessionId)) {
       const pending = this.allowReconnection(client, RECONNECT_SECONDS);
       this.pendingReturn.set(client.sessionId, pending as unknown as Reconnection);
@@ -818,15 +521,7 @@ export class GameRoom extends Room<GameState> {
     // later.
     if (this.counting && this.state.players.size < MIN_PLAYERS) this.cancelCountdown();
 
-    /**
-     * The last chameleon quitting ends the round exactly as the last one caught
-     * does. Without this the hunters are left sweeping an empty map for the rest
-     * of the clock, which reads as the game having hung.
-     *
-     * It has to be checked *after* the delete above, and only in a hunt: during
-     * the hiding phase the chameleons are the only people here, so an early
-     * leaver would otherwise hand the round to nobody.
-     */
+    /** The last chameleon quitting ends the round exactly as the last one caught does. */
     if (!this.isLobby && this.state.phase === "hunt" && this.chameleonsLeft === 0) {
       this.finish("hunters");
     }

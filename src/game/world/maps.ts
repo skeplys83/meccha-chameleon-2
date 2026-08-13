@@ -1,12 +1,4 @@
-import { ARENA_ROUND_SECONDS, ARENA_SOLIDS, ARENA_SPAWN } from "./maps/arena.ts";
-import {
-  DUNGEON_BOUND,
-  DUNGEON_ROUND_SECONDS,
-  DUNGEON_SOLIDS,
-  DUNGEON_SPAWN,
-} from "./maps/dungeon.ts";
 import { ROOM_HALF, ROOM_LIMIT } from "../shared/protocol.ts";
-import { modelsIn, type Solid } from "./shapes.ts";
 import {
   DEFAULT_MAP,
   DEFAULT_MATCH_MAP,
@@ -19,136 +11,154 @@ import {
 export { DEFAULT_MAP, DEFAULT_MATCH_MAP, LOBBY_MAP, type MapId };
 
 /**
- * Every map the game can load.
+ * Every map the game can load. **All of them are one `.glb` exported from
+ * Blender** — there is no second kind, and no build step: you export over
+ * `public/maps/<id>.glb` and the numbers below are typed to match. See
+ * "Editing a map" in `world/CLAUDE.md`.
  *
- * Adding one is: drop a table of `Solid`s in `maps/`, add a line here, add its
- * id to `mapIds.ts`. It needs no other wiring — the menu lists whatever is in
- * this table, the server validates a chosen id against the ids, and `Room`
- * renders the solids.
+ * Everything here that describes the *file* rather than the menu is typed by
+ * hand and can therefore drift from the `.glb`, so `checkLevel` in
+ * `levelScene.ts` compares the two at load in development and says so in the
+ * console.
  *
- * **A map is data, not a component.** That is what lets `Room` render every map
- * the same way, and it is why this file and everything it imports are free of
- * React and three.js: the registry is now readable by Node, which the server
- * side has never needed but is one import away from if it ever does (spawn
- * points, a bot's navmesh, validating a position against real geometry rather
- * than a square bound). Keep it that way — importing a component here closes
- * that door and gains nothing.
- *
- * **An id is a wire value.** It is chosen in the menu, stored in room state and
- * read by every client, so renaming one breaks anybody mid-session and orphans a
- * saved choice. Add ids freely; change them like you would a message name.
+ * This file is imported by **Node** — `server/messages.ts` reads `mapLimit` —
+ * so it must import nothing but other import-free modules, by relative `.ts`
+ * path rather than the `@/` alias the bundler owns.
  */
+export type ToneMappingName =
+  | "NoToneMapping"
+  | "LinearToneMapping"
+  | "ReinhardToneMapping"
+  | "CineonToneMapping"
+  | "ACESFilmicToneMapping";
+
+export type ShadowMapTypeName =
+  | "BasicShadowMap"
+  | "PCFShadowMap"
+  | "PCFSoftShadowMap"
+  | "VSMShadowMap";
+
+export type OutputColorSpaceName =
+  | "NoColorSpace"
+  | "SRGBColorSpace"
+  | "LinearSRGBColorSpace";
+
+export type MapRenderConfig = {
+  /** Three.js tone mapping mode. */
+  toneMapping?: ToneMappingName;
+  /** Camera exposure, used with ACES or filmic mapping. */
+  exposure?: number;
+  /** Output color space for the renderer. */
+  outputColorSpace?: OutputColorSpaceName;
+  /** Whether to antialias the canvas. */
+  antialias?: boolean;
+  /** Pixel ratio override for the canvas. */
+  dpr?: number | [number, number];
+  /** Shadow settings for the canvas renderer. */
+  shadows?: {
+    enabled?: boolean;
+    type?: ShadowMapTypeName;
+    bias?: number;
+    normalBias?: number;
+    mapSize?: [number, number];
+  };
+  /** Optional fog for the map. */
+  fog?: { color: string; near: number; far: number } | null;
+};
+
 export type GameMap = {
   id: MapId;
   /** Shown in the menu. Free to change — unlike the id. */
   name: string;
   /** One-line description of how it plays, for the menu. */
   blurb: string;
-  /** The pieces, in the order they are built. */
-  solids: Solid[];
+  /** The URL the browser fetches, under `public/`. */
+  src: string;
   /**
-   * Where a player's body centre starts, per map rather than per game.
-   *
-   * It must clear the floor by more than the tallest half-height (1.3, the
-   * hunter) and it should not clear it by much more — the world has no colliders
-   * while a map is loading, and a body dropped from high up spends that whole
-   * window falling through a floor that is not there yet.
-   *
-   * The array identity is stable because it comes from the map table, which
-   * matters: `players/Player.tsx` passes it straight to `RigidBody position`,
-   * and a fresh array on every render re-applies the prop and teleports the
-   * player. See invariant 11 in `players/CLAUDE.md`.
+   * Where a body's centre starts. Must match the `spawn` empty in the `.blend`;
+   * it is repeated here because `Scene.tsx` needs it before the file has loaded.
    */
   spawn: [number, number, number];
   /**
-   * How long a round on this map lasts, hiding phase included, before the
-   * reveal. Per map because a 40×40 arena and a 12×12 chamber want very
-   * different amounts of time.
-   */
-  roundSeconds: number;
-  /**
-   * Half-extent of this map's playable footprint, and the reason a map may now
-   * be a different size from the arena.
-   *
-   * The server clamps every position a client reports to `mapLimit(id)`, which
-   * is this minus the same 0.1 of slack `ROOM_LIMIT` has always carried. It used
-   * to clamp to `ROOM_LIMIT` for *every* room, so a map bigger than 40 × 40 had
-   * its far end quietly amputated: you could walk there, and everybody else
-   * watched you stop at the arena's edge and slide along it.
+   * Half-extent of the playable footprint. `server/messages.ts` clamps every
+   * reported position to this, so it must cover the collision layer — too small
+   * and players walk somewhere they cannot be seen to walk.
    */
   bound: number;
-  /**
-   * Whether this map is open to the sky.
-   *
-   * A flag rather than an asset: the sky is a shader, so "which sky" is not a
-   * question yet and a boolean is the whole of it. Only worth setting on a map
-   * whose ceiling is `hidden` — anywhere sealed, it is drawn and then covered.
-   */
-  sky?: boolean;
-  /**
-   * Every glTF this map needs, derived from `solids` rather than listed.
-   *
-   * `Room` loads all of them in one `useGLTF` call before a single `RigidBody`
-   * exists — see the note there. Deriving it means a map cannot place a piece it
-   * forgot to declare, which was previously a hand-maintained array beside the
-   * layout.
-   */
-  models: string[];
+  /** The whole playable round, hiding included, before the reveal. */
+  roundSeconds: number;
+  /** Whether this map is open to the sky. */
+  sky: boolean;
+  /** What is behind the map where there is no geometry. */
+  background: string;
+  /** The three.js presentation stack for this map. */
+  render: MapRenderConfig;
 };
 
-const map = (
-  id: MapId,
-  name: string,
-  blurb: string,
-  solids: Solid[],
-  spawn: [number, number, number],
-  roundSeconds: number,
-  bound: number,
-  sky = false,
-): GameMap => ({
-  id,
-  name,
-  blurb,
-  solids,
-  spawn,
-  roundSeconds,
-  bound,
-  sky,
-  models: modelsIn(solids),
-});
-
 export const MAPS: Record<MapId, GameMap> = {
-  arena: map(
-    "arena",
-    "Arena",
-    "40×40, white, twenty-five pieces of cover. Nine painted to match a swatch.",
-    ARENA_SOLIDS,
-    ARENA_SPAWN,
-    ARENA_ROUND_SECONDS,
-    ROOM_HALF,
+  arena: {
+    id: "arena",
+    name: "Arena",
+    blurb: "40×40, white, twenty-five pieces of cover. Nine painted to match a swatch.",
+    src: "/maps/arena.glb",
+    spawn: [0, 2, 0],
+    // The shell is built on ROOM_HALF, and the walls straddle it by half their
+    // thickness. `mapLimit` takes the same 0.1 of slack off it that ROOM_LIMIT
+    // has always carried — see shared/CLAUDE.md.
+    bound: ROOM_HALF,
+    // Unused: the arena is the waiting room, never a match map.
+    roundSeconds: 120,
     // The waiting room has no visible lid, so there is something up there to see.
-    true,
-  ),
-  dungeon: map(
-    "dungeon",
-    "Dungeon",
-    "Nine rooms, a gallery and a grate pit. 52×52, and easy to lose somebody in.",
-    DUNGEON_SOLIDS,
-    DUNGEON_SPAWN,
-    DUNGEON_ROUND_SECONDS,
-    DUNGEON_BOUND,
-  ),
+    sky: true,
+    background: "#ffffff",
+    render: {
+      toneMapping: "ACESFilmicToneMapping",
+      exposure: 0.6,
+      outputColorSpace: "SRGBColorSpace",
+      antialias: true,
+      dpr: [1, 2],
+      shadows: {
+        enabled: true,
+        type: "PCFSoftShadowMap",
+        bias: -0.0005,
+        normalBias: 0.02,
+        mapSize: [1024, 1024],
+      },
+      fog: null,
+    },
+  },
+  dungeon: {
+    id: "dungeon",
+    name: "Dungeon",
+    blurb: "One hall, two staggered partitions and four torches. Small, for testing.",
+    src: "/maps/dungeon.glb",
+    spawn: [0, 2, 0],
+    // 7x7 tiles of 4, plus the half-thickness the perimeter walls straddle by.
+    bound: 14.5,
+    roundSeconds: 300,
+    sky: false,
+    background: "#0b0b0f",
+    render: {
+      toneMapping: "ACESFilmicToneMapping",
+      exposure: 1.0,
+      outputColorSpace: "SRGBColorSpace",
+      antialias: true,
+      dpr: [1, 2],
+      shadows: {
+        enabled: true,
+        type: "PCFSoftShadowMap",
+        bias: -0.0005,
+        normalBias: 0.02,
+        mapSize: [1024, 1024],
+      },
+      fog: null,
+    },
+  },
 };
 
 export const MAP_LIST: GameMap[] = MAP_IDS.map((id) => MAPS[id]);
 
-/**
- * The maps a match can be played on — everything a picker should offer.
- *
- * The arena is missing on purpose: it is the waiting room every lobby runs, not
- * a choice. Offering it would mean pressing Start and arriving where you already
- * were.
- */
+/** The maps a match can be played on — everything a picker should offer. */
 export const MATCH_MAP_LIST: GameMap[] = MATCH_MAP_IDS.map((id) => MAPS[id]);
 
 // Adding an id without a map, or a map without an id, fails here rather than
@@ -171,21 +181,8 @@ export const mapSpawn = (id: unknown) => MAPS[safeMapId(id)].spawn;
 /** How long a round on this map runs. Read by the server, which is the point. */
 export const mapRoundSeconds = (id: unknown) => MAPS[safeMapId(id)].roundSeconds;
 
-/**
- * The slack between the wall and the bound a reported position is clamped to.
- *
- * `ROOM_LIMIT` is 19.9 against the arena's `ROOM_HALF` of 20, and the 0.1 is not
- * a rounding slip: a chameleon's collider is narrower than their figure, so
- * pressing into a corner legitimately puts them at ~19.7 and clamping harder
- * showed everyone else a body floating off the wall it was hiding against. Every
- * map wants the same allowance, so it is expressed once rather than per map.
- */
+/** The slack between the wall and the bound a reported position is clamped to. */
 const CHEAT_MARGIN = ROOM_HALF - ROOM_LIMIT;
 
-/**
- * How far out a player on this map may claim to be.
- *
- * Read by `server/messages.ts` for every `state` and every `kill`. A map bigger
- * than the arena needs this or its far half is unreachable — see `GameMap.bound`.
- */
+/** How far out a player on this map may claim to be. */
 export const mapLimit = (id: unknown) => MAPS[safeMapId(id)].bound - CHEAT_MARGIN;

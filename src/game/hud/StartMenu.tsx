@@ -4,19 +4,16 @@ import { randomName } from "./names";
 import { mapName, type MapId } from "@/game/world/maps";
 import { CreateGamePanel } from "./CreateGamePanel";
 
-/**
- * The name lives in `sessionStorage`, deliberately — it is scoped to the tab,
- * not to the browser. This was a cookie, which meant two tabs on one machine
- * (the normal way to test two players locally) shared and overwrote a single
- * name. `sessionStorage` gives each tab its own, and it survives a reload.
- *
- * Storage throws in some privacy modes, so neither side is allowed to be fatal:
- * the worst case is a fresh random name.
- */
+/** The name lives in `sessionStorage`, deliberately — it is scoped to the tab, not to the browser. */
 const NAME_KEY = "mc_name";
 /** Left over from the cookie era. Expired on sight so it stops travelling with
  *  every request and can never leak a browser-wide name back into a tab. */
 const LEGACY_COOKIE = "mc_name";
+
+/** How often the games list is refreshed while this menu is in front. Was 2 s,
+ *  which is a request every two seconds for a list that changes when somebody
+ *  opens a lobby — rare enough that five is still faster than anyone notices. */
+const SESSION_POLL_MS = 5000;
 
 function readName() {
   try {
@@ -40,17 +37,6 @@ function dropLegacyCookie() {
   }
 }
 
-/**
- * Everything before you are in a room, and it is deliberately two questions:
- * open a game, or type somebody's code.
- *
- * There is no side to pick — everyone waits as a hunter and the draw at Start
- * turns all but one of them into chameleons.
- *
- * Public games are listed and joinable in a click; a game created with the box
- * unticked is not listed and needs its code passed by hand. Either way the code
- * is what gets you in, so the box decides visibility and nothing else.
- */
 export function StartMenu({
   onCreate,
   onJoinCode,
@@ -84,19 +70,37 @@ export function StartMenu({
   // asked rather than assumed, because it is what knows the Colyseus port —
   // which is not the page's port, and is not always the one it listens on — and
   // because the same answer carries the list of public games.
+  //
+  // It has to repeat, because the games list is live: someone else opening a
+  // lobby, filling it, or starting it changes this screen with no other way of
+  // hearing about it. Only this screen, though — the effect unmounts on join, so
+  // nothing polls during a game — and only while the tab is actually in front,
+  // since a menu nobody is looking at cannot be out of date. Coming back polls
+  // at once rather than waiting out the interval.
   useEffect(() => {
     let alive = true;
+    let timer: ReturnType<typeof setInterval> | undefined;
+
     const poll = async () => {
       const { self: mine, games: open } = await fetchSessions();
       if (!alive) return;
       setSelf(mine);
       setGames(open);
     };
-    poll();
-    const timer = setInterval(poll, 2000);
+
+    const run = () => {
+      clearInterval(timer);
+      if (document.visibilityState === "hidden") return;
+      void poll();
+      timer = setInterval(() => void poll(), SESSION_POLL_MS);
+    };
+
+    run();
+    document.addEventListener("visibilitychange", run);
     return () => {
       alive = false;
       clearInterval(timer);
+      document.removeEventListener("visibilitychange", run);
     };
   }, []);
 
@@ -189,8 +193,9 @@ export function StartMenu({
           {games.map((g) => (
             <button
               key={g.code}
+              disabled={g.started || g.starting}
               onClick={() => self && onJoinCode(takeName(), self, g.code)}
-              className="mb-1.5 flex w-full items-center justify-between gap-2 rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-left text-sm transition hover:border-neutral-600"
+              className="mb-1.5 flex w-full items-center justify-between gap-2 rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-left text-sm transition hover:border-neutral-600 disabled:opacity-40 disabled:hover:border-neutral-800"
             >
               <span className="min-w-0">
                 <span className="font-mono tracking-[0.2em] text-neutral-200">
@@ -205,7 +210,10 @@ export function StartMenu({
                     rather than empty. */}
                 {mapName(g.map)} · {g.players}
                 {g.maxPlayers ? ` / ${g.maxPlayers}` : ""}
-                {g.started ? " · in play" : ""}
+                {/* `started` first: a lobby whose match is running is not
+                    counting down, but if both were ever true "in play" is the
+                    one that lasts. */}
+                {g.started ? " · in play" : g.starting ? " · starting" : ""}
               </span>
             </button>
           ))}

@@ -1,13 +1,18 @@
 # Verifying changes
 
 ```bash
-npx tsc --noEmit && npx eslint . && npm run build && npm run check:maps
+npx tsc --noEmit && npx eslint . && npm run build
 ```
 
-Those four are the gates; run `npm run build` before calling anything done.
-`check:maps` is cheap and catches the one thing the other three cannot see — a
-map placement pointing at a `.gltf` that is not committed, which typechecks and
-builds perfectly and then hangs `Room` on a fetch that never resolves.
+Those three are the gates; run `npm run build` before calling anything done.
+
+**Maps are not covered by any of them.** A `.glb` is data the build never looks
+at, so a level whose spawn point has moved, whose collision no longer reaches
+the walls, or which is missing entirely typechecks and builds perfectly. Two
+things cover that instead: `checkLevel` warns in the browser console at load
+(see `world/CLAUDE.md`, invariant 12), and the level can be parsed and measured
+in Node without a browser — "Checking a level without a browser" in the same
+file has the recipe, and it is worth running after any large edit in Blender.
 
 **Do not drive the game in a browser.** Chrome automation is not part of this
 project's workflow — **the user tests the running game manually and reports what

@@ -2,16 +2,7 @@ import * as THREE from "three";
 import { PARTS, PART_SHAPE, type Part } from "@/game/figure/parts";
 import { MAX_STROKES } from "@/game/shared/protocol";
 
-/**
- * Per-player paint. Every figure part owns a small canvas that is used as its
- * material map, so painting is just drawing a dot into a 2D context at the UV
- * the raycast reported. Like `remotes` in net/remotes.ts these live outside
- * React — strokes arrive faster than a render is worth.
- *
- * The part table itself belongs to `figure/parts.ts`: the brush maths here and
- * the geometry there must be computed from the same radii or the dot lands at
- * the wrong size.
- */
+/** Per-player paint. */
 
 export type Skin = Record<Part, THREE.CanvasTexture>;
 
@@ -19,22 +10,12 @@ export type Stroke = {
   part: Part;
   u: number;
   v: number;
-  /**
-   * Brush radius in figure-local units — the same physical dot everywhere on
-   * the body. It has to be converted per part on the way to the canvas: a
-   * texture wraps its part, so the same fraction of it is a much bigger mark
-   * on the head than on a forearm.
-   */
+  /** Brush radius in figure-local units — the same physical dot everywhere on the body. */
   size: number;
   color: string;
 };
 
-/**
- * How much of a part's texture one unit of surface covers. U runs around the
- * circumference, V runs along the part from end to end (the round caps add
- * half a circumference between them), so the two are different scales and the
- * brush has to be an ellipse in texture space to land as a circle on the body.
- */
+/** How much of a part's texture one unit of surface covers. */
 function textureScale(part: Part) {
   const { radius, length } = PART_SHAPE[part];
   return {
@@ -131,17 +112,7 @@ export function clearSkin(id: string) {
   history.set(id, []);
 }
 
-/**
- * Drop every body's paint, yours included.
- *
- * **Every change of room is a clean slate**, not just a join: `Game.tsx` calls
- * this from `onLeftRoom`, so a match opens unpainted and so does the lobby you
- * come home to. Paint used to be carried across a hand-off — `encodedHistory`
- * existed solely to replay it — and no longer is.
- *
- * Without it a rejoin also showed you the leftover skins of players from the
- * last session, keyed by session ids that will never be seen again.
- */
+/** Drop every body's paint, yours included. */
 export function forgetAllSkins() {
   for (const id of [...skins.keys()]) forgetSkin(id);
 }

@@ -19,11 +19,7 @@ export type Remote = {
   target: RemoteTarget;
 };
 
-/**
- * Live transforms for everyone else, mutated in place as Colyseus patches
- * arrive. Deliberately outside React: re-rendering the tree twenty times a
- * second is what makes naive multiplayer stutter.
- */
+/** Live transforms for everyone else, mutated in place as Colyseus patches arrive. */
 export const remotes = new Map<string, Remote>();
 
 const rosterListeners = new Set<(ids: string[]) => void>();

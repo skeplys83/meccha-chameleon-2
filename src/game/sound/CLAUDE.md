@@ -4,12 +4,13 @@
 follows your head, and the footstep derivation.
 
 **Entry points:** `playSound` / `startLoop` / `stopLoop` / `unlockAudio` /
-`setAudioSuspended` from `engine.ts`; `SoundStage`; `Stepper` /
-`jitteredStepRate` / `strideFor` from `footsteps.ts`.
+`setAudioSuspended` / `preloadSounds` / `preloadMusic` from `engine.ts`;
+`SoundStage`; `Stepper` / `jitteredStepRate` / `strideFor` from `footsteps.ts`.
 
 ## Files
 
-- `catalogue.ts` — every sound, its file, its gain, and whether it is positional.
+- `catalogue.ts` — every sound, its file, its gain, whether it is positional, and
+  whether it is `deferred` (the music, and only the music).
   Nothing else: `WHISTLE_INTERVAL_MS` lives in `shared/`, because the server
   rate-limits against it. A copy briefly lived here too and was the one people
   found first, which is why `scripts/check-constants.mjs` exists.
@@ -118,10 +119,24 @@ follows your head, and the footstep derivation.
    do, and it cost a full debugging round. `setAudioSuspended(true)` records that
    the silence is deliberate, so the whistle firing behind the pause menu does
    not cry wolf — a diagnostic nobody trusts is worse than none.
-9. **The context is created early, resumed late.** Constructing a suspended
-   `AudioContext` needs no gesture, so `SoundStage` builds it on mount and decodes
-   the buffers then — otherwise the first shot of the round would be the one
-   waiting on a fetch.
+9. **The context is created early, resumed late — but nothing is fetched on page
+   load.** Constructing a suspended `AudioContext` needs no gesture, which is why
+   `preloadSounds` can decode before anything has been clicked. It used to run in
+   `SoundStage`'s mount effect, and that was the bug: `Game.tsx` imports `Scene`
+   statically and the Canvas stays mounted behind the start menu, so the whole
+   catalogue — 1.3 MB — downloaded for anybody who so much as opened the game.
+   The fetch now hangs off the moment each half is wanted, both called from
+   `Game.tsx`: `preloadSounds` (the eight small sounds, 126 KB) from the join
+   click inside `unlockAudio`, and `preloadMusic` (`ambient` alone, 1.2 MB) from
+   arriving in a lobby and again at the countdown — the same two triggers as the
+   map, because it is an asset of the round about to be played. **Do not put a
+   preload back in a mount effect**, here or in `SoundStage`; the same rule, and
+   the same reason, as `world/preload.ts`.
+
+   The split is a `deferred` flag on the spec rather than two hand-kept lists, so
+   a sound cannot land in both or neither, and `engine.ts` loads per name — a
+   single "have we loaded yet" flag would have made whichever call came second a
+   silent no-op.
 10. **The listener reads `camera.position` / `camera.quaternion`, never
    `matrixWorld`.** `players/Player.tsx` drives the camera imperatively from its
    own `useFrame`, and matrices are only refreshed at render time — so a

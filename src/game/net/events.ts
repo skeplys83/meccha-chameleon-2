@@ -1,14 +1,5 @@
 import type { Phase, Role } from "@/game/shared/protocol";
 
-/**
- * One-way notifications from the room that are not part of the synced state:
- * they are events, so they are delivered to listeners rather than stored.
- *
- * The exception that proves the rule is `grave` — graves *are* state on the
- * server (they must survive for late joiners), and `client.ts` turns the
- * `onAdd` backlog into the same event stream so the scene has one way in.
- */
-
 export type NetMark = {
   id: string;
   position: [number, number, number];
@@ -17,31 +8,13 @@ export type NetMark = {
   origin: [number, number, number];
 };
 
-/**
- * Where a chameleon was found, in world space, and who it was.
- *
- * Permanent, and state rather than an event on the server, because the reveal at
- * the end of a round is built from these: they are the record of where everybody
- * was caught. The name rides along so a marker can be labelled rather than
- * anonymous.
- */
+/** Where a chameleon was found, in world space, and who it was. */
 export type Grave = { id: string; position: [number, number, number]; name: string };
 
-/**
- * Which room you are in and what it is doing.
- *
- * An event rather than a return value because a session is no longer one room:
- * you are moved from a lobby into its match, the host can change the map you are
- * about to play, and the Start button changes hands when its owner leaves. All
- * three arrive as a patch, so the UI is told rather than asking.
- */
+/** Which room you are in and what it is doing. */
 export type RoomInfo = {
   mode: "lobby" | "match";
-  /**
-   * Which side you are on *here*. Not chosen and not carried: everybody waits as
-   * a hunter, and the draw at Start turns all but one of them into chameleons, so
-   * this is the room's answer rather than the player's.
-   */
+  /** Which side you are on *here*. */
   role: Role;
   /** The geometry this room is running right now. */
   map: string;
@@ -57,20 +30,10 @@ export type RoomInfo = {
   /** The invite code of the game this room belongs to: a lobby's own code, and
    *  for a match the lobby to go back to. */
   lobbyCode: string;
-  /**
-   * Seconds left in whatever this room is counting.
-   *
-   * Zero when nothing is: a lobby that is merely waiting has no clock, and that
-   * is the difference between `phase === "waiting"` and `phase === "countdown"`.
-   */
+  /** Seconds left in whatever this room is counting. */
   timeLeft: number;
   /** What the room is doing, as opposed to which kind of room it is. */
   phase: Phase;
-  /**
-   * Who won, once somebody has — `"chameleons"`, `"hunters"`, or empty while the
-   * round is still open. Only ever set during `reveal`, and in state rather than
-   * an event because the reveal is long enough to reconnect inside.
-   */
   winner: string;
   /** How many players this game holds. The host chose it when they opened it. */
   maxPlayers: number;
@@ -85,50 +48,17 @@ const shotListeners = new Set<(shooterId: string) => void>();
 const whistleListeners = new Set<(whistlerId: string) => void>();
 const markListeners = new Set<(mark: NetMark) => void>();
 const graveListeners = new Set<(grave: Grave) => void>();
-/**
- * Somebody was caught and is now a hunter.
- *
- * Not "killed": being caught does not put you out of the game, it changes which
- * side you are on. The victim's own client uses it to know the thing that just
- * happened was about them; everyone else uses it to place the sound.
- */
+/** Somebody was caught and is now a hunter. */
 const caughtListeners = new Set<
   (victimId: string, by: string, position?: [number, number, number]) => void
 >();
 const roomListeners = new Set<(info: RoomInfo) => void>();
 /** A start that could not take you with it — you are still in the lobby. */
 const moveFailedListeners = new Set<(reason: string) => void>();
-/**
- * The room went away without us asking it to.
- *
- * Every deliberate exit — quitting, dying, being handed to another room — clears
- * the room handle first, so this fires only for the case nobody chose: the
- * socket died. Until it existed a dropped player kept looking at a live-seeming
- * game with no other players in it and no input reaching anywhere.
- */
+/** The room went away without us asking it to. */
 const droppedListeners = new Set<() => void>();
-/**
- * Carried from one room into another — a lobby starting its match, or a match
- * sending everyone home when its clock runs out.
- *
- * Distinct from `onRoom`, which also fires for a new host or a changed map. This
- * one means *the room you were in is not the room you are in*, which is the only
- * question anything holding UI over the old one needs answered.
- */
 const movedListeners = new Set<() => void>();
-/**
- * The room you were in is gone — drop everything that belonged to it.
- *
- * Fired at each of the three places a room is left (a hand-off, a deliberate
- * exit, a dead socket), always **before** the next room is attached. That
- * ordering is the whole point and is why this cannot be an effect keyed on
- * `onRoom`: a new room replays its `graves` backlog during `attach`, which lands
- * *earlier* than the `RoomInfo` describing it, so a listener clearing on the
- * room id would wipe the graves it had just been told about.
- *
- * Distinct from `onMoved`, which fires *after* arrival and means "you are
- * somewhere new"; this one means "the old one stopped counting".
- */
+/** The room you were in is gone — drop everything that belonged to it. */
 const leftRoomListeners = new Set<() => void>();
 
 export function onLeftRoom(fn: () => void) {

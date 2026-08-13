@@ -92,11 +92,13 @@ from `skin.ts`; `Brush` / `DEFAULT_BRUSH` from
   that gets forgotten and the symptom is a brush still scrubbing behind the pause
   menu.
 - `net/` calls `paint`, `clearSkin` and `forgetSkin` for remote players.
-- **`world/maps/arena.ts` reads `palette.ts` too, and that is the point.** Nine
-  arena pieces are painted in exact `PAINT` hexes so a preset is a true match for
-  something you can lie against — camouflage is not testable otherwise. Never
-  "tidy" a preset without checking the room. (It is also why that map table is
-  allowed to import from this folder: `palette.ts` has no imports of its own.)
+- **Nine arena pieces are painted in exact `PAINT` hexes, so a preset is a true
+  match for something you can lie against** — camouflage is not testable
+  otherwise. Those colours now live in `levels/arena.blend` as one material per
+  hex rather than in a table that imported this file, so **nothing enforces the
+  match any more**: changing a preset here silently stops it matching the room.
+  Never "tidy" a preset without opening the .blend. See `world/CLAUDE.md`,
+  invariant 16.
 
 ## Not built yet
 

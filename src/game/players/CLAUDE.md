@@ -139,6 +139,9 @@ one role, and **adding a control means deciding whose it is.**
     integrated here against `GRAVITY` from `body.ts`. **Never reintroduce
     `setLinvel`, `applyImpulse` or `setGravityScale`**: they do nothing to a
     kinematic body, so the bug they cause is silence rather than an error.
+    `mass` and `enabledRotations` are gone for the same reason — a kinematic
+    body has no mass and the solver never rotates it — but **`canSleep={false}`
+    stays**: a body that slept would stop reporting its transform.
 12. **Jump needs a real ground test *and* an edge trigger.** Grounded is
     `computedGrounded()` off the controller, read after the move and therefore
     one frame old — which is fine, and strictly better than the downward ray it

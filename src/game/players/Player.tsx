@@ -39,25 +39,9 @@ import { playSound, startLoop, stopLoop } from "@/game/sound/engine";
 import { Stepper, jitteredStepRate, strideFor } from "@/game/sound/footsteps";
 
 const SPEED = 6;
-/**
- * A velocity, not an impulse.
- *
- * The original reason was mass: the hunter's collider is bigger and therefore
- * heavier, so an impulse launched the two roles to different heights. A
- * kinematic body has no mass at all, which retires the bug — but the number is
- * still a velocity because everything downstream is. Apex is
- * `JUMP_SPEED² / 2·GRAVITY` ≈ 3 units, which the whole arena is sized around.
- */
+/** A velocity, not an impulse. */
 const JUMP_SPEED = 11;
-/**
- * Downward speed held while grounded, so the controller keeps finding the floor.
- *
- * A kinematic character that asks for exactly zero vertical movement is not
- * *pressed* against anything, and `computedGrounded()` starts flickering as it
- * drifts a hair off the surface. A small constant push down each frame is the
- * standard fix and is invisible: the controller refuses to move you into the
- * floor, so it resolves to nothing.
- */
+/** Downward speed held while grounded, so the controller keeps finding the floor. */
 const GROUND_STICK = 1;
 const TURN_SPEED = 2.6; // rad/s for Q/E
 const CAMERA_DISTANCE = 7;
@@ -86,35 +70,12 @@ const wallUp = new THREE.Vector3();
 const wallRight = new THREE.Vector3();
 /** Where the body wants to go this frame, before the controller has its say. */
 const desired = new THREE.Vector3();
-/**
- * The fall-back drop-in point, used only if a map somehow has none.
- *
- * The real one comes from the map — `world/maps.ts`, via the `spawn` prop —
- * because a spawn height is a fact about a floor, not about the game. Whatever
- * arrives here **must keep a stable array identity**: @react-three/rapier
- * re-applies `position` whenever the prop changes, and a literal array is a new
- * value on every render, which teleported the player to spawn on any state
- * change at all. The map table hands out the same array every time.
- */
+/** The fall-back drop-in point, used only if a map somehow has none. */
 const SPAWN: [number, number, number] = [0, 2, 0];
 /** Nothing under the floor can recover on its own, so anything below this is
  *  put back at spawn. */
 const FLOOR_ESCAPE_Y = -3;
-/**
- * Every control held down false — what the frame loop reads while paused.
- *
- * It must be a *complete* key state, never `{}`: a missing entry reads back as
- * `undefined`, `Number(undefined)` is NaN, and a single NaN reaching rapier
- * panics it ("unreachable"), which poisons the wasm module for good ("recursive
- * use of an object…") and throws the body out of the world — where the catch
- * below resets it to SPAWN, i.e. pausing teleported you to the middle of the
- * arena.
- *
- * The calls that would carry it have changed — `computeColliderMovement` and
- * `setNextKinematicTranslation` now, `setLinvel` then, with
- * `setRotationWrtParent` throughout — but a NaN still reaches wasm and wasm
- * still panics. Nothing about this rule is softened by the body being kinematic.
- */
+/** Every control held down false — what the frame loop reads while paused. */
 const NO_KEYS = Object.freeze(
   Object.fromEntries(controlMap.map((entry) => [entry.name, false])),
 ) as Readonly<Record<Control, boolean>>;
@@ -134,16 +95,7 @@ export function Player({
   /** A hunter who opened the palette: they step out to third person to paint. */
   painting: boolean;
   paused: boolean;
-  /**
-   * Rooted to the spot, but still able to look around.
-   *
-   * **Not the same as `paused`**, and the difference is the whole point: a paused
-   * player has handed the game back and sees a menu, while a frozen one is still
-   * *in* it and can turn their head. It is used for the chameleons who survived a
-   * round — they are the thing being revealed, so they have to stay where they
-   * hid, but standing still with a locked-off camera for thirty seconds would be
-   * a punishment for winning.
-   */
+  /** Rooted to the spot, but still able to look around. */
   frozen?: boolean;
   brush: Brush;
   /** Fires when the cursor moves on or off your own body. */
@@ -159,23 +111,9 @@ export function Player({
   /** Space last frame, so a jump fires on the press and not on every frame the
    *  key is held down. */
   const jumpHeld = useRef(false);
-  /**
-   * Vertical velocity, which is now ours to integrate.
-   *
-   * A kinematic body is not accelerated by anything: rapier moves it exactly
-   * where it is told and no further. Gravity, the arc of a jump and the drop off
-   * a ledge are all this one number.
-   */
+  /** Vertical velocity, which is now ours to integrate. */
   const vy = useRef(0);
-  /**
-   * Whether the controller found ground *last* frame.
-   *
-   * `computedGrounded()` is only meaningful after `computeColliderMovement`, and
-   * the jump has to be decided before that — so this is deliberately one frame
-   * behind. It is a far better test than the ray it replaces, which reported
-   * "not grounded" whenever you stood on the edge of a box with the ray hanging
-   * over the side.
-   */
+  /** Whether the controller found ground *last* frame. */
   const grounded = useRef(false);
   /** Seeded from the spawn so the first packets — sent on a timer that starts
    *  before the first frame — say where we actually are, not `y: 4`. */
@@ -202,13 +140,7 @@ export function Player({
   useEffect(() => {
     frozenRef.current = frozen;
   }, [frozen]);
-  /**
-   * Whether this tab still has the keyboard.
-   *
-   * Alt-tabbing away delivers the keydown but never the keyup, so drei keeps the
-   * key "held" and you come back walking into a wall. Treating an unfocused tab
-   * as NO_KEYS is the same trick pause already uses, and it needs no fake events.
-   */
+  /** Whether this tab still has the keyboard. */
   const focused = useRef(true);
   const hoverRef = useRef<((hovering: boolean) => void) | null>(null);
   const hovering = useRef(false);
@@ -221,11 +153,7 @@ export function Player({
   const stepper = useRef(new Stepper(strideFor(role)));
   /** When the shotgun last went off, so a held mouse button is one shot. */
   const lastShot = useRef(0);
-  /**
-   * The surface a chameleon is stuck to, as a normal pointing back at them, or null
-   * when free. A wall gives a horizontal normal, a ceiling `(0, −1, 0)`. The
-   * figure never reorients — see `cling.ts`.
-   */
+  /** The surface a chameleon is stuck to, as a normal pointing back at them, or null when free. */
   const cling = useRef<THREE.Vector3 | null>(null);
   /** Seconds left before a surface can be grabbed again after letting go. */
   const reclingGrace = useRef(0);
@@ -278,21 +206,7 @@ export function Player({
     const canvas = gl.domElement;
     setLockTarget(canvas);
 
-    /**
-     * **The lock may already be held when this component is built.**
-     *
-     * `locked` is a ref, so it starts `false` on every mount — and this
-     * component is rebuilt on a room change *and* on a role change, while the
-     * canvas and the browser's pointer lock outlive both. A lock that never
-     * dropped fires no `pointerlockchange`, so nothing ever corrected the ref
-     * and it sat at `false` for the rest of the session: a hunter carried into
-     * the match could not look around, because `onMouseMove` reads this to
-     * decide whether the mouse means "turn the camera". Pausing and un-pausing
-     * appeared to fix it only because that really does drop and retake the lock,
-     * which finally fires the event.
-     *
-     * Read the truth from the document instead of assuming it.
-     */
+    // The lock may already be held when this component is built.
     locked.current = document.pointerLockElement === canvas;
 
     const brushCursor = createBrushCursor({
@@ -376,21 +290,7 @@ export function Player({
     };
 
     const onMouseMove = (e: MouseEvent) => {
-      /**
-       * **Nothing that needs a button held may survive the button coming up.**
-       *
-       * `pointerup` was the only thing clearing these, and it is not guaranteed
-       * to arrive: release the button outside the window — which a right-drag
-       * flung past the edge of the screen does constantly — and the browser
-       * delivers it to nobody. The camera then followed a bare cursor with no
-       * button down at all, for ever, and the only way out was another
-       * right-click. A stroke could be stranded the same way and keep painting.
-       *
-       * Reading `buttons` off the move itself is what makes it self-healing: it
-       * is the *current* truth about the mouse rather than a memory of an event,
-       * so a lost release costs one frame instead of the rest of the session.
-       * This has to come before the drawing branch below, which returns early.
-       */
+      /** Nothing that needs a button held may survive the button coming up. */
       if (e.buttons === 0 && (orbiting.current || brushCursor.drawing)) {
         brushCursor.end();
         orbiting.current = false;
@@ -521,22 +421,7 @@ export function Player({
       solids.current = list;
     }
 
-    /**
-     * **Do not fall through a world that has not arrived yet.**
-     *
-     * A map built from loaded files suspends, and `Room` renders nothing at all
-     * while it does — so between one map unmounting and the next one committing
-     * there is a window with no colliders anywhere. A body dropped into that
-     * window falls freely, and a *kinematic* body is never pushed back out of
-     * geometry the way the old dynamic one was: once the floor appeared above
-     * it, it stayed below, sank past `FLOOR_ESCAPE_Y` and got flung back to
-     * spawn. That is the whole "I fall through the floor of the dungeon and then
-     * get teleported into it" bug.
-     *
-     * `solids` is empty for exactly that window and never otherwise — every map
-     * has surfaces, and `Room` bumps the revision as its subtree mounts — so
-     * holding still here costs nothing once the map is up.
-     */
+    /** Do not fall through a world that has not arrived yet. */
     if (solids.current.length === 0) {
       vy.current = 0;
       return;
@@ -545,20 +430,7 @@ export function Player({
     const p = rb.translation();
     bodyPos.set(p.x, p.y, p.z);
 
-    // A curled or seated figure gets a smaller collider (see poseExtents). The
-    // box grows and shrinks around the body's centre, so the body has to be
-    // lifted by the same amount or the feet of a growing box end up under the
-    // floor. As a dynamic body that was fatal — rapier resolved the penetration
-    // by throwing the player out of the world — and as a kinematic one it is
-    // merely wrong, which is the whole reason for the change. The shift is
-    // folded into `bodyPos` rather than written straight to the body, because
-    // everything below moves from `bodyPos` and one authority per frame is the
-    // point.
-    //
-    // This lives in the frame loop, not an effect: every rapier call has to
-    // happen while the world is known to be alive. Touching a stale handle
-    // panics inside wasm, and a panicked module then throws "recursive use of
-    // an object" on *every* later call, which kills physics for good.
+    /** A curled or seated figure gets a smaller collider (see poseExtents). */
     const half = poseExtents(pose, [hx, hy, hz])[1];
     if (half !== halfHeight.current) {
       bodyPos.y += half - halfHeight.current;
@@ -594,12 +466,6 @@ export function Player({
     // Movement follows where you are looking, not where the figure faces.
     const y = yaw.current;
 
-    // A chameleon aims their figure independently of the camera with Q/E — that is
-    // how you line yourself up with a wall. A hunter's figure just faces the
-    // way they are looking, which is also exactly what remotes are shown.
-    // The one exception is a hunter who opened the palette: they are in third
-    // person to paint, and if the figure tracked the camera they could never
-    // orbit round to see their own back.
     if (role === "chameleon") {
       bodyYaw.current +=
         (Number(keys.turnLeft) - Number(keys.turnRight)) * TURN_SPEED * delta;
@@ -615,13 +481,6 @@ export function Player({
       .addScaledVector(right, Number(keys.right) - Number(keys.left));
     if (move.lengthSq() > 0) move.normalize().multiplyScalar(SPEED);
 
-    // ---------------------------------------------------------------- climbing
-    //
-    // A chameleon sticks to anything they walk into and stays upright on it. On a
-    // wall W and S run up and down the face and A/D go across it; on a ceiling
-    // movement stays camera-relative, because there is no "up" to a surface you
-    // are hanging from. Space is the only way off. Hunters hunt on the floor and
-    // have none of this.
     if (reclingGrace.current > 0) reclingGrace.current -= delta;
     const spacePressed = keys.jump && !jumpHeld.current;
     let releasing = false;
@@ -662,15 +521,7 @@ export function Player({
       alongSurface.set(0, 0, 0);
     }
 
-    /**
-     * A release is a push clear of the surface for one frame.
-     *
-     * The push has to beat `RECLING_GRACE` at getting you away from the wall, or
-     * the next frame walks you straight back into it and Space looks like it did
-     * nothing. Only the *vertical* part survives into `vy`, which matches what
-     * the dynamic body did: its horizontal velocity was overwritten by `move` on
-     * the very next frame anyway.
-     */
+    /** A release is a push clear of the surface for one frame. */
     if (releasing) {
       const normal = cling.current!;
       cling.current = null;
@@ -696,19 +547,7 @@ export function Player({
       stepper.current.reset();
     }
 
-    /**
-     * Where the body would like to be by the end of the frame.
-     *
-     * Three cases, and each owns `vy` as well as the vector:
-     *
-     * - **Clinging.** No gravity at all — a climber hangs there. The constant
-     *   push into the surface is what holds contact, and it replaces the
-     *   per-body `setGravityScale(0)` the dynamic version needed.
-     * - **Releasing.** Already set above; `vy` carries the vertical part on.
-     * - **Free.** Horizontal is set outright rather than accumulated, which is
-     *   what gives the game its immediate, un-slippery feel and is exactly what
-     *   `setLinvel` used to do. Vertical integrates gravity, or takes the jump.
-     */
+    /** Where the body would like to be by the end of the frame. */
     if (clinging) {
       const normal = cling.current!;
       vy.current = 0;
@@ -723,15 +562,7 @@ export function Player({
       desired.set(move.x * delta, vy.current * delta, move.z * delta);
     }
 
-    /**
-     * Ask rapier how much of that is actually possible, then go exactly there.
-     *
-     * This is the whole substance of the change. Nothing accelerates the body,
-     * nothing resolves it out of a wall after the fact, and nothing can eject it
-     * from the world: the controller sweeps the collider along `desired`,
-     * sliding it along whatever it meets, and hands back the movement it will
-     * allow. `computedGrounded` is read here for the *next* frame's jump test.
-     */
+    // Ask rapier how much of that is actually possible, then go exactly there.
     controller.computeColliderMovement(col, desired);
     const allowed = controller.computedMovement();
     grounded.current = controller.computedGrounded();
@@ -796,11 +627,6 @@ export function Player({
           side={THREE.DoubleSide}
         />
       </mesh>
-      {/* `kinematicPosition`, not `dynamic`: nothing but the frame loop above
-          moves this body. `mass` and `enabledRotations` are gone with it —
-          a kinematic body has no mass and is never rotated by the solver, so
-          both were describing forces that no longer exist. `canSleep={false}`
-          stays: a body that slept would stop reporting its transform. */}
       <RigidBody
         ref={body}
         colliders={false}

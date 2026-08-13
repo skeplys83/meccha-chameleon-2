@@ -1,18 +1,7 @@
 import * as THREE from "three";
 import { remoteFigures } from "@/game/players/RemotePlayers";
 
-/**
- * What a shot from the centre of the screen hit.
- *
- * People and walls are raycast together and **whichever is nearer wins**, which
- * is the whole reason this is one function rather than two: checking people
- * first and only falling back to walls would let a hunter shoot a chameleon through
- * a wall.
- *
- * A wall hit comes back already oriented — position nudged off the surface along
- * its normal, rotation facing out of it — because that is what the mark needs
- * and the caller has no better place to work it out.
- */
+/** What a shot from the centre of the screen hit. */
 export type Shot =
   | { kind: "player"; id: string; point: [number, number, number] }
   | {

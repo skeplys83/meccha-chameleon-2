@@ -138,6 +138,24 @@ everybody. And it **cancels back to `waiting` if the roster drops below
 leave the panel counting for up to a second after the room stopped being able to
 start.
 
+**A countdown closes the lobby.** From the moment it starts, `onJoin` turns away
+anybody this game has not already seen — the same rule and the same `HostRule`
+lookup that guards a running match, with its own leave code so the client can say
+which of the two happened. Two reasons, and the second is why it exists:
+
+- **The draw is over who is present at zero.** A latecomer at second nine changes
+  everyone's odds of being the hunter after the countdown they are watching has
+  already begun.
+- **They have no time to load the map.** Everyone else has been preloading it
+  since they arrived in the lobby (`world/preload.ts`); a player who joins at
+  second nine has nine seconds, and is moved to the map at zero. They arrive in a
+  world with no floor, during the hiding phase, where nobody can see it happening
+  to them.
+
+Known players still get in, so a wifi blip inside the ten seconds is not an
+ejection from a round you were part of, and `cancelCountdown` reopens the door
+immediately.
+
 ## The monitor is the only window into the matchmaking
 
 `/monitor` is the server's view: which rooms exist right now, how many clients
@@ -368,7 +386,9 @@ A match is created with the same cap.
 32. **A countdown is a `clock.setInterval` that is *held*, not fired and
    forgotten.** `this.counting` exists so it can be cleared — by a leaver, or by
    reaching zero. A countdown that outlived its second player would start a round
-   for one person.
+   for one person. It is also read as a *state*: `onJoin` refuses strangers while
+   it is non-null, and `publish` puts it in metadata as `starting` so the menu
+   does not offer a game it would be bounced from.
 33. **The lobby stays in `hiding` until the hunter has actually been handed
    over.** The bell is not a message — it is the phase changing from `hiding` to
    `hunt`, which every client reads for itself. Clearing the lobby to `waiting`
@@ -409,6 +429,15 @@ A match is created with the same cap.
    for bookkeeping and far too slow for a person standing there pressing a button
    that does nothing. `matchEnded` is public because `matchMaker.remoteRoomCall`
    reaches it by name.
+40. **A refusal is a leave code from `shared/protocol.ts`, never a bare number.**
+   `LEAVE_IN_PROGRESS` and `LEAVE_STARTING` are the two, and the client turns
+   each into the sentence a person reads — which is exactly why they are shared
+   rather than local: a `4001` written here and a `4001` matched there is the
+   mirrored constant this repo keeps deleting. Note that the server *accepts* the
+   socket and then closes it, so to the client a refusal is indistinguishable
+   from a leave that happens to land before the state does. `net/client.ts` has
+   to reject the pending join on it; before these codes existed, the join simply
+   hung.
 
    The rest of the old note still holds: There are no accounts. It is the first
    to join, reassigned to whoever remains, and it is only ever consulted to

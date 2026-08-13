@@ -1,8 +1,4 @@
-/**
- * Fallback player names. Nobody should have to think of one to get into a
- * game, so a tab with no stored name gets a random pick plus two digits — the
- * digits are what stop two people picking "Gecko" from being indistinguishable.
- */
+/** Fallback player names. */
 export const NAMES = [
   "Gecko",
   "Iguana",

@@ -4,7 +4,7 @@
 you join.
 
 **Entry points:** `StartMenu`, `LobbyPanel`, `PauseMenu`, `ControlsPanel`,
-`PlayerList`, `PhaseBanner`, `RoundOverPanel`, `randomName`.
+`PlayerList`, `PhaseBanner`, `RoundOverPanel`, `LoadingScreen`, `randomName`.
 
 ## Files
 
@@ -22,6 +22,8 @@ you join.
   side: the same twenty seconds is a head start for one player and a wait for
   the other.
 - `RoundOverPanel.tsx` — the reveal card: who won, and who was found where.
+- `LoadingScreen.tsx` — a spinner and the word Loading, over the whole screen,
+  while the map you are standing in is still arriving. Opaque, and no props.
 - `names.ts` — random fallback player names.
 
 ## Creating a game is a modal, and the three choices in it are permanent
@@ -64,7 +66,10 @@ costs nothing.
 1. **This folder never imports from `world/`, `figure/`, `players/` or
    `combat/`.** It renders outside the Canvas and talks to the game through
    `Game.tsx` props and through `net/`. The one exception is reading `POSES` for
-   the legend — a label, not behaviour.
+   the legend — a label, not behaviour. `LoadingScreen` is the shape this forces
+   and is worth copying: the flag it reacts to is raised inside the Canvas by
+   `world/Room.tsx`, so `Game.tsx` subscribes to `src/game/loading.ts` and the
+   component itself takes no props at all and knows nothing about maps.
 2. **Not every difference between the roles is a key.** Only chameleons whistle, and
    nothing on either card says so — there is no key for it and nothing to press.
    The legend is for controls; role asymmetries that are not controls belong in
@@ -152,11 +157,31 @@ costs nothing.
 19. **The pause menu has no full-screen scrim** — the arena stays visible while
    you are paused — but the panel itself needs a solid ground, because it floats
    over a white room and translucent pills left the session name unreadable.
-20. **`fetchSessions` is polled every 2 s for two things: `self` and `games`.**
-   `self` because the menu needs the Colyseus port, which is not the page's port
-   and is not always the one the server listens on. `games` because the listing
-   has no push channel — it is a plain fetch, not a second websocket. The
-   peer list it also returns is not shown anywhere.
+20. **`fetchSessions` is polled for two things: `self` and `games`, on this
+   screen only and only while the tab is in front.** `self` because the menu
+   needs the Colyseus port, which is not the page's port and is not always the
+   one the server listens on. `games` because the listing has no push channel —
+   it is a plain fetch, not a second websocket, so the only way to notice
+   somebody else opening a lobby is to ask. The peer list it also returns is not
+   shown anywhere.
+
+   Three things keep that from being the waste it looks like in a network panel.
+   It lives in *this component*, so joining a game unmounts it and nothing polls
+   during play. It is paused on `visibilitychange` and polls immediately on the
+   way back, since a menu nobody is looking at cannot be stale. And the interval
+   is `SESSION_POLL_MS` — 5 s, up from 2 — because what it is watching for is a
+   person opening a lobby, which is not a thing that happens twice a second. The
+   response is 0.3 kB and the server answers it from an in-process
+   `matchMaker.query` in about 2 ms; if it ever looks slow in devtools, that is
+   queueing behind the map's asset requests on the client, not the server.
+21. **A game the server would refuse is listed but not clickable.** `onJoin`
+   turns strangers away from a lobby whose round is running (`started`) *and*
+   from one whose countdown has begun (`starting`), so a pressable row would be
+   an invitation to be bounced back here with an error. The row stays — a game
+   that exists is worth knowing about, and both states clear on their own — it is
+   just disabled, and labelled "in play" or "starting", because the difference
+   between waiting a whole round and waiting ten seconds is worth seeing. Display
+   rule on top of a server rule, never instead of one.
 
 ## Contracts
 

@@ -21,7 +21,8 @@ The other half is `server/`. Every message named below has a handler there.
   `onRoom` / `onMoved` / `onMoveFailed` / `onDropped` / `onLeftRoom` and their
   emitters.
 - `sessions.ts` — `fetchSessions` against `/api/sessions`: which server, and the
-  public games on it.
+  public games on it. A `Game` carries `started` **and** `starting`, which are
+  the two states the server refuses a join in.
 - `identity.ts` — `playerId()`, this tab's id for as long as it is open.
 - `index.ts` — the public surface.
 
@@ -121,7 +122,18 @@ runs once per *room*, not once per session.
    button. Same reasoning as the name in `hud/`. It goes out on every way in
    (`createLobby`, `joinLobby`, `rejoin`), because it is the only thing that
    tells the server the tab coming back from a match opened the game.
-15. **`rejoin` tries the token, then falls back to the room id.** The token is
+15. **A join that is refused must *reject*, not wait.** The server accepts the
+   socket and decides afterwards — `onJoin` closes it on a stranger reaching a
+   lobby whose round is running or whose countdown has started — so a refusal
+   arrives as `onLeave` with a code, before any state has landed. Invariant 5's
+   wait has no timeout, so without this it never resolved and never rejected: the
+   menu sat on a spinner with nothing on screen and nothing in the console.
+   `attach` arms `rejectJoin` for exactly the length of that wait and clears it in
+   a `finally`, which is what keeps a socket dying *after* we are seated an
+   ordinary drop. The refusal path deliberately does **not** `emitDropped` —
+   there is nothing to reconnect to for somebody who never got in — and `refusal`
+   turns the code into the sentence shown on the menu.
+16. **`rejoin` tries the token, then falls back to the room id.** The token is
    the good outcome: same session id, so side, position and paint are all still
    there. The fall-back is a fresh player and a chameleon, because the server takes
    no role from a client. Both are correct for their case, so it is one function
@@ -194,7 +206,8 @@ runs once per *room*, not once per session.
   phase, so the number on screen and the sound are the same event and two players
   cannot drift apart the way two client-side timers would. `onRoom` only fires on
   a real difference, so a repeat is impossible by construction.
-- `hud/StartMenu` polls `fetchSessions` every 2 s, for `self` alone; `Game.tsx`
+- `hud/StartMenu` polls `fetchSessions` every 5 s while it is on screen and the
+  tab is in front, for `self` **and** the public games list; `Game.tsx`
   calls `createLobby` / `joinLobby` / `rejoin` / `disconnect` and subscribes to
   `onKilled`, `onRoom`, `onMoveFailed` and `onDropped`.
 
@@ -202,4 +215,6 @@ runs once per *room*, not once per session.
 
 No automatic retry — a dropped player is shown a panel and clicks Reconnect,
 which is honest but means a blink still interrupts you. No way to tell a mistyped
-code from a game that has since closed: both come back as a rejected join.
+code from a game that has since closed: both come back as a rejected join. A
+lobby that refuses you because it is counting down says so, but nothing retries
+when the ten seconds are up — you type the code again.

@@ -1,17 +1,7 @@
 import type { Grave } from "@/game/net";
 import type { Role } from "@/game/shared/protocol";
 
-/**
- * The thirty seconds after a round is decided.
- *
- * **It sits at the top, out of the way, for the same reason the lobby panel
- * does.** The world behind it is the answer — the surviving chameleons lit up
- * red through the walls, the graves where everybody else was found — and this is
- * the one moment in a round that is *about* looking at the world. A card in the
- * middle of the screen covers exactly the thing it is explaining. Everyone can
- * still walk during the reveal, so it also has to stay clear of where they are
- * going.
- */
+/** The thirty seconds after a round is decided. */
 export function RoundOverPanel({
   winner,
   role,

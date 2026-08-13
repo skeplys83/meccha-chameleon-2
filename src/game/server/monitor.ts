@@ -3,34 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import express from "express";
 import { monitor } from "@colyseus/monitor";
 
-/**
- * Colyseus's own admin panel, mounted at `/monitor`.
- *
- * It lists every live room with its client count and metadata, and lets you open
- * one and watch its state change in real time — which is the only way to see the
- * matchmaking from outside, since a lobby and its match are two rooms and a
- * player only ever sees the one they are standing in.
- *
- * ## Why it is off unless you ask for it
- *
- * The panel is not read-only. Its API exposes `matchMaker.remoteRoomCall`, which
- * invokes **any method on any room by name** — including `disconnect`, and
- * including this project's own `matchEnded`. Anyone who can reach it can end
- * anybody's game — which is a hole in anything reachable from outside the room.
- *
- * So the rule is: **a password is what turns it on in production.**
- *
- * - development — on by default, no password, because the only person who can
- *   reach `localhost:3000` is you. `MONITOR=0` turns it off.
- * - production — off unless `MONITOR_PASSWORD` is set, and then behind HTTP
- *   Basic auth. There is deliberately no way to expose it unauthenticated on a
- *   public box; forgetting to set a password fails closed, with a line in the
- *   log saying why.
- *
- * Basic auth over plain http sends the password in a header in near-cleartext,
- * so this is worth having only behind the same TLS proxy that fronts everything
- * else. See "Hosting it" in the README.
- */
+/** Colyseus's own admin panel, mounted at `/monitor`. */
 
 export const MONITOR_PATH = "/monitor";
 
@@ -56,13 +29,7 @@ function authorised(header: string | undefined) {
   );
 }
 
-/**
- * The panel as a plain request handler, or `null` if it should not exist.
- *
- * Returning `null` rather than an always-403 handler is deliberate: a route that
- * is not mounted cannot be probed, and `/monitor` on a server without a
- * password should look exactly like any other unknown path.
- */
+/** The panel as a plain request handler, or `null` if it should not exist. */
 export function createMonitor(dev: boolean) {
   const wanted = dev ? process.env.MONITOR !== "0" : Boolean(password);
   if (!wanted) return null;

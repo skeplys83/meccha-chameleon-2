@@ -1,18 +1,7 @@
 import type { Phase, Role } from "@/game/shared/protocol";
 import { HUNT_URGENT_SECONDS } from "@/game/shared/protocol";
 
-/**
- * The clock, and what it is counting towards.
- *
- * A bare number was enough when a match was one sixty-second block. It is not
- * now: the same two digits mean "get hidden", "the hunter is coming" and "you
- * are nearly out of time" depending on the phase, and which of those it is
- * changes what you should be doing. So the phase is named alongside it, and the
- * wording differs by side — the same twenty seconds is a head start for one
- * player and a wait for the other.
- *
- * It replaces `MatchClock`, which only ever knew about seconds.
- */
+/** The clock, and what it is counting towards. */
 const LABEL: Record<Phase, { chameleon: string; hunter: string } | null> = {
   waiting: null,
   countdown: null,

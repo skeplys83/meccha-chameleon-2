@@ -1,14 +1,5 @@
 import * as THREE from "three";
 
-/**
- * The third-person camera: sit behind the player along the look direction, but
- * never outside the room.
- *
- * The pull-in is the important part. Without it the camera walks straight
- * through a wall and you find yourself looking at the arena from the outside,
- * which reads as the game having broken.
- */
-
 const CAMERA_MIN_DISTANCE = 1.4;
 /** Keep the lens off the surface it would otherwise touch. */
 const CAMERA_SKIN = 0.35;

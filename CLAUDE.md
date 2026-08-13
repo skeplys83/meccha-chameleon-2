@@ -20,7 +20,12 @@ by the lobby filling up or by the host pressing Start.
 the dungeon, hiding included):
 
 1. **countdown**, 10s, in the lobby. At zero the server draws one player at
-   random to be the **hunter**; everyone else becomes a **chameleon**.
+   random to be the **hunter**; everyone else becomes a **chameleon**. **The
+   lobby is closed for the duration** — a stranger with the code is turned away
+   until the round is over, because the draw is over whoever is present at zero
+   and because a latecomer has no time to load the map they are about to be moved
+   to. Anyone this game already knows still gets in, so a blink inside the ten
+   seconds is not an ejection.
 2. **hiding**, 20s. The chameleons are moved to the map. **The hunter is not** —
    they stay in the lobby, playing the arena alone, so they cannot watch anybody
    choose a spot.
@@ -73,6 +78,21 @@ the client's side of the move.
 attached — and its contracts with the folders around it. This file is the
 orientation: what the game is, what it is built from, and where everything lives.
 
+**The prose lives in these docs, and the code stays thin.** It did not use to:
+38% of `src/` was comment, most of it the same invariants written out a second
+time next to the code they governed, which is expensive for every agent that
+reads the file and drifts from the doc the moment either changes. The rule now:
+
+- **A code comment is at most a few lines**, and says what is not visible from
+  the line it sits on — a citation (`see trap 4`), a unit, a non-obvious
+  ordering. Nothing over four lines survived the pass that established this, and
+  a new one over four lines is a sign the fact belongs in the folder's doc.
+- **A rule with a bug attached goes in the folder's `CLAUDE.md`**, once. That is
+  what those files are for and they are already thorough; anything the strip
+  removed is either in them, in `docs/TRAPS.md`, or in git.
+- The pre-commit hook already forces you to open the doc for any folder you
+  touch, which is the mechanism that keeps this from rotting.
+
 The rest of the project-wide prose is split out, because it is reference rather
 than orientation and this file was becoming a thing nobody finishes:
 
@@ -87,17 +107,16 @@ change.** The pre-commit hook enforces the second half: staging code without
 staging the `CLAUDE.md` that covers it fails the commit. It also runs
 `scripts/check-constants.mjs`, which fails if a `shared/protocol.ts` constant is
 *defined* a second time anywhere — the one class of bug this layout exists to
-prevent, and one I have already reintroduced once. It also runs
-`scripts/check-map-assets.mjs` (`npm run check:maps`), which fails if a model
-committed under `public/maps/` is never placed by a map, or if a map places a
-file that is not committed — the dungeon is meant to hold the whole KayKit pack,
-and a missing file leaves the map suspended forever rather than erroring. Enable
+prevent, and one I have already reintroduced once. Maps are **not** checked by
+a hook — the Blender workflow is deliberately outside this repo, and the one
+thing that could rot (the numbers in `world/maps.ts` against the `.glb` beside
+them) is checked in the browser at load instead. Enable
 the hook once per clone with `git config core.hooksPath .githooks`; run the doc
 half any time with `npm run check:docs`. The escape hatch for a genuine no-op is
 `SKIP_DOC_CHECK=1 git commit`.
 
-Anything not inside a documented folder — `Game.tsx`, `Scene.tsx`, `index.html`,
-`src/main.tsx`, `src/index.css` — is covered by this file. **The composition
+Anything not inside a documented folder — `Game.tsx`, `Scene.tsx`, `loading.ts`,
+`index.html`, `src/main.tsx`, `src/index.css` — is covered by this file. **The composition
 roots stay here deliberately**: this is the only doc loaded into a session
 automatically, so what an agent needs without being told to go looking for it
 belongs in it.
@@ -134,12 +153,15 @@ src/index.css       the one stylesheet: @import "tailwindcss" and four tokens
 dist/               `vite build` output. Generated, gitignored, never edited
 src/game/
   Game.tsx          top-level state: joined, session, room, paused, painting, killed
-  Scene.tsx         Canvas, lights, Physics, mark and grave lifetimes
-public/sounds/      the five .wav files
-public/maps/        model assets for maps that use them
+  Scene.tsx         Canvas, Physics, mark and grave lifetimes
+  loading.ts        one counter: is the player waiting on something to arrive
+public/sounds/      the nine .mp3 files
+public/maps/        one .glb per map — the only map asset the game loads
+levels/             the .blend files those are exported from, and the raw kit.
+                    The real source; nothing under src/ reads any of it
 public/icon.svg     the favicon — generated, see below
-scripts/            check-docs.mjs, check-constants.mjs, check-map-assets.mjs,
-                    make-favicon.mjs
+scripts/            check-docs.mjs, check-constants.mjs, make-favicon.mjs,
+                    export-level.sh + export-level.py (Blender → public/maps/)
 ```
 
 | folder     | owns                                                    | read it before touching                       |
@@ -147,13 +169,27 @@ scripts/            check-docs.mjs, check-constants.mjs, check-map-assets.mjs,
 | `shared/`  | `Role` and the constants both halves must agree on      | anything the server also reads                |
 | `server/`  | Colyseus rooms, matchmaking, schema, UDP, HTTP          | messages, validation, authority, lobbies      |
 | `net/`     | the Colyseus **client**, remotes, which room you are in | joining, moving rooms, remote transforms      |
-| `world/`   | the maps, and the registry that picks one               | room layout, collision, cover, adding a map   |
+| `world/`   | the maps, and the registry that picks one               | room layout, collision, cover, editing a map  |
 | `figure/`  | the stick figure rig, the poses, `PART_SHAPE`           | proportions, poses, limb geometry             |
 | `paint/`   | canvases, brush, palette, the panel                     | painting, brushes, skins, colours             |
 | `players/` | the local player and the remote ones, `BODY`            | controls, camera, movement, jumping, climbing |
 | `combat/`  | the shotgun, the viewmodel, marks, graves               | shooting, death, hit feedback                 |
 | `sound/`   | the audio engine, the catalogue, footsteps              | anything that makes a noise                   |
 | `hud/`     | the 2D overlays outside the Canvas                      | menus, legends, name entry                    |
+
+**Every map is one `.glb` exported from Blender, and the repo has no part in
+making one.** `levels/<id>.blend` is the map, `public/maps/<id>.glb` is its
+export, and the row in `world/maps.ts` is a display name plus the few numbers the
+game needs before the file has loaded. There is **no build step and no generated
+file** — nothing in `src/` or `scripts/` reads, writes or validates a `.blend`,
+and adding something that does would put the two workflows back together. The
+one wrapper that knows how to turn a `.blend` into a `.glb` is
+`scripts/export-level.sh`, and the game itself never runs it. The
+conventions the `.glb` is read by — `col_*`, `colhull_*`, `coltri_*` and
+`colball_*` for collision, everything else decoration — are in
+`src/game/world/CLAUDE.md` under "Editing a map in Blender". The cost of having
+no build step is that `spawn` and `bound` are typed by hand; `checkLevel` warns
+in the console when they stop matching the file.
 
 `Scene.tsx` passes the round's phase down as three separate facts rather than
 one — `reveal` (light the survivors), `hunting` (drop their name badges) and
@@ -164,6 +200,13 @@ why the timestep is not the library default, and note that `shadows` is spelled
 `"percentage"` rather than left bare, because three has deprecated the
 `PCFSoftShadowMap` that a bare `shadows` selects and downgrades it to exactly
 this anyway.
+
+**`Scene.tsx` no longer owns the lights or the background.** Both are facts about
+the map rather than about the game, and a map exported from Blender carries its
+own lighting rig — so they moved into `world/Room.tsx`, which renders the old
+ambient-plus-sun pair for maps built from primitives and gets out of the way for
+maps built from a file. A light added back here applies to every map at once and
+washes out the one that was lit deliberately.
 
 **A change of room is a clean slate, and there is exactly one place that says
 so.** `net/` fires `onLeftRoom` at each of the three moments a room ends — a
@@ -203,6 +246,46 @@ the player on `joined` fell back to `"chameleon"` for that window and spawned yo
 into the waiting room as a small third-person figure before snapping to the
 hunter's first-person camera. `enter` clears `room` on the way in for the same
 reason: the room being left says nothing true about the one being opened.
+
+**`Game.tsx` also decides when everything heavy is downloaded, and nothing is
+fetched on page load.** The Canvas is mounted behind the start menu, so anything
+hung on a mount effect is paid for by everybody who merely opens the game — which
+is what both of these were. There are now three triggers and no others:
+
+| what | how big | fetched when |
+| --- | --- | --- |
+| the match's map (`world/preload.ts`, `preloadMap`) | 722 KB | arriving in a lobby, keyed on `nextMap`; again at the countdown |
+| the music (`sound/engine.ts`, `preloadMusic`) | 1.2 MB | the same two moments — it is an asset of the round |
+| the other eight sounds (`preloadSounds`) | 126 KB | the join click, inside `unlockAudio` |
+
+A lobby is the arena, which is 237 KB and arrives with the join, so the minute or
+more people spend gathering and painting is free budget for the two big ones. The triggers belong
+here because this is the file that knows what room you are in and what it is
+about to play.
+
+**The loading screen is `loading.ts`, and it counts only what is being waited
+on.** Two things raise it, and `hud/LoadingScreen` covers the screen for as long
+as either is up — an opaque full-screen spinner:
+
+- **`enter` in `Game.tsx`, while a join is in flight.** `joined` flips on the
+  click and `room` lands a few hundred milliseconds later; in between the menu is
+  gone and the world is an arena nobody is in yet. It ends on the room *or* on
+  the error, in a `finally`, so a refused join cannot leave the spinner up.
+- **`world/Room.tsx`'s `Suspense` fallback, while the map you are standing in is
+  still arriving.** Behind it is a world with no colliders, and the body is held
+  still rather than falling through where the floor will be — the frame loop in
+  `players/Player.tsx` returns early while its surface list is empty, which is
+  invariant 14 there. The screen and the hold are two halves of one answer: the
+  hold is what makes the wait *safe*, the screen is what makes it legible.
+
+The two downloads in the table above never raise it: they are ahead of the player
+rather than in front of them, and a spinner over a lobby you are happily walking
+around in would undo the reason they are early. **So the common path shows the
+spinner only for the join** — by the time Start is pressed the match's map
+has usually been in cache for a minute, and a transition with nothing to wait
+for correctly waits for nothing. A player who *does* have to wait is not
+disadvantaged by it beyond the wait itself: they stand at the spawn point until
+the map lands, which is where they would have been anyway.
 
 Every mode transition in the game is decided in `Game.tsx` — which also means it
 owns the *teardown* of each: joining unlocks audio, pausing suspends it, and

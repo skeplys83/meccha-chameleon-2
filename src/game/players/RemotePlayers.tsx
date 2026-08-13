@@ -7,11 +7,7 @@ import { BODY } from "./body";
 import { StickFigure } from "@/game/figure/StickFigure";
 import { Shotgun } from "@/game/combat/Shotgun";
 
-/**
- * Every remote figure's root, so a hunter's shot can raycast the people in the
- * room. Keyed by session id; the id is also stamped on the group's userData so
- * a hit mesh can be walked back to its owner.
- */
+/** Every remote figure's root, so a hunter's shot can raycast the people in the room. */
 export const remoteFigures = new Map<string, THREE.Group>();
 
 const targetPos = new THREE.Vector3();
@@ -84,13 +80,6 @@ function RemotePlayer({
           highlight={reveal && remote.role === "chameleon"}
         />
       </group>
-      {/* **A chameleon has no name badge during the hunt.**
-          drei's `Html` is DOM over the canvas, so it is not occluded by anything
-          — a label hovering above a hidden player is a marker drawn *through* the
-          wall they are hiding behind, which hands the hunter every spot in the
-          room for free. Hunters keep theirs: they are not hiding, and knowing
-          where the gun is is most of what a chameleon plays on. It comes back for
-          the reveal, where naming the survivors is the entire point. */}
       {!(hunting && remote.role === "chameleon") && (
         <Html position={[0, hy + 0.55, 0]} center distanceFactor={14}>
           <div className="whitespace-nowrap rounded bg-black/60 px-2 py-0.5 font-mono text-[13px] text-white">

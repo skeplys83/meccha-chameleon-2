@@ -3,26 +3,7 @@ import { sendMap, sendStart } from "@/game/net";
 import { MATCH_MAP_LIST, mapName } from "@/game/world/maps";
 import { MIN_PLAYERS, type Phase } from "@/game/shared/protocol";
 
-/**
- * The waiting room's own overlay: the invite code, the map you are about to
- * play, and Start.
- *
- * It sits over a lobby that is a *playable* arena, so it stays small and out of
- * the middle — you are meant to walk around and paint yourself while people
- * arrive, not stare at a menu. It disappears the moment the match begins.
- *
- * **It stays up while paused, and that is the only way it is usable.** Everyone
- * in the waiting room is a hunter, so everyone holds the pointer lock and has no
- * cursor; pausing is what hands the cursor back. Hiding this panel behind the
- * pause menu — which is what it used to do — left the host looking at a Start
- * button they could see and could not click.
- *
- * Only the host sees a Start button or a map picker. That is a display rule on
- * top of a server rule, not instead of one: `server/room.ts` refuses both
- * messages from anyone but `hostId`. Everyone else gets the map they are about
- * to play, in the same place and at the same size, because for them it is the
- * only thing on the panel worth reading.
- */
+/** The waiting room's own overlay: the invite code, the map you are about to play, and Start. */
 export function LobbyPanel({
   code,
   nextMap,
@@ -50,19 +31,7 @@ export function LobbyPanel({
    *  refuses Start below it too — this only greys the button out. */
   const enough = players >= MIN_PLAYERS;
 
-  /**
-   * Copy the code, by whichever of the two routes exists here.
-   *
-   * `navigator.clipboard` is **secure-context only**, so it is present on
-   * localhost and over HTTPS and absent on `http://192.168.x.x:3000` — which is
-   * how every guest opens this game. Relying on it alone left the button
-   * working for the developer and silently dead for everyone else, the same trap
-   * that `crypto.randomUUID` set in `net/identity.ts`.
-   *
-   * `execCommand("copy")` is deprecated and has no such restriction, which makes
-   * it the right fallback rather than a bad one. The code is on screen to be
-   * read aloud regardless; this is a shortcut, so a failure is silent.
-   */
+  /** Copy the code, by whichever of the two routes exists here. */
   const copy = () => {
     const done = () => {
       setCopied(true);
@@ -93,11 +62,6 @@ export function LobbyPanel({
     <div className="absolute left-1/2 top-4 w-[22rem] -translate-x-1/2 rounded-lg border border-neutral-700 bg-neutral-950/90 px-4 py-3 text-neutral-100">
       <div className="flex items-center justify-between">
         <div>
-          {/* One line of facts about this game: whether strangers can find it —
-              decided at creation and unchangeable from here — and whether the
-              round is waiting on you. Host is said outright rather than inferred
-              from "there is a Start button here", because that button only
-              appears once you pause. */}
           <div className="text-[10px] uppercase tracking-widest text-neutral-500">
             Invite code · {isListed ? "public" : "unlisted"}
             {isHost && (

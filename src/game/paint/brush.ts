@@ -1,10 +1,4 @@
-/**
- * What the brush is, separately from the panel that edits it.
- *
- * `players/Player.tsx` needs this type to paint and to size its hover ring, and
- * it has no other business knowing the HUD exists — so the type lives here and
- * `PaintPanel.tsx` is just one of its consumers.
- */
+/** What the brush is, separately from the panel that edits it. */
 export type Brush = {
   color: string;
   /**

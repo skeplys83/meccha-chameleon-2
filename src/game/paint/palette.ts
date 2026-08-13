@@ -1,11 +1,4 @@
-/**
- * The paint presets, in swatch order.
- *
- * One table, two consumers: `PaintPanel` renders it as the swatch row, and
- * `Room` paints a handful of arena pieces with the same hexes. That is
- * deliberate — camouflage is only testable if a preset is an *exact* match for
- * something you can lie against, so these must never drift apart.
- */
+/** The paint presets, in swatch order. */
 export const PAINT = {
   black: "#000000",
   white: "#ffffff",

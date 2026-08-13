@@ -34,3 +34,9 @@ yarn-error.log*
 
 # editor-local settings
 .vscode/
+
+# level authoring intermediates
+/levels/*.placements.json
+
+# Blender save backups
+*.blend1

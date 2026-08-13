@@ -1,17 +1,4 @@
-/**
- * The poses, in the order of the number keys that select them. Index 0 (key
- * `1`) is the normal upright stance and is what everyone spawns in.
- *
- * A pose is a set of joint angles, not a different model. Angles are radians on
- * a rig whose limbs hang straight down at rest:
- *   - `x` swings the limb forward (the figure faces -Z)
- *   - `spread` swings it out to the figure's side; it is mirrored per side, so
- *     one number moves both arms or both legs symmetrically
- *
- * `roll` lays the whole figure on its side and `rootX` tips it forward onto its
- * face; `offsetY` drops the root so a low pose rests on the floor rather than
- * floating. `shape` picks the collider the pose needs — see `poseExtents`.
- */
+// The poses, in the order of the number keys that select them.
 
 import { POSE_COUNT } from "@/game/shared/protocol";
 
@@ -87,13 +74,6 @@ export const POSES: Pose[] = [
   },
 ];
 
-/**
- * The pose count is part of the protocol — the server clamps an incoming pose
- * index against it — so it is defined once in `shared/protocol.mjs` and this
- * table is checked against it at import time. A mismatch is a loud crash on the
- * first page load and a failed `next build`, rather than a pose that silently
- * never arrives on anyone else's screen.
- */
 if (POSES.length !== POSE_COUNT) {
   throw new Error(
     `poses.ts defines ${POSES.length} poses but shared/protocol.mjs says POSE_COUNT is ` +
@@ -107,19 +87,10 @@ export { POSE_COUNT };
 export const safePose = (n: unknown) =>
   Number.isFinite(n) ? Math.min(POSE_COUNT - 1, Math.max(0, Math.trunc(n as number))) : 0;
 
-/**
- * Half-height of a folded pose's collider — a crouch, so it can tuck under
- * things. It is a constant, *not* `hx`: tying a pose's height to how wide the
- * body is meant that narrowing the chameleon (so they can sink into walls) also
- * squashed their crouch down to nothing.
- */
+/** Half-height of a folded pose's collider — a crouch, so it can tuck under things. */
 const LOW_HALF = 0.4;
 
-/**
- * Collider half-extents for a pose. A curled or seated figure keeps a low box;
- * lying down keeps the standing box but rolled, which is handled by the
- * caller's rotation.
- */
+/** Collider half-extents for a pose. */
 export function poseExtents(
   pose: number,
   [hx, hy, hz]: [number, number, number],

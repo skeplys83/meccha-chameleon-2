@@ -1,12 +1,6 @@
 import type { Grave } from "@/game/net";
 
-/**
- * A red square on the floor where somebody was shot. Unlike a shot mark these
- * never expire — they are the record of the round.
- *
- * They are not named ROOM_SURFACE on purpose: a grave should not stop a bullet
- * or a camera, it is paint on the floor.
- */
+/** A red square on the floor where somebody was shot. */
 export function Graves({ graves }: { graves: Grave[] }) {
   return (
     <>

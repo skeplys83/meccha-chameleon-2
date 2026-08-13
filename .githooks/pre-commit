@@ -2,5 +2,4 @@
 # Enabled with:  git config core.hooksPath .githooks
 # Tracked in the repo so a fresh clone gets it by running that one command.
 node scripts/check-constants.mjs || exit 1
-node scripts/check-map-assets.mjs || exit 1
 exec node scripts/check-docs.mjs

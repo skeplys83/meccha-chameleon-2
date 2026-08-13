@@ -5,17 +5,6 @@ import { POSES, safePose, type Joint } from "./poses";
 import { getSkin } from "@/game/paint/skin";
 import { PART_SHAPE, type Part } from "./parts";
 
-/**
- * Thick-limbed stick figure on a small joint rig, built to a half-height of 1
- * so callers can scale it to a role's body size. Origin sits at the middle of
- * the body.
- *
- * Limbs are groups pivoted at the joint with the capsule hanging below, so a
- * pose is just a set of rotations (see poses.ts). Each part carries its own
- * canvas texture and is named, which is what lets the paint mode raycast a
- * limb and know which canvas to draw into.
- */
-
 // Proportions are chosen so the figure fills its collider: the soles land at
 // -1 and the crown at +1, matching the half-height of 1 it is built to.
 const HEAD_Y = 0.74;
@@ -32,34 +21,12 @@ const UPPER_LEG = PART_SHAPE.legUpperL.length;
 /** How fast a limb settles into a new pose. Higher is snappier. */
 const POSE_DAMP = 14;
 
-/**
- * A revealed body is **two stacked meshes**, and the pulse crossfades between
- * them: solid red at the top of the beat, the player's own paint at the bottom.
- *
- * That is the whole point of the reveal, and it needs two layers because no
- * single material can do it. Tinting a textured material toward red *multiplies*
- * — red times a green patch is black — so a painted body would go dark rather
- * than red. Fading to transparent instead was the first attempt and threw away
- * the more interesting half: what you actually want to see at the end of a round
- * is the camouflage that worked.
- *
- * Both layers ignore depth, so a survivor is visible through the wall they hid
- * behind, and both are unlit — the paint is a *colour match* against a surface,
- * so showing it shaded would misrepresent the thing being judged.
- */
 const REVEAL_ORDER = 20;
 const REVEAL_COLOR = new THREE.Color("#ff2a36");
 /** Beats per second. Slow enough to read as breathing rather than an alarm. */
 const REVEAL_HZ = 1.15;
 
-/**
- * **One red material for every highlighted body in the scene, shared on purpose.**
- *
- * It is animated, and a material per part per figure would mean twelve times as
- * many opacity writes a frame for an identical result — worse, they would drift
- * out of phase and the pulse would stop reading as one deliberate signal. One
- * instance means one write and every survivor beating together.
- */
+/** One red material for every highlighted body in the scene, shared on purpose. */
 const revealMaterial = new THREE.MeshBasicMaterial({
   color: REVEAL_COLOR,
   toneMapped: false,
@@ -75,12 +42,7 @@ function pulseReveal(elapsed: number) {
   revealMaterial.opacity = (Math.sin(elapsed * Math.PI * 2 * REVEAL_HZ) + 1) / 2;
 }
 
-/**
- * The paint layer of a revealed body: the real texture, unlit and through walls.
- *
- * Per part rather than shared, because the whole point is that each part wears
- * its own canvas.
- */
+/** The paint layer of a revealed body: the real texture, unlit and through walls. */
 function RevealedPaint({ texture }: { texture: THREE.CanvasTexture }) {
   return (
     <meshBasicMaterial map={texture} toneMapped={false} depthTest={false} depthWrite={false} />
@@ -145,22 +107,11 @@ export function StickFigure({
   pose?: number | (() => number);
   /** Which body's paint to wear — SELF for the local player, session id otherwise. */
   skinId: string;
-  /**
-   * Aim pitch in radians. When given, the right arm leaves the pose and points
-   * where the player is looking — the figure's yaw is already the aim yaw, so
-   * the arm only needs the elevation.
-   */
+  /** Aim pitch in radians. */
   aim?: (() => number) | null;
   /** Rendered in the right hand, barrel already aligned down the arm. */
   holding?: ReactNode;
-  /**
-   * Paint this body one flat colour and draw it through walls.
-   *
-   * Used for the surviving chameleons during the reveal, so a round ends by
-   * showing everybody where the people who beat them were actually standing.
-   * It replaces the paint deliberately: camouflage is the thing being revealed,
-   * and leaving it on would hide the very figure this is meant to expose.
-   */
+  /** Paint this body one flat colour and draw it through walls. */
   highlight?: boolean;
 }) {
   const root = useRef<THREE.Group>(null);

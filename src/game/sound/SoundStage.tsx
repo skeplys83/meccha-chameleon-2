@@ -1,30 +1,12 @@
 import { useEffect, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { onCaught, onShot, onWhistle, remotes } from "@/game/net";
-import { playSound, preloadSounds, updateListener } from "./engine";
+import { playSound, updateListener } from "./engine";
 import { Stepper, jitteredStepRate, strideFor } from "./footsteps";
 
-
-/**
- * Everything the world makes a noise about. Renders nothing.
- *
- * It sits inside the Canvas because it needs the camera every frame — the
- * listener has to follow your head or nothing is where it sounds like it is.
- *
- * Sounds arrive two ways, and the split is the point:
- *  - **Events** (a shot, a death) come off the network, because they happen at
- *    an instant and everyone must hear the same one.
- *  - **Footsteps** are derived locally from positions everyone already has. See
- *    `footsteps.ts`.
- */
+/** Nothing is preloaded here, and there is no mount effect that fetches. */
 export function SoundStage() {
   const steppers = useRef(new Map<string, Stepper>());
-
-  useEffect(() => {
-    // Decode now, so the first shot of the round is not the one that has to wait
-    // for a network fetch. The context is still suspended until the join click.
-    void preloadSounds();
-  }, []);
 
   // A shot is heard at the shooter, not at what they hit. `remotes` never holds
   // you, so your own gun comes back positionless — which is right, it is at your

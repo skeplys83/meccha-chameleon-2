@@ -1,16 +1,4 @@
-/**
- * The connection died.
- *
- * This exists because the alternative was silence: a dropped player kept looking
- * at a lit, responsive-seeming game in which everyone else had vanished, their
- * own input went nowhere, and nothing said why.
- *
- * Reconnecting is worth trying and usually works — the server holds your seat
- * for a few seconds after a drop, and coming back into it restores your side,
- * your position and your paint. Past that window the same button is a plain
- * re-join, so it is offered either way rather than being hidden once it stops
- * being the good outcome.
- */
+/** The connection died. */
 export function DroppedPanel({
   onReconnect,
   onExit,
