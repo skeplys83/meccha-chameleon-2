@@ -1,5 +1,8 @@
 import * as THREE from "three";
 
+// Type-only, and `maps.ts` is import-free by design — see invariant 1.
+import type { LightOptions } from "./maps.ts";
+
 /**
  * Turns a loaded level `.glb` into the two things the game wants from it: a
  * visual scene that is never collided with, and a set of colliders that are
@@ -71,6 +74,37 @@ export function colliderKindOf(name: string): ColliderKind | null {
   return null;
 }
 
+/**
+ * The second way a piece gets collision: a `collider` custom property in
+ * Blender, which the exporter writes to glTF `extras` and the loader hands over
+ * as `userData`.
+ *
+ * **A prefix and a tag are for different jobs.** A `col*_` object is a *separate*
+ * shape, which is what lets the dungeon collide with 74 merged boxes instead of
+ * its 690 drawn pieces, and lets a shot raycast a 12-triangle proxy rather than
+ * a torch's forty. A tag says "collide with exactly this, as drawn" — one
+ * object, nothing to drift, and the right answer for a prop whose collider was
+ * only ever going to be a copy of it. The rule: **if the collider should differ
+ * from the drawn shape, author it; otherwise tag it.**
+ *
+ * Untagged means *no* collision, which is what decoration wants — a banner on a
+ * wall should not be something you walk into.
+ */
+// `| undefined` on purpose: without it the index signature promises a hit for
+// every string and the unknown-value branch below is narrowed away as dead.
+const TAGGED_KINDS: Record<string, ColliderKind | undefined> = {
+  cuboid: "cuboid",
+  hull: "hull",
+  trimesh: "trimesh",
+  ball: "ball",
+};
+
+function taggedKindOf(mesh: THREE.Mesh) {
+  const asked = mesh.userData?.collider;
+  if (asked === undefined || asked === "none") return null;
+  return TAGGED_KINDS[String(asked)] ?? "unknown";
+}
+
 export type PreparedLevel = {
   scene: THREE.Object3D;
   colliders: LevelCollider[];
@@ -81,10 +115,41 @@ export type PreparedLevel = {
     batches: number;
     lights: number;
     shadowCasters: number;
+    /** Colliders that came from a `collider` custom property rather than a name. */
+    tagged: number;
+    /** `collider` values that are not a collider kind, for `checkLevel` to report. */
+    badTags: string[];
   };
 };
 
 /** Scratch, so preparing a level does not allocate a vector per piece. */
+/**
+ * The two numbers that decide how a `.blend`'s lighting reads in game. Both are
+ * deliberate departures from physical correctness, and the energies in every
+ * `.blend` are chosen against them — change either and every map re-lights.
+ *
+ * `LIGHT_SCALE` brings glTF's photometric units down to the range this game's
+ * materials and exposure are built for. **It is not interchangeable with
+ * `render.exposure` in `maps.ts`, however much it looks like it.** Exposure
+ * multiplies the whole tone-mapped frame; this multiplies *lit surfaces only*.
+ * Folding one into the other darkens everything that is tone-mapped but not
+ * lit — drei's `Sky` (a `ShaderMaterial`, and `toneMapped` defaults to true)
+ * and the shot mark's `emissive` — by a hundred times. A plain background
+ * `Color` is safe either way; it goes through `setClear` and is never
+ * tone-mapped at all.
+ *
+ * `LAMP_DECAY` is softer than the physical 2 that glTF mandates and the loader
+ * sets. At 2 a lamp reads as a bright ring with a hard edge and a corridor
+ * between two of them goes black in the middle; 1.6 reaches further and lets
+ * the pools overlap. The map is lit to be *played* in.
+ */
+const LIGHT_SCALE = 0.01;
+const LAMP_DECAY = 1.6;
+
+type PrepareLevelOptions = {
+  lights?: LightOptions;
+};
+
 const SCALE = new THREE.Vector3();
 const SIZE = new THREE.Vector3();
 const SPARE_V = new THREE.Vector3();
@@ -104,7 +169,9 @@ function batch(scene: THREE.Object3D, drawn: THREE.Mesh[]) {
   const groups = new Map<string, THREE.Mesh[]>();
   for (const mesh of drawn) {
     const material = mesh.material as THREE.Material;
-    const key = `${mesh.geometry.uuid}|${material.uuid}`;
+    // `castShadow` is part of the key: an InstancedMesh casts or does not as a
+    // whole, so mixing an excluded piece into a batch would put its shadow back.
+    const key = `${mesh.geometry.uuid}|${material.uuid}|${mesh.castShadow}`;
     const group = groups.get(key);
     if (group) group.push(mesh);
     else groups.set(key, [mesh]);
@@ -122,7 +189,7 @@ function batch(scene: THREE.Object3D, drawn: THREE.Mesh[]) {
       first.material as THREE.Material,
       group.length,
     );
-    mesh.castShadow = true;
+    mesh.castShadow = first.castShadow;
     mesh.receiveShadow = true;
     // Every piece of a level is static, so the matrices are written once.
     mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
@@ -143,11 +210,30 @@ function batch(scene: THREE.Object3D, drawn: THREE.Mesh[]) {
   return { instanced, batches };
 }
 
-/** The world-space geometry a hull or trimesh collider is built from. */
+/**
+ * The world-space geometry a hull or trimesh collider is built from.
+ *
+ * **Positions are copied out one vertex at a time rather than handed over as
+ * `attributes.position.array`.** That shortcut is only correct while the
+ * attribute is tightly packed: an `InterleavedBufferAttribute` shares its buffer
+ * with the normals and UVs, so `.array` is *everything*, and rapier reads
+ * normals as if they were positions. It cost the arena every one of its hull and
+ * trimesh colliders — a capsule's 1056 vertices arrived as 2112, the ring's 3072
+ * as 8192 — and a player embedded in the resulting garbage cannot move at all.
+ * Interleaving is a packing choice a glTF is free to make, so the loader must
+ * not depend on it either way.
+ */
 function bake(mesh: THREE.Mesh) {
   const geometry = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld);
   geometry.computeBoundingBox();
-  const vertices = geometry.attributes.position.array as Float32Array;
+
+  const position = geometry.attributes.position;
+  const vertices = new Float32Array(position.count * 3);
+  for (let i = 0; i < position.count; i++) {
+    vertices[i * 3] = position.getX(i);
+    vertices[i * 3 + 1] = position.getY(i);
+    vertices[i * 3 + 2] = position.getZ(i);
+  }
   return { geometry, vertices };
 }
 
@@ -156,11 +242,19 @@ function colliderFrom(mesh: THREE.Mesh, kind: ColliderKind): LevelCollider | nul
   const bounds = mesh.geometry.boundingBox;
   if (!bounds) return null;
 
+  // Decomposed rather than read off the matrix: `setFromRotationMatrix` assumes
+  // the upper 3x3 is a pure rotation, and a non-uniformly scaled object's is
+  // not. The arena's ramp is scaled [4.5, 0.5, 9.5] and turned 18.3 degrees, and
+  // that shortcut read it as **66.9** — a slab standing on end where a gentle
+  // ramp is drawn, which is an invisible wall you cannot see in Blender because
+  // Blender is not doing the reading. Only rotated *and* scaled pieces show it.
+  mesh.matrixWorld.decompose(SPARE_V, SPARE_Q, SCALE);
+
   // The collider sits at the bounding box's *centre*, which is not the object's
   // origin — a wall modelled standing up from y = 0 has its origin on the floor.
   const placed: Placed = {
     position: bounds.getCenter(new THREE.Vector3()).applyMatrix4(mesh.matrixWorld),
-    quaternion: new THREE.Quaternion().setFromRotationMatrix(mesh.matrixWorld),
+    quaternion: SPARE_Q.clone(),
   };
 
   if (kind === "hull") return { ...placed, kind, ...bake(mesh) };
@@ -175,8 +269,6 @@ function colliderFrom(mesh: THREE.Mesh, kind: ColliderKind): LevelCollider | nul
       : Uint32Array.from({ length: baked.vertices.length / 3 }, (_, i) => i);
     return { ...placed, kind, ...baked, indices };
   }
-
-  mesh.matrixWorld.decompose(SPARE_V, SPARE_Q, SCALE);
 
   if (kind === "ball") {
     mesh.geometry.computeBoundingSphere();
@@ -198,12 +290,23 @@ function colliderFrom(mesh: THREE.Mesh, kind: ColliderKind): LevelCollider | nul
   };
 }
 
-export function prepareLevel(source: THREE.Object3D): PreparedLevel {
+export function prepareLevel(
+  source: THREE.Object3D,
+  options: PrepareLevelOptions = {},
+): PreparedLevel {
+  const tuning = options.lights ?? {};
+  const lightScale = tuning.scale ?? 1;
+  const decay = tuning.decay ?? LAMP_DECAY;
+  const shadowTuning = tuning.shadow ?? {};
   const scene = source.clone(true);
   scene.updateMatrixWorld(true);
 
-  const collision: [THREE.Mesh, ColliderKind][] = [];
+  // mesh, kind, and whether it stays in the visual half (a tag) or is
+  // removed from it (a `col*_` object).
+  const collision: [THREE.Mesh, ColliderKind, boolean][] = [];
+  const badTags: string[] = [];
   const drawn: THREE.Mesh[] = [];
+  const sunShadows: THREE.DirectionalLight[] = [];
   let lights = 0;
   let shadowCasters = 0;
 
@@ -211,20 +314,42 @@ export function prepareLevel(source: THREE.Object3D): PreparedLevel {
     const light = child as THREE.Light;
     if (light.isLight) {
       lights += 1;
-      // Blender's exported lights are wildly brighter than this runtime's
-      // `physicallyCorrectLights` defaults. The map files are loading with point
-      // light intensities around 1,200–4,600, which makes every lamp wash out
-      // the scene. Scale them down once on import so the authored brightness
-      // survives the glTF conversion. `shadow_*` lights still opt into shadowing
-      // by name, but they keep the same normalized intensity after this.
-      light.intensity *= 0.01;
+      // glTF carries photometric units — lux for a sun, candela for a lamp —
+      // so a Blender lamp arrives in the thousands and washes the map out.
+      light.intensity *= LIGHT_SCALE * lightScale;
+
+      // `decay` and `distance` exist on both point and spot lights.
+      const falloff = light as THREE.PointLight;
+      if (falloff.isPointLight || (light as THREE.SpotLight).isSpotLight) {
+        falloff.decay = decay;
+        if (tuning.distance !== undefined) falloff.distance = tuning.distance;
+      }
+
       if (light.name.startsWith("shadow_")) {
         shadowCasters += 1;
         light.castShadow = true;
         const shadow = (light as THREE.DirectionalLight).shadow;
         if (shadow) {
-          shadow.mapSize.set(1024, 1024);
-          shadow.bias = -0.0005;
+          // A sun covers the whole level from one map and needs the resolution;
+          // a point light's shadow is a *cube*, so three packs six faces into
+          // one texture and 2048 would mean 8192x4096. Only the sun is raised.
+          const size =
+            shadowTuning.mapSize ??
+            ((light as THREE.DirectionalLight).isDirectionalLight ? 2048 : 1024);
+          shadow.mapSize.set(size, size);
+          shadow.bias = shadowTuning.bias ?? -0.0005;
+          if (shadowTuning.intensity !== undefined) shadow.intensity = shadowTuning.intensity;
+          if (shadowTuning.radius !== undefined) shadow.radius = shadowTuning.radius;
+          if (shadowTuning.blurSamples !== undefined) {
+            shadow.blurSamples = shadowTuning.blurSamples;
+          }
+          // A directional light's shadow camera is an orthographic box, and
+          // three's default is ±5 units — a tenth of the arena, so everything
+          // outside the middle simply stops casting. Sized to the level below,
+          // once its extent is known.
+          if ((light as THREE.DirectionalLight).isDirectionalLight) {
+            sunShadows.push(light as THREE.DirectionalLight);
+          }
         }
       }
       return;
@@ -235,22 +360,98 @@ export function prepareLevel(source: THREE.Object3D): PreparedLevel {
 
     const kind = colliderKindOf(mesh.name);
     if (kind) {
-      collision.push([mesh, kind]);
+      collision.push([mesh, kind, false]);
       return;
     }
 
+    // A tagged piece collides *and* stays drawn, so it falls through to the
+    // decoration handling below rather than returning here.
+    const asked = taggedKindOf(mesh);
+    if (asked === "unknown") badTags.push(`${mesh.name}: ${mesh.userData.collider}`);
+    else if (asked) collision.push([mesh, asked, true]);
+
     // Decoration. Deliberately *not* named `ROOM_SURFACE`: shots, the ground
     // test and the camera all read the collision layer instead. See invariant 5.
-    mesh.castShadow = true;
+    //
+    // A shell piece is excluded from *casting* by name. glTF has no per-object
+    // shadow flag, so this cannot come from the file, and the arena needs it:
+    // its walls are 12 tall under a 47-degree sun, which lays an 11-unit band of
+    // shadow across a quarter of the floor and shuts the sun out of the room the
+    // sky says it is shining into. They still *receive* — see invariant 18.
+    mesh.castShadow = !(shadowTuning.exclude ?? []).some((p) => mesh.name.startsWith(p));
     mesh.receiveShadow = true;
     drawn.push(mesh);
   });
 
   const colliders: LevelCollider[] = [];
-  for (const [mesh, kind] of collision) {
+  let tagged = 0;
+  for (const [mesh, kind, keepDrawn] of collision) {
     const collider = colliderFrom(mesh, kind);
     if (collider) colliders.push(collider);
-    mesh.removeFromParent();
+    // A `col*_` object is collision *instead of* being drawn — invariant 13. A
+    // tagged one is collision *as well as*, so it stays where it is.
+    if (keepDrawn) tagged += 1;
+    else mesh.removeFromParent();
+  }
+
+  // Now the level's extent is known, so every sun can be given a shadow camera
+  // that covers it. Without this only the middle of a map casts at all.
+  if (sunShadows.length) {
+    // Measured over what actually *casts*, not over the colliders. Decoration
+    // can reach past every collider — the arena's cone and dome sit 36 units
+    // out with nothing solid that far — and a shadow camera fitted to the
+    // collision layer clips exactly those pieces.
+    const bounds = new THREE.Box3();
+    for (const mesh of drawn) if (mesh.castShadow) bounds.expandByObject(mesh);
+
+    let radius = 0;
+    if (!bounds.isEmpty()) {
+      for (const sx of ["min", "max"] as const) {
+        for (const sy of ["min", "max"] as const) {
+          for (const sz of ["min", "max"] as const) {
+            SPARE_V.set(bounds[sx].x, bounds[sy].y, bounds[sz].z);
+            radius = Math.max(radius, SPARE_V.length());
+          }
+        }
+      }
+    }
+    for (const collider of colliders) radius = Math.max(radius, radiusOf(collider));
+    const span = Math.max(radius, 1) * 1.05;
+    for (const sun of sunShadows) {
+      const camera = sun.shadow.camera;
+      camera.left = -span;
+      camera.right = span;
+      camera.top = span;
+      camera.bottom = -span;
+      camera.near = 0.5;
+      camera.far = span * 6;
+      camera.updateProjectionMatrix();
+
+      // Acne is a depth error, and its size is set by how far the surface falls
+      // across one shadow texel — texel / tan(elevation) — so it explodes as the
+      // sun gets low. A constant `bias` cannot track that; `normalBias` offsets
+      // along the surface normal in world units and does. Derived from the texel
+      // rather than typed, because the frustum above is derived too: the arena
+      // was striped end to end with a bias 230x smaller than its own error.
+      const texel = (camera.right - camera.left) / sun.shadow.mapSize.x;
+      sun.shadow.normalBias = shadowTuning.normalBias ?? texel * 3;
+    }
+  }
+
+  // The ambient terms glTF has no way to express. Added to the prepared scene
+  // rather than by a component, so they still belong to the *map* — see
+  // invariant 15, which this refines rather than breaks.
+  if (tuning.ambient) {
+    const { color = "#ffffff", intensity } = tuning.ambient;
+    scene.add(new THREE.AmbientLight(new THREE.Color(color), intensity));
+    lights += 1;
+  }
+  if (tuning.hemisphere) {
+    const { sky = "#ffffff", ground = "#404040", intensity } = tuning.hemisphere;
+    scene.add(
+      new THREE.HemisphereLight(new THREE.Color(sky), new THREE.Color(ground), intensity),
+    );
+    lights += 1;
   }
 
   const { instanced, batches } = batch(scene, drawn);
@@ -258,8 +459,45 @@ export function prepareLevel(source: THREE.Object3D): PreparedLevel {
   return {
     scene,
     colliders,
-    stats: { drawn: drawn.length, instanced, batches, lights, shadowCasters },
+    stats: { drawn: drawn.length, instanced, batches, lights, shadowCasters, tagged, badTags },
   };
+}
+
+/**
+ * How far the origin is from the farthest corner of a collider — the radius a
+ * sun's shadow camera has to cover.
+ *
+ * **Not `reachOf`**, which is the ground plane only. A sun looks at the level
+ * from an angle, so its orthographic box lives in *light* space and has to
+ * contain the level's whole 3D extent however the light is turned. The arena is
+ * 20.5 out and 12 tall: a ground reach of 24.6 left the far corner 6.8 short,
+ * and shadows simply stopped along a hard line across the floor.
+ */
+function radiusOf(collider: LevelCollider) {
+  if (collider.kind === "hull" || collider.kind === "trimesh") {
+    const bounds = collider.geometry.boundingBox;
+    if (!bounds) return 0;
+    return Math.max(bounds.min.length(), bounds.max.length());
+  }
+  if (collider.kind === "ball") return collider.position.length() + collider.radius;
+
+  // The eight real corners, rotated. Adding the half-diagonal to the centre
+  // distance is easier and always safe, but it over-reaches badly for a long
+  // thin piece — the arena's walls pushed the span from 32 to 44, and every
+  // wasted unit is shadow resolution spent on empty space.
+  const [hx, hy, hz] = collider.half;
+  let farthest = 0;
+  for (const sx of [-1, 1]) {
+    for (const sy of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        SPARE_V.set(sx * hx, sy * hy, sz * hz)
+          .applyQuaternion(collider.quaternion)
+          .add(collider.position);
+        farthest = Math.max(farthest, SPARE_V.length());
+      }
+    }
+  }
+  return farthest;
 }
 
 /** How far out a collider reaches on the ground plane. */
@@ -310,9 +548,16 @@ export function checkLevel(
   console.info(
     `level "${level.id}": ${stats.drawn} meshes → ` +
     `${stats.drawn - stats.instanced + stats.batches} draw calls, ` +
-    `${plural(colliders.length, "collider")}, ` +
+    `${plural(colliders.length, "collider")}` +
+    `${stats.tagged ? ` (${stats.tagged} tagged)` : ""}, ` +
     `${plural(stats.lights, "light")} (${stats.shadowCasters} casting shadows)`,
   );
+
+  // A misspelled `collider` property is otherwise indistinguishable from not
+  // setting one: the piece is simply drawn and walked through.
+  for (const bad of stats.badTags) {
+    say(`\`collider\` on ${bad} is not one of cuboid, hull, trimesh, ball, none`);
+  }
 
   // Every point light that casts is six render passes. Four is already a lot
   // for a browser; past that the frame cost stops being worth the darkness.
@@ -348,6 +593,12 @@ export function checkLevel(
   // because the player is placed before the file has loaded. It survives into
   // the prepared scene because it is an Empty rather than a mesh.
   const marker = scene.getObjectByName("spawn");
+  // Absence used to pass in silence, which is the wrong way round: a deleted
+  // marker disables the only check on `spawn` drifting, and the game keeps
+  // using the number in `maps.ts` so nothing looks wrong until it is.
+  if (!marker) {
+    say("no `spawn` empty in the file — nothing is checking maps.ts's spawn any more");
+  }
   if (marker) {
     const at = new THREE.Vector3().setFromMatrixPosition(marker.matrixWorld);
     if (at.distanceTo(SPARE_V.set(...level.spawn)) > 0.05) {

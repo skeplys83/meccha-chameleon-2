@@ -24,7 +24,11 @@ export function GltfLevel({ level }: { level: GameMap }) {
 
   // In a `useMemo` rather than an effect, so the `ROOM_SURFACE` meshes below
   // exist by the time `players/Player.tsx` collects them — see invariant 9.
-  const prepared = useMemo(() => prepareLevel(scene), [scene]);
+  const prepared = useMemo(
+    () =>
+      prepareLevel(scene, { lights: level.render.lights }),
+    [scene, level.render.lights],
+  );
 
   // The one thing the deleted build step used to guarantee. See `checkLevel`.
   useEffect(() => {

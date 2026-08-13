@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useFrame } from "@react-three/fiber";
 import { KeyboardControls } from "@react-three/drei";
 import { Physics } from "@react-three/rapier";
 import { controlMap } from "@/game/players/controls";
@@ -17,6 +17,44 @@ import type { Role } from "@/game/shared/protocol";
 import type { Mark } from "@/game/combat/Marks";
 import type { Brush } from "@/game/paint/brush";
 import { onLeftRoom, onMark, type Grave } from "@/game/net";
+
+/**
+ * Frames drawn per second, at most. `requestAnimationFrame` already pins the
+ * loop to the display's refresh rate, so this only ever takes it *down* — which
+ * on a 120Hz panel is half the GPU work, and this game is fragment-bound.
+ */
+const MAX_FPS = 60;
+
+/**
+ * Draws at most `fps` frames a second.
+ *
+ * **Passing a priority above 0 turns off r3f's automatic render**, which is what
+ * makes this possible at all: this callback then owns `gl.render`, and skipping
+ * it skips the frame. Every other `useFrame` in the game is priority 0, so they
+ * have all run by the time this does — movement, physics and input still tick at
+ * the full refresh rate and only the expensive pass is throttled. Input latency
+ * and rapier's stability are untouched.
+ */
+function FrameLimiter({ fps }: { fps: number }) {
+  const carry = useRef(0);
+
+  useFrame(({ gl, scene, camera }, delta) => {
+    const interval = 1 / fps;
+    carry.current += delta;
+
+    // Half a frame of slack, or a 60Hz display asking for 60fps loses every
+    // frame whose delta lands a hair under the interval.
+    if (carry.current < interval - delta / 2) return;
+
+    // Carry the remainder so the long-run average holds, but never bank more
+    // than a frame of it: after a stall or a backgrounded tab the accumulated
+    // debt would otherwise force a burst of catch-up renders.
+    carry.current = Math.min(carry.current - interval, interval);
+    gl.render(scene, camera);
+  }, 1);
+
+  return null;
+}
 
 const MARK_LIFETIME = 3000;
 
@@ -105,6 +143,7 @@ export default function Scene({
           }
         }}
       >
+        <FrameLimiter fps={MAX_FPS} />
         {/* The background and every light belong to the map now, and are set by
             `world/Room` — a Blender-authored level carries its own, and one
             hardcoded here would be added to them. */}

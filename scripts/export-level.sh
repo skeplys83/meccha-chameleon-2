@@ -55,6 +55,10 @@ export_one() {
   "$blender" --background "$blend" --python "$here/export-level.py" -- "$glb" \
     | grep -E "^(exported|  !)" || true
 
+  # Merge mesh data the exporter wrote out more than once — see
+  # scripts/optimize-level.mjs. A failure here leaves the exported file alone.
+  node "$here/optimize-level.mjs" "$glb" || true
+
   after=$(size_kb "$glb")
   gz=$( (gzip -c9 "$glb" | wc -c) 2>/dev/null | tr -d ' ' )
   gz_kb=$((gz / 1024))

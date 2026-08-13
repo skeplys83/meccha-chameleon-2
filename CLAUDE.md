@@ -291,10 +291,25 @@ Every mode transition in the game is decided in `Game.tsx` — which also means 
 owns the *teardown* of each: joining unlocks audio, pausing suspends it, and
 dying or leaving stops every looping sound. It owns the hunter's pointer lock the
 same way, held for as long as they are playing at all rather than re-taken by
-each button that hands control back — which is also why Esc raises the pause menu
-but cannot dismiss it, since asking for the lock with the key that just released
-it is refused by the browser. Anything that outlives its player, or fails to come
-back with it, is a bug that lands here.
+each button that hands control back — **which is why Esc closes the pause menu
+for a chameleon and not for a hunter.** A hunter's Esc never reaches the app at
+all: the browser spends it releasing the lock, and `pointerlockchange` is what
+raises their menu. Were it to reach the app, dismissing would ask for the lock
+back in the keypress that just gave it up, which the browser refuses — leaving
+them looking around with no lock and no way back. A chameleon never holds one,
+so for them the key works both ways, gated on `document.hasFocus()` so a pause
+that came from losing the window is dismissed by returning to it rather than by
+a keystroke landing in the background.
+
+**`paused` and `painting` are mutually exclusive, and every path has to keep
+them that way.** Opening the palette clears the pause; Esc closes the palette
+before it will pause; the hunter's lock handler refuses to pause while it is
+open. Losing the window was once the exception — it set `paused` and left
+`painting` alone, which hid the pause menu *and* the palette while the keys
+stayed dead, so a chameleon came back to a game that ignored them until they
+pressed Esc to shut an invisible palette and only then found something to
+resume. Anything that outlives its player, or fails to come back with it, is a
+bug that lands here.
 
 ## How the folders may depend on each other
 

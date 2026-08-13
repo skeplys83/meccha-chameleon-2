@@ -96,7 +96,16 @@ export function Game() {
   /** Losing the window pauses the game, whoever you are. See invariant 1. */
   useEffect(() => {
     if (!joined) return;
-    const away = () => setPaused(true);
+    // Closing the palette matters as much as pausing. `painting` and `paused`
+    // are mutually exclusive everywhere else — opening the palette clears the
+    // pause — and this was the one path that set one without the other. The
+    // result hid *both* the panel and the menu while the keys stayed dead, so a
+    // chameleon came back to a game that ignored them until they pressed Esc to
+    // shut the palette and only then found something to resume.
+    const away = () => {
+      setPaused(true);
+      setPainting(false);
+    };
     const onVisibility = () => {
       if (document.visibilityState === "hidden") away();
     };
@@ -408,13 +417,33 @@ export function Game() {
     enter(name, session, () => rejoin(name, session, code), "reconnect");
   }, [enter, name, room, session]);
 
-  /** Esc opens the pause menu. */
+  /**
+   * Esc opens the pause menu, and closes it again — but only for a chameleon,
+   * and only while this document really holds focus.
+   *
+   * **Both halves of that are the pointer lock.** A hunter's Esc never reaches
+   * here at all: the browser spends it releasing the lock, and `pointerlockchange`
+   * is what raises their menu. Were it to reach here, resuming would ask for the
+   * lock back in the same keypress that just gave it up, which the browser
+   * refuses — so Esc would close the menu and leave them looking around with no
+   * lock and no way back. A chameleon never holds one, so for them the key is
+   * free to work both ways.
+   *
+   * `hasFocus` is the "with the mouse" half: a pause that came from losing the
+   * window should be dismissed by coming *back* to it, not by a keystroke that
+   * arrives while the page is still in the background.
+   */
   useEffect(() => {
     if (!joined) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== "Escape" || e.repeat || dropped) return;
-      if (paintingRef.current) setPaintOpen(false);
-      else if (!pausedRef.current && role === "chameleon") setPaused(true);
+      if (paintingRef.current) {
+        setPaintOpen(false);
+        return;
+      }
+      if (role !== "chameleon") return;
+      if (!pausedRef.current) setPaused(true);
+      else if (document.hasFocus()) setPaused(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

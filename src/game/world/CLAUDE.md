@@ -31,11 +31,37 @@ There is one kind of map and one way to make one. `levels/<id>.blend` is the
 map, `public/maps/<id>.glb` is its export, and the row in `maps.ts` is a display
 name and the handful of numbers the game needs before the file has loaded.
 
-**There is no build step, and that is deliberate.** Nothing in this repo reads,
-writes or generates a `.blend` or a `.glb`; the Blender side is a separate
-workflow that happens to drop a file into `public/maps/`. The cost is that
-`spawn` and `bound` are typed by hand and can drift from the file — which is
-what `checkLevel` is for.
+**Nothing in this repo reads or generates a `.blend`** — the Blender side is a
+separate workflow that happens to drop a file into `public/maps/`, and the cost
+is that `spawn` and `bound` are typed by hand and can drift from the file, which
+is what `checkLevel` is for.
+
+**The `.glb` side is one step, and it is `export-level.sh`.** Blender writes the
+file and then `scripts/optimize-level.mjs` runs `dedup` over it in place, merging
+mesh data the exporter emitted more than once. That is not a build step in the
+sense this doc used to deny — nothing generates the *level*, and the `.glb` is
+still the committed artefact — but it is a pass over the export, and it earns its
+place: `batch()` groups by geometry identity, so a piece copied with `shift+D`
+instead of `alt+D` is its own draw call. Dedup makes that mistake stop mattering
+(invariant 14). It paid for itself immediately — **the arena went 30 draw calls
+to 15** on files nobody thought were duplicated, because Blender writes identical
+geometry more than once on its own.
+
+It refuses to write if node, collider or light counts move: dedup merges *data*
+and must never change what the level is made of.
+
+**It also changes how attributes are *packed*, and that broke the arena once.**
+Merging accessors lets glTF share one buffer view between positions, normals and
+UVs, and three then loads them as an `InterleavedBufferAttribute`. `bake()` used
+to hand rapier `attributes.position.array`, which for an interleaved attribute is
+*the whole buffer* — so a hull was built from normals and UVs as if they were
+vertices. A capsule's 1056 vertices arrived as 2112, the ring's 3072 as 8192, and
+a player embedded in the resulting garbage **could not move at all while looking
+around still worked.** Only the arena has hull, ball and trimesh colliders; the
+dungeon is all `col_` cuboids, which are built from the bounding box and never
+touch the array, which is why the lobby broke and the match map did not. `bake()`
+now copies positions out one vertex at a time. Interleaving is a packing choice
+any glTF may make, so nothing downstream may assume it either way.
 
 **The registry is readable by Node, and the server reads it.** `server/room.ts`
 imports `mapRoundSeconds` and `server/messages.ts` imports `mapLimit`. That works
@@ -50,6 +76,31 @@ or three.js into `maps.ts` closes the door entirely** — which is why
 
 The file is read **by convention**. There is no level editor and no metadata
 sidecar; an object's name is the whole interface:
+
+**There are two ways to give a piece collision, and they are for different
+jobs.** Name it `col*_` and it becomes a *separate* shape that is never drawn —
+that is what lets the dungeon collide with 74 merged boxes instead of its 690
+drawn pieces, and lets a shot raycast a 12-triangle proxy rather than a torch's
+forty. Or give the drawn object a **`collider` custom property** in Blender and
+it collides *as itself*: one object, nothing to drift, and the right answer for
+a prop whose collider was only ever going to be a copy of it.
+
+| `collider` | gives |
+| --- | --- |
+| `"cuboid"` `"hull"` `"trimesh"` `"ball"` | that collider, built from the drawn mesh, which stays drawn |
+| `"none"`, or no property at all | **no collision** — what decoration wants; a banner is not something you walk into |
+
+The property rides glTF `extras` (`export_extras` is already on) and arrives as
+three's `userData`. A value that is not one of the five is reported by
+`checkLevel`, because a misspelled one is otherwise indistinguishable from not
+setting one: the piece is simply drawn and walked through.
+
+**The rule: if the collider should differ from the drawn shape, author it;
+otherwise tag it.** Architecture wants the first — merged runs, simplified
+shapes, a lid with no visual. Props want the second. The cost of a tag is that
+the `ROOM_SURFACE` proxy is the render geometry, so a shot raycasts the real
+triangles (296 for the dungeon's staircase against 12 for a box); fine for a
+prop, not for two hundred.
 
 | named | becomes |
 | --- | --- |
@@ -107,8 +158,94 @@ so, without saving the `.blend`. `export-level.sh` also shouts if a level sudden
 at more than twice its previous size, which is what a leak looks like from
 outside.
 
+**It forces every *other* collection the opposite way, and that is the sharper
+half.** `use_visible` means a collection you clicked the eye off in the outliner
+does not export at all — and `collision` is the one everybody hides, because it
+sits on top of the map you are trying to look at. The dungeon exported once with
+all 74 colliders missing: it loaded, drew perfectly, and dropped you through the
+floor. So the exporter un-hides everything but `kit` for the duration, restores
+it after, and **refuses to write a `.glb` with no `col_*` objects in it at all.**
+
 The raw pack also lives at `levels/kit/dungeon/` as the original `.gltf` files,
 for re-importing anything the grid has lost.
+
+### The render config
+
+`maps.ts` carries no comments — it is a table, and this is the key to it. Every
+field is optional; each falls back to a global constant in `levelScene.ts` or to
+a value derived from the level.
+
+| `render.*` | what it does |
+| --- | --- |
+| `toneMapping` | one of three's seven. **`AgXToneMapping` is the only one Blender also has**, so it is the only one that can ever show the same picture — the dungeon is on it, the arena is still ACES |
+| `exposure` | `gl.toneMappingExposure`. Scales the **whole tone-mapped frame**, not just lit surfaces — see invariant 23 |
+| `outputColorSpace`, `antialias`, `dpr` | straight onto the canvas |
+| `shadows.enabled` / `.type` | the only two the *renderer* takes. Resolution and bias belong to the light — invariant 21. **Use `PCFShadowMap`**: three deprecated `PCFSoftShadowMap` and silently swaps it for `PCFShadowMap` anyway, warning once per compile. Asking for it bought nothing and cost `shadow.radius`, which PCF honours and PCFSoft ignores — so the softness knob was unreachable for as long as we asked for the deprecated one |
+| `fog` | `THREE.Fog`, or null |
+
+| `render.lights.*` | what it does |
+| --- | --- |
+| `scale` | multiplies every light in the file, on top of `LIGHT_SCALE` |
+| `decay` | falloff exponent for point and spot. Overrides `LAMP_DECAY` |
+| `distance` | cut-off radius, 0 = infinite. three uses **Frostbite windowing**, so a 16 unit cut-off is a 0.3% dim at 3.2 units and exactly zero at 16 — it costs almost nothing near the lamp and ends the far tail |
+| `shadow.intensity` | how *dark* a shadow is, 0..1, independent of the light's brightness. The arena runs 0.75, because full-strength shadows in a white room read as holes |
+| `shadow.radius` | how soft the edge is. Works under `PCF` and `VSM`, and is **ignored under `PCFSoftShadowMap`** — but see below, nothing uses that any more |
+| `shadow.blurSamples` | `VSMShadowMap` only |
+| `shadow.bias` / `.normalBias` / `.mapSize` | overrides for the derived defaults. Leave them alone unless you have measured something |
+| `ambient` / `hemisphere` | the terms glTF cannot carry, built by `prepareLevel` from this entry — invariant 15 |
+
+**Nothing that does not do something goes in this table.** three's
+`scene.environmentIntensity` and `backgroundIntensity` are deliberately absent:
+the first needs an environment map, which neither map has and trap 3 rules out
+fetching, and the second scales a background *texture* where both maps use a
+plain `Color`. Adding either would recreate the dead-config trap of invariant 21.
+
+Two `GameMap` fields are worth naming because nothing in the file says so:
+`roundSeconds` on the **arena is unused** — it is the waiting room, never a match
+map — and `spawn` is the body's *centre*, which is why it is `[0, 2, 0]` and not
+on the floor.
+
+### Previewing a map's lighting in Blender
+
+Blender can be made to show roughly what the game will, and **none of it
+exports** — the `.glb` is byte-identical before and after, so set these freely.
+`levels/dungeon.blend` already has them.
+
+| | why |
+| --- | --- |
+| View Transform **AgX**, Look None, Gamma 1 | three's `AgXToneMapping` *is* Blender's AgX. It is the only curve both sides have, which is why the dungeon is on it and the arena is still ACES. |
+| Film Exposure **0** (the default) | see below |
+| World colour **black** | three has no ambient. A 0.051 grey world lifts every shadow in Blender and nothing in game. |
+| EEVEE raytracing / fast GI **off**, or Cycles bounces **0** | three computes direct light only. Bounce light is most of what a Blender render shows and none of what the game does. |
+
+The brightness relationship is not a taste call, it is the unit conversion:
+
+```
+game / blender  =  683 × LIGHT_SCALE × exposure × d^(2 − LAMP_DECAY)
+```
+
+683 lm/W is the exporter's photometric conversion, `LIGHT_SCALE`, `lights.scale`
+and `exposure` are the game's multiplies, and the last term is the falloff we
+chose over the physical one. **Solve it for 1 and Blender at its default
+exposure of 0 is the preview, with nothing to remember.** At `exposure: 0.8` it
+was 8.70×, which is what produced a blown-out room against a Blender scene that
+looked right.
+
+The dungeon currently runs `lights.scale: 0.3` with `exposure: 0.5`, which puts
+it at **1.63×** — deliberately a little hotter than the viewport, not the exact
+1.00 that `scale: 1, exposure: 0.092` gave. Change any of those four numbers and
+the ratio moves: either re-solve for 1, or dial `log2(ratio)` into Blender's Film
+Exposure and preview against that instead.
+
+**What still will not match**, and cannot without baking:
+
+- **The falloff.** `LAMP_DECAY` is 1.6 and Blender is inverse-square, so one
+  exposure can only line them up at one distance. Calibrated at 3.2 m, the game
+  runs 0.83× at 2 m and 1.44× at 8 m — the deliberate softness, seen from the
+  other side.
+- **Bounce light**, if you leave GI on. This is the big one.
+- **Shadow softness.** `shadow_soft_size` has no glTF field, so every lamp is an
+  ideal point in game however soft it looks here.
 
 ### Checking a level without a browser
 
@@ -121,6 +258,16 @@ leaked into the visual half, and what the draw call count came to after batching
 `checkLevel` can be called the same way. Three DOM globals have to be stubbed for
 the texture decode (`self`, `URL.createObjectURL`, `createImageBitmap`); the
 texture failing to load is expected and affects none of the above.
+
+**A sealed map is checkable the same way, and the test has to cull back faces
+like the renderer does.** Fire rays from open space in every direction and count
+the ones that hit nothing: each is a sightline out of the level. Do it against
+`prepared.scene` with a `THREE.Raycaster`, *not* against a Blender BVH — Blender's
+`ray_cast` ignores winding, so it reports a wall where the only thing in the way
+is a back face the GPU throws out. That difference is not academic: it is the
+whole reason the hallway lintels exist (invariant 19). Sample origins at least
+1.05 away from a tile edge, or the rays start inside a wall and "escape" from
+solid rock.
 
 This is the check worth running after a big edit, because the failures it catches
 are the quiet ones and none of them look wrong until somebody falls through the
@@ -266,8 +413,18 @@ downloading in the background cannot raise it.
     is version-dependent and silently does nothing when it declines, which is
     exactly what happened on the dungeon's first export. Batching by
     geometry-and-material at load depends on nothing but the file having repeats,
-    and on the dungeon it turns 149 meshes into 18 draw calls. This is also why a
+    and on the dungeon it turns 690 meshes into 15 draw calls. This is also why a
     repeated piece must be a **linked duplicate**.
+
+    **`shift+D` instead of `alt+D` is the single most expensive mistake you can
+    make in a level**, and it is invisible in Blender — the viewport looks
+    identical. `batch()` groups on `geometry.uuid`, so every real copy becomes
+    its own draw call. Editing the dungeon by hand once left 25 copies of
+    `floor_dirt_large`, 22 of `floor_tile_large` and 11 of `wall`: **15 draw
+    calls became 75 and the file went 824 KB → 1,596 KB.** The repair is
+    `Ctrl+L` → Link Object Data (or relink to one datablock per identical
+    geometry headlessly), and the tell is `j.meshes.length` in the `.glb`
+    climbing without the map growing.
 15. **A map is lit by its own file, and the game adds no light at all.** Every
     lamp in the game is an object in a `.blend`. There were two rounds of this:
     an `ambientLight` at 1.2 plus an overhead sun in `Scene.tsx` that applied to
@@ -280,24 +437,154 @@ downloading in the background cannot raise it.
     for it to go: `KHR_lights_punctual` has point, spot and directional and no
     concept of ambient. So a scene lit in Blender partly by its world background
     arrives darker than it looked. The fix is a light *object* in the `.blend`,
-    not a knob here — a low sun, or a large area light, is what a world colour
-    was standing in for.
+    not a knob here — a weak sun, or several opposed ones, is what a world colour
+    was standing in for. **Not an area light**: `KHR_lights_punctual` has only
+    point, spot and directional, so Blender drops an AREA lamp on export
+    *silently* — four lamps in, three out, no warning. This doc used to
+    recommend one.
+
+    **What crosses and what does not.** POINT → `THREE.PointLight`, SUN →
+    `DirectionalLight`, SPOT → `SpotLight` (`angle` from `outerConeAngle`,
+    `penumbra` from the inner/outer ratio). Colour and intensity cross;
+    **softness does not** — `shadow_soft_size` and a sun's `angle` have nowhere
+    to go, so every light arrives as an ideal point. **Blender's Shadow checkbox
+    does not cross either**: casting is decided here, by the `shadow_` name
+    prefix. And unless you tick Custom Distance, no `range` is written, so three
+    gets `distance = 0` — the light never cuts off, which is fine for falloff
+    but does nothing for cost (see invariant 22). **Both maps now do exactly that**: the arena has a key
+    sun plus three opposed fill suns, the dungeon has its lamps plus one weak
+    sun straight down. `Room.tsx` adds nothing for any map, which is the first
+    time that has been true.
+
+    **The one refinement: `render.lights.ambient` and `.hemisphere`.** glTF
+    genuinely cannot carry an ambient term, so those two are built by
+    `prepareLevel` from the map's own registry entry. That is still "the map
+    decides" — what invariant 15 forbids is a light hardcoded in a *component*,
+    applying to every map at once, which is what `Scene.tsx` and then `Room.tsx`
+    used to do. `hemisphere` is the better of the two: one light slot, and a
+    sky/ground gradient rather than a flat wash that removes every bit of the
+    darkness a chameleon hides in.
+
+    **Light through walls is a shadow, and nothing else.** A light with no
+    shadow map lights every surface in range, whatever is between them —
+    colliders and `ROOM_SURFACE` are invisible to the renderer, so there is no
+    way to "block" a light with the level. The levers, cheapest first:
+    `lights.distance` (a cut-off radius — ignores walls but stops a lamp
+    reaching the far side of the map), a `shadow_` prefix on a **spot** or
+    **sun** (one extra pass), a `shadow_` prefix on a **point** (six — a cube),
+    and finally baking, which encodes occlusion at zero runtime cost. Culling
+    lights per frame works too, but note that `numPointLights` is part of three's
+    shader program key, so changing how many are *visible* recompiles — cached
+    per count, so warm it up rather than toggling every frame.
+
+    **Blender energy is not three intensity, and the conversion differs by light
+    type.** The exporter writes a sun as lux (`energy × 683`) and a point as
+    candela (`energy × 683/4π`), and then `prepareLevel` scales everything by
+    0.01. So `three = energy × 6.83` for a sun and `energy × 0.5435` for a
+    point — a factor of 4π apart. Mixing them up is a 100× error that looks
+    plausible in Blender's own viewport, because Blender renders the watts.
+    Sane targets: a key sun around 3, fills under 1, and a room lamp in the
+    **tens** — irradiance is `I/d²`, so a lamp 3 units up wants ~70, not 7000.
 16. **Nine arena pieces are in exact `PAINT` hexes.** Same values the swatch row
     renders. Pick the matching swatch, paint yourself, and you can test camouflage
     against a true match instead of eyeballing it. They are now materials in
     `levels/arena.blend`, one per colour, written as linear from the sRGB hex so
     the export round-trips. Do not "tidy" an arena colour to something
     off-palette, and do not let Blender's colour picker talk you into a near miss.
-17. **The arena's lid is collision with no visual.** `col_ceiling` has no drawn
-    counterpart: the lid still stops a jump leaving the room and a chameleon can
-    still cling to it and walk it upside down, but nothing draws it, so the
-    waiting room has weather. `sky` is a boolean rather than an asset because the
-    sky is a *shader* — drei's `Sky`, Preetham scattering with no texture behind
-    it. `<Environment>` is the one that fetches an HDR from a CDN and blanks the
-    scene on a network with no internet; see trap 3.
+17. **Every collider in both maps has a visible counterpart, and nothing is
+    collision-only.** The arena used to carry `col_ceiling`, an invisible lid
+    that stopped a jump leaving the room and gave chameleons something to cling
+    to upside down. It is gone: an invisible surface is a surface players learn
+    by walking into it. Nothing is lost by removing it — the arena's walls are
+    12 tall against a jump apex of ~3 — except the upside-down ceiling cling,
+    which was never discoverable anyway. **The check is name pairing**: strip the
+    `col*_` prefix and an object of that name must exist in the visual half.
+
+    `sky` is a boolean rather than an asset because the sky is a *shader* —
+    drei's `Sky`, Preetham scattering with no texture behind it. `<Environment>`
+    is the one that fetches an HDR from a CDN and blanks the scene on a network
+    with no internet; see trap 3.
+21. **Everything about a shadow is derived from the level, and none of it is
+    configurable per map.** `maps.ts` carries only `shadows.enabled` and
+    `shadows.type`, because those are the two the *renderer* takes; it used to
+    also carry `bias`, `normalBias` and `mapSize` that **nothing read**, which is
+    how the arena came to be striped end to end with acne while an authored
+    `normalBias: 0.02` sat in the registry doing nothing. Three things follow,
+    all of them in `prepareLevel`:
+    - **A sun's shadow camera is sized to the level's *radius*, not its ground
+      reach.** three's `DirectionalLightShadow` defaults to an orthographic box
+      of ±5 units — a tenth of the arena — so everything outside the middle
+      silently stops casting. That is why the sizing happens *after* the
+      traverse, once the extent is known. It uses `radiusOf`, which includes
+      height and rotates the real corners: the box lives in *light* space, so a
+      sun at an angle needs the full 3D extent, and the arena's 12-tall walls
+      put its far corner 6.8 units outside a ground-plane fit — shadows stopped
+      dead along a line across the floor. Fitting the true corners rather than
+      the half-diagonal keeps the span at 33 instead of 44, and every wasted
+      unit is resolution spent on empty space.
+    - **`normalBias` is computed from the texel, not typed.** Acne is a depth
+      error whose size is `texel / tan(elevation)`, so it grows without limit as
+      the sun drops. A constant `bias` cannot track that. At 23° elevation the
+      arena's error was 0.116 against a bias of 0.0005 — 230× short.
+    - **Only a sun gets a 2048 map.** A point light's shadow is a *cube*, and
+      three packs six faces into one texture, so 2048 there means 8192×4096.
+22. **Every light in the file is paid for on every pixel, every frame.** three's
+    renderer is *forward*: it gathers all scene lights into uniform arrays and
+    every material's fragment shader loops over all of them, with no per-object
+    culling. So 25 lamps means 25 PBR evaluations per pixel across the whole
+    screen, and a light's `range` does not help — `distance` changes the falloff
+    curve, not whether the light is in the shader. **A shadow-casting light
+    costs geometry passes on top**, and a *point* light's shadow is a cube:
+    **six full passes of the map per frame**, which is why the dungeon's hall
+    lamp does not cast. A spot costs one pass, a sun one. Nothing in the dungeon
+    casts today, so nothing there — including a player — has a shadow; that is a
+    known trade, not an oversight. Baking is the way to have many lights without
+    paying for them, and the blocker is that a lightmap needs a unique UV per
+    instance while batching needs shared geometry.
+23. **Lamps do not fall off physically, and the two halves are tuned together.**
+    `LAMP_DECAY` in `levelScene.ts` is 1.6 rather than the `1/d²` glTF mandates,
+    because a physically correct lamp reads as a bright ring with a hard edge and
+    a corridor between two of them goes black in the middle. The energies in each
+    `.blend` are chosen against that number, so changing one without the other
+    re-lights every map.
+
+    **`LIGHT_SCALE` beside it is not the same knob as `render.exposure`**, even
+    though both are a multiply and folding one into the other looks like a free
+    simplification. Exposure scales the whole tone-mapped frame; `LIGHT_SCALE`
+    scales *lit surfaces only*. Everything tone-mapped but unlit comes apart if
+    you merge them — drei's `Sky` is a `ShaderMaterial` and `toneMapped` defaults
+    to true, so the arena's sky would go 100× darker, and the shot mark's
+    `emissive` with it. A plain background `Color` is the exception: it goes
+    through `setClear` and is never tone-mapped.
+24. **`SUN` in `Room.tsx` and the arena's key light are one thing in two
+    files.** The sky is a backdrop that casts nothing; the light in
+    `arena.blend` is what makes shadows. Move one without the other and the
+    room is lit from somewhere the sky says the sun is not. Keep it **high** —
+    a low sun rakes long hard shadows over everything and drives the acne term
+    above.
 18. **The arena's shell does not cast shadows, and that is not a perf tweak.**
     Its light is overhead, so a ceiling that cast would drop a shadow across the
     entire room and every interior would go black.
+19. **An interior map has to be sealed against *sightlines*, not against
+    walking.** The dungeon's collision was airtight while three separate visual
+    holes remained, and each one is a different lesson worth keeping:
+    - **A kit wall has no bottom face.** It is modelled to stand on a floor that
+      hides it. Any course with open air beneath — the lintel over each hallway
+      mouth — shows its hollow underside and you look straight out of the map.
+      Those eight lintels are capped with a scaled `ceiling_tile`.
+    - **`ceiling_tile` is coffered**: ribs at local −0.25 but the continuous
+      surface at −0.05. Hang it flush with a 4.0 wall top and the *solid* plane
+      sits at 4.15, leaving a 0.15 band a grazing ray threads between the ribs.
+      `CEIL_Z` is chosen so the solid plane passes under the wall tops.
+    - **Two surfaces meeting exactly on a plane are not a seal.** The floor and
+      the lid both run a tile past the walkable area and past the grid, so they
+      overlap the walls instead of abutting them.
+20. **Whether a wall piece is see-through is measured, not read off its name.**
+    Ray a grid across each piece's face and count the misses. It overturns the
+    names in both directions: `wall_doorway` is **solid** (the door is shut) and
+    `wall_arched` is a **blind niche**, while `wall_sloped` and
+    `wall_half_endcap` are wide open. The dungeon's ten variants are the ten
+    that measured 0.00%.
 
 ## Contracts
 
@@ -320,11 +607,17 @@ downloading in the background cannot raise it.
 
 ## Not built yet
 
-**The dungeon is a test room, not a level.** One 28×28 hall, two staggered
-partitions, a dozen props and four torches. It exists to have something with
-walls and darkness in it to play in; it is not designed, and the nine-room warren
-that used to be generated from a character grid is gone with the code that
-generated it. Anything about it is fair game to change.
+**The dungeon is an empty shell.** 56×56 on a 4-unit grid: a 24×24 hall at
+double height in the middle, four 8-wide hallways leaving it N/S/E/W, and an
+8-wide corridor running the perimeter that joins all four ends into a loop.
+Everything else is solid rock. **There is nothing in it** — no props, no cover,
+no torches, only the ten wall variants and five floor variants that measured
+solid. That is deliberate for now: the props it used to hold had hand-typed
+collision boxes that matched nothing (a 4-unit invisible pillar over a
+knee-high column, a collider covering a quarter of the rubble), and an empty
+room that is honest beats a furnished one that lies. Cover is the obvious next
+thing to add, and the way to add it is a linked duplicate of the prop renamed
+`colhull_*` — never a box typed by hand.
 
 **No baked lighting.** A level's lights are punctual and real-time, and for
 geometry this static the obvious next step is a Blender lightmap bake into a

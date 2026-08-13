@@ -283,8 +283,11 @@ one role, and **adding a control means deciding whose it is.**
   and `shared/` for `FIRE_INTERVAL_MS`.
 - **Climbing needs `world/`'s `ROOM_SURFACE` meshes**, the same list already
   collected once for shooting, the climb probes and the camera. Every surface in
-  the arena is therefore climbable for free — walls, ceiling, all 25 obstacles,
-  including the curved ones. Nothing had to opt in.
+  the arena is therefore climbable for free — walls and all 25 obstacles,
+  including the curved ones. Nothing had to opt in. **The ceiling is no longer
+  among them**: the arena's lid was an invisible collider and has been removed
+  (`world/CLAUDE.md` invariant 17), so the wall→ceiling case below is reachable
+  in the dungeon rather than the waiting room.
 - **Climbing is chameleon-only in both places.** `Player.tsx` never sets `cling` for
   a hunter, and `server/room.ts` refuses the flag from one — the client for
   behaviour, the server because the flag's *effect* (silence) reaches everybody.
