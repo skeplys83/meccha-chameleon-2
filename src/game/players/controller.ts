@@ -8,6 +8,11 @@ const MAX_CLIMB = (50 * Math.PI) / 180;
 /** Below this, a slope does not slide you off. Keeps the ramp walkable. */
 const MIN_SLIDE = (30 * Math.PI) / 180;
 
+/** Tallest step the character is lifted over. The dungeon's treads are 0.50. */
+const STEP_HEIGHT = 0.6;
+/** Landing the step needs this much clear floor beyond it, or it is refused. */
+const STEP_WIDTH = 0.3;
+
 const byWorld = new WeakMap<World, ReturnType<World["createCharacterController"]>>();
 
 /** The controller for this world, made on first use. */
@@ -20,6 +25,11 @@ export function characterController(world: World) {
   controller.setUp({ x: 0, y: 1, z: 0 });
   controller.setMaxSlopeClimbAngle(MAX_CLIMB);
   controller.setMinSlopeSlideAngle(MIN_SLIDE);
+  // The dungeon's staircases are eight 0.50 treads, and a ramp collider under
+  // them would be 34 degrees — past MIN_SLIDE, so you would slide back down.
+  // Stepping over the real treads is what makes them climbable, and it makes
+  // every knee-high prop steppable rather than a wall. See levels/AUTHORING.md §5.
+  controller.enableAutostep(STEP_HEIGHT, STEP_WIDTH, false);
   // Sliding along a wall you walk into at an angle, rather than stopping dead.
   // A dynamic body got this from the solver for free; a kinematic one asks.
   controller.setSlideEnabled(true);

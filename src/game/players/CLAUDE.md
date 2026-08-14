@@ -312,20 +312,28 @@ object". Physics stops, the frame loop aborts and the canvas is lost. So the
 cached controller is validated against `world.characterControllers` before it is
 handed back, which is empty after a reset.
 
-## The two controller settings that are off
+## Autostep is on at 0.6, and that number is load-bearing
 
-`controller.ts` deliberately leaves both of rapier's headline conveniences
-disabled, and each is one line away if the feel wants it — but neither is a free
-win:
+**`enableAutostep(0.6, 0.3, false)`.** The dungeon's staircases are eight 0.50
+treads each, and the alternative — a ramp collider under them — comes out at 34°,
+past `MIN_SLIDE`, so a player would slide back down a flight they are visibly
+standing on. Stepping the real treads is what makes them climbable.
 
-- **`enableAutostep`** would let a player walk up a step instead of jumping it.
-  The arena is built on the opposite assumption: the stairs rise 0.9 a tread, the
-  ziggurat is three 1-unit tiers, and `world/CLAUDE.md`'s "everything tall has a
-  way up" was measured against a jump apex of ~3. Turning it on silently rewrites
-  how the whole map is traversed.
-- **`enableSnapToGround`** would keep the body glued to the floor over crests and
-  down the 18° ramp. It also eats jumps unless it is disabled on the way up, and
-  the small hop coming down the ramp is what the map already plays like.
+**0.6 is chosen to clear the dungeon and change nothing in the arena.** The
+arena's stairs rise 0.9 a tread and its ziggurat is three 1-unit tiers — both
+above 0.6, so they are still jumped, and `world/CLAUDE.md`'s "everything tall has
+a way up" still holds against a jump apex of ~3. Raise this past 0.9 and you
+silently rewrite how the arena is traversed. The second argument, 0.3, is the
+clear floor needed beyond a step before it is taken, which stops the character
+climbing the lip of something it cannot stand on.
+
+It has a second effect that is wanted rather than tolerated: **every knee-high
+prop becomes steppable instead of a wall.** The dungeon has ~200 prop colliders
+and without autostep a dropped crate is a full stop.
+
+**`enableSnapToGround` is still off.** It would keep the body glued to the floor
+over crests and down the 18° ramp, but it eats jumps unless disabled on the way
+up, and the small hop coming down the ramp is what the map already plays like.
 
 ## A chameleon has no name badge during the hunt
 

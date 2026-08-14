@@ -158,7 +158,9 @@ src/game/
 public/sounds/      the nine .mp3 files
 public/maps/        one .glb per map — the only map asset the game loads
 levels/             the .blend files those are exported from, and the raw kit.
-                    The real source; nothing under src/ reads any of it
+                    The real source; nothing under src/ reads any of it.
+                    AUTHORING.md there is the map-building guide: shells,
+                    props, collision, and the checks that prove a map is sound
 public/icon.svg     the favicon — generated, see below
 scripts/            check-docs.mjs, check-constants.mjs, make-favicon.mjs,
                     export-level.sh + export-level.py (Blender → public/maps/)

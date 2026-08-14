@@ -72,102 +72,42 @@ the `@/` alias**, which only the bundler resolves. Both halves are required: an
 or three.js into `maps.ts` closes the door entirely** — which is why
 `levelScene.ts` is a separate file even though it is pure logic.
 
-## Editing a map in Blender
+## What the loader reads out of a `.glb`
 
 The file is read **by convention**. There is no level editor and no metadata
-sidecar; an object's name is the whole interface:
-
-**There are two ways to give a piece collision, and they are for different
-jobs.** Name it `col*_` and it becomes a *separate* shape that is never drawn —
-that is what lets the dungeon collide with 74 merged boxes instead of its 690
-drawn pieces, and lets a shot raycast a 12-triangle proxy rather than a torch's
-forty. Or give the drawn object a **`collider` custom property** in Blender and
-it collides *as itself*: one object, nothing to drift, and the right answer for
-a prop whose collider was only ever going to be a copy of it.
-
-| `collider` | gives |
-| --- | --- |
-| `"cuboid"` `"hull"` `"trimesh"` `"ball"` | that collider, built from the drawn mesh, which stays drawn |
-| `"none"`, or no property at all | **no collision** — what decoration wants; a banner is not something you walk into |
-
-The property rides glTF `extras` (`export_extras` is already on) and arrives as
-three's `userData`. A value that is not one of the five is reported by
-`checkLevel`, because a misspelled one is otherwise indistinguishable from not
-setting one: the piece is simply drawn and walked through.
-
-**The rule: if the collider should differ from the drawn shape, author it;
-otherwise tag it.** Architecture wants the first — merged runs, simplified
-shapes, a lid with no visual. Props want the second. The cost of a tag is that
-the `ROOM_SURFACE` proxy is the render geometry, so a shot raycasts the real
-triangles (296 for the dungeon's staircase against 12 for a box); fine for a
-prop, not for two hundred.
+sidecar; an object's name is the whole interface.
 
 | named | becomes |
 | --- | --- |
-| `col_*` | a **cuboid** collider from its bounding box. Walls, floors, crates — almost everything |
-| `colhull_*` | a **convex hull** of its real vertices. Cylinders, cones, ramps, anything sloped |
+| `col_*` | a **cuboid** collider from its bounding box |
+| `colhull_*` | a **convex hull** of its real vertices |
 | `coltri_*` | a **trimesh**. Only for shapes with a hole through them |
-| `colball_*` | a **ball** from its bounding sphere. Spheres and domes |
+| `colball_*` | a **ball** from its bounding sphere |
 | anything else | decoration. Drawn and shadowed, and **never collided with** |
 | a light | a light, with shadows switched on at load |
 | an Empty named `spawn` | the author's marker for the spawn point |
+
+A **`collider` custom property** on a drawn object (`"cuboid"`, `"hull"`,
+`"trimesh"`, `"ball"`, `"none"`) is the second way in: the piece collides *as
+itself* and stays drawn. The property rides glTF `extras` (`export_extras` is
+already on) and arrives as three's `userData`. A value that is not one of the
+five is reported by `checkLevel`, because a misspelled one is otherwise
+indistinguishable from not setting one — the piece is simply drawn and walked
+through.
 
 Everything else about the map — round length, background, sky, and the `bound`
 the server clamps to — is typed in `maps.ts`. **Lighting is not on that list and
 never should be**: see invariant 15.
 
-The loop:
-
-1. Edit `levels/<id>.blend`.
-2. `./scripts/export-level.sh <id>` — or with no argument for every level. It is a
-   wrapper around one `blender --background` call so the export settings live in
-   one place rather than in somebody's memory, and it prints the size on disk
-   and gzipped. Exporting by hand from the GUI is fine too: **glTF Binary**,
-   +Y up, apply modifiers, include punctual lights, and **limit to visible
-   objects** so the kit palette is left out.
-3. Reload the page. If you moved the spawn point or changed the size of the map,
-   the console tells you what to update in `maps.ts`.
+> **How to actually build one is not in this file.**
+> [`levels/AUTHORING.md`](../../../levels/AUTHORING.md) is the authoring guide —
+> the export pipeline, the asset palette, deriving a shell from its floor plan,
+> placing props, generating their collision, and the checks that prove a level is
+> sealed and walkable. This doc stays on what the *code* guarantees.
 
 `scripts/export-level.sh` and `scripts/export-level.py` are the only two files
 that know how a `.blend` becomes a `.glb`, and nothing under `src/` reads either.
-They are a convenience wrapper around one `blender --background` call — the game
-still only ever loads whatever `.glb` is sitting in `public/maps/`.
-
-**Collision is authored, not derived.** One merged slab across a whole room
-beats one box per floor tile, and neither should follow the visual mesh — a
-torch bracket is decoration and should be neither shootable nor stood on. This
-is the single biggest lever on both frame rate and how a map *feels* to move
-through. Prefer `col_`: a cuboid is one comparison, where a trimesh is the most
-expensive collider rapier has.
-
-**Repeat a piece as a linked duplicate** (`alt+D`, not `shift+D`). Objects
-sharing mesh data are batched into one draw call at load; separate copies of the
-same tile cannot be.
-
-### The kit palette
-
-`levels/dungeon.blend` carries a `kit` collection holding **all 211 KayKit
-models in a labelled grid**, parked at z ≈ +200, well clear of the map. It is
-the palette you copy from: find the piece, `alt+D` it into the room, move it in.
-
-The collection is **excluded from the view layer**, which is what keeps it out
-of the export — exporting with "visible objects" leaves it behind entirely. Tick
-it back on in the outliner to browse. You do not have to remember to untick it:
-`export-level.py` forces the exclusion for the duration of the export and says
-so, without saving the `.blend`. `export-level.sh` also shouts if a level suddenly exports
-at more than twice its previous size, which is what a leak looks like from
-outside.
-
-**It forces every *other* collection the opposite way, and that is the sharper
-half.** `use_visible` means a collection you clicked the eye off in the outliner
-does not export at all — and `collision` is the one everybody hides, because it
-sits on top of the map you are trying to look at. The dungeon exported once with
-all 74 colliders missing: it loaded, drew perfectly, and dropped you through the
-floor. So the exporter un-hides everything but `kit` for the duration, restores
-it after, and **refuses to write a `.glb` with no `col_*` objects in it at all.**
-
-The raw pack also lives at `levels/kit/dungeon/` as the original `.gltf` files,
-for re-importing anything the grid has lost.
+The game only ever loads whatever `.glb` is sitting in `public/maps/`.
 
 ### The render config
 
@@ -205,73 +145,19 @@ Two `GameMap` fields are worth naming because nothing in the file says so:
 map — and `spawn` is the body's *centre*, which is why it is `[0, 2, 0]` and not
 on the floor.
 
-### Previewing a map's lighting in Blender
-
-Blender can be made to show roughly what the game will, and **none of it
-exports** — the `.glb` is byte-identical before and after, so set these freely.
-`levels/dungeon.blend` already has them.
-
-| | why |
-| --- | --- |
-| View Transform **AgX**, Look None, Gamma 1 | three's `AgXToneMapping` *is* Blender's AgX. It is the only curve both sides have, which is why the dungeon is on it and the arena is still ACES. |
-| Film Exposure **0** (the default) | see below |
-| World colour **black** | three has no ambient. A 0.051 grey world lifts every shadow in Blender and nothing in game. |
-| EEVEE raytracing / fast GI **off**, or Cycles bounces **0** | three computes direct light only. Bounce light is most of what a Blender render shows and none of what the game does. |
-
-The brightness relationship is not a taste call, it is the unit conversion:
-
-```
-game / blender  =  683 × LIGHT_SCALE × exposure × d^(2 − LAMP_DECAY)
-```
-
-683 lm/W is the exporter's photometric conversion, `LIGHT_SCALE`, `lights.scale`
-and `exposure` are the game's multiplies, and the last term is the falloff we
-chose over the physical one. **Solve it for 1 and Blender at its default
-exposure of 0 is the preview, with nothing to remember.** At `exposure: 0.8` it
-was 8.70×, which is what produced a blown-out room against a Blender scene that
-looked right.
-
-The dungeon currently runs `lights.scale: 0.3` with `exposure: 0.5`, which puts
-it at **1.63×** — deliberately a little hotter than the viewport, not the exact
-1.00 that `scale: 1, exposure: 0.092` gave. Change any of those four numbers and
-the ratio moves: either re-solve for 1, or dial `log2(ratio)` into Blender's Film
-Exposure and preview against that instead.
-
-**What still will not match**, and cannot without baking:
-
-- **The falloff.** `LAMP_DECAY` is 1.6 and Blender is inverse-square, so one
-  exposure can only line them up at one distance. Calibrated at 3.2 m, the game
-  runs 0.83× at 2 m and 1.44× at 8 m — the deliberate softness, seen from the
-  other side.
-- **Bounce light**, if you leave GI on. This is the big one.
-- **Shadow softness.** `shadow_soft_size` has no glTF field, so every lamp is an
-  ideal point in game however soft it looks here.
-
 ### Checking a level without a browser
 
 `levelScene.ts` is free of React and takes a plain `THREE.Object3D`, so the
-*actual* runtime reading of a level can be run in Node over the exported `.glb`:
+*actual* runtime reading of a level runs in Node over the exported `.glb`:
 parse it with `GLTFLoader.parse`, hand `gltf.scene` to `prepareLevel`, and every
-claim in the table above is measurable — how many pieces are drawn against how
-many are collision, which collider kinds came out, whether any `ROOM_SURFACE`
-leaked into the visual half, and what the draw call count came to after batching.
-`checkLevel` can be called the same way. Three DOM globals have to be stubbed for
-the texture decode (`self`, `URL.createObjectURL`, `createImageBitmap`); the
-texture failing to load is expected and affects none of the above.
+claim in the table above is measurable. `checkLevel` can be called the same way.
+Three DOM globals have to be stubbed for the texture decode (`self`,
+`URL.createObjectURL`, `createImageBitmap`); the texture failing to load is
+expected and affects none of the above.
 
-**A sealed map is checkable the same way, and the test has to cull back faces
-like the renderer does.** Fire rays from open space in every direction and count
-the ones that hit nothing: each is a sightline out of the level. Do it against
-`prepared.scene` with a `THREE.Raycaster`, *not* against a Blender BVH — Blender's
-`ray_cast` ignores winding, so it reports a wall where the only thing in the way
-is a back face the GPU throws out. That difference is not academic: it is the
-whole reason the hallway lintels exist (invariant 19). Sample origins at least
-1.05 away from a tile edge, or the rays start inside a wall and "escape" from
-solid rock.
-
-This is the check worth running after a big edit, because the failures it catches
-are the quiet ones and none of them look wrong until somebody falls through the
-world.
+**The checks worth running, and how to run them, are in
+[`levels/AUTHORING.md`](../../../levels/AUTHORING.md) §6** — sightlines,
+walkability, clipping, headroom. That file is the authoring half of this one.
 
 ## Adding a map
 
@@ -375,21 +261,25 @@ downloading in the background cannot raise it.
     URL and hands the *same* object out to every caller, so mutating it directly
     would leak shadow flags and removed colliders into the next room that loads
     the same file.
-11. **Levels are committed as one uncompressed `.glb` each, and that is still
-    the right call.** Both maps together are 959 KB — less than the music — and
-    they gzip to 45 KB and 223 KB, so **serving `public/` compressed is worth
-    more than any pipeline change** and costs nothing. Geometry is the whole
-    file: the dungeon's 693 KB of buffer is 676 KB of vertices against 17 KB of
-    texture, because the kit shares one atlas, so KTX2 would be pure overhead.
+11. **Levels are committed as one uncompressed `.glb` each, and furnishing the
+    dungeon has put that under real pressure for the first time.** It was 784 KB
+    on disk and 213 KB gzipped while it was an empty shell; with 464 props it is
+    **3.1 MB on disk and ~995 KB gzipped**, which is now larger than the music.
+    Geometry is the whole file — 175 distinct meshes, no texture worth naming,
+    because the kit shares one atlas and KTX2 would be pure overhead. **Serving
+    `public/` compressed is still the cheapest win** and costs nothing.
 
-    When that stops being enough the order is **quantization first**
-    (`KHR_mesh_quantization`, roughly halves geometry, and three reads it with
-    **no decoder at all**), then **meshopt** (29 KB decoder, shipped in
-    `three/examples/jsm/libs/`). **Draco is the one to skip**, but not for the
-    reason first written here: its decoder *can* be self-hosted — the files are
-    in `three/examples/jsm/libs/draco/` and trap 3 only forbids drei's default
-    CDN path. The reason is arithmetic. That decoder is a 285 KB wasm plus a
-    59 KB wrapper, against geometry gzip already takes to 223 KB.
+    The two levers, measured rather than guessed: **quantization**
+    (`KHR_mesh_quantization`, which three reads with **no decoder at all**) took
+    it from 947 KB to 742 KB gz when measured — a real 22% but not a rescue;
+    **fewer distinct prop meshes** is the bigger one, because those meshes are also
+    103 draw calls, so cutting variety pays twice — ~820 props cost only that many
+    because every one is a linked duplicate. Meshopt (29 KB decoder, in
+    `three/examples/jsm/libs/`) is the step after that. **Draco is the one to
+    skip**, but not for the reason first written here: its decoder *can* be
+    self-hosted — the files are in `three/examples/jsm/libs/draco/` and trap 3
+    only forbids drei's default CDN path. The reason is arithmetic. That decoder
+    is a 285 KB wasm plus a 59 KB wrapper against what gzip already achieves.
 12. **`spawn` and `bound` are typed by hand and `checkLevel` is the only thing
     stopping them rotting.** There is no build step, so nothing *makes* them
     agree with the `.glb`. Both ways they drift are silent: a stale `bound` has
@@ -579,6 +469,28 @@ downloading in the background cannot raise it.
     - **Two surfaces meeting exactly on a plane are not a seal.** The floor and
       the lid both run a tile past the walkable area and past the grid, so they
       overlap the walls instead of abutting them.
+25. **A furnished map's collision is *generated*, and that has runtime
+    consequences this folder owns.** The shell's colliders are derived from the
+    floor plan and merged into runs; each prop's is derived from its asset name,
+    as an oriented box, a computed convex hull, or a slab. The rules for choosing
+    and the failures behind each one are in
+    [`levels/AUTHORING.md`](../../../levels/AUTHORING.md) §3 and §5 — they are
+    authoring decisions, not runtime ones.
+
+    **What matters here is the count.** Every collider is also a `ROOM_SURFACE`
+    proxy in the flat, unindexed list `players/Player.tsx` raycasts several times
+    a frame. Furnishing the dungeon took that list from 68 to 334. Two things
+    keep it affordable and both are easy to undo by accident:
+
+    - **Colliders are authored, never tagged, past a handful of pieces.** A
+      tagged prop's proxy is its render geometry — several hundred triangles
+      against 12 for a box — so tagging ~800 props would put ~800 render meshes
+      in the raycast list.
+    - **Hulls are computed compactly and shared per asset.** A barrel's 700
+      vertices become a 74-vertex hull, and one hull mesh serves every instance.
+
+    If movement ever feels heavy, this list is the first number to look at.
+
 20. **Whether a wall piece is see-through is measured, not read off its name.**
     Ray a grid across each piece's face and count the misses. It overturns the
     names in both directions: `wall_doorway` is **solid** (the door is shut) and
@@ -607,17 +519,16 @@ downloading in the background cannot raise it.
 
 ## Not built yet
 
-**The dungeon is an empty shell.** 56×56 on a 4-unit grid: a 24×24 hall at
-double height in the middle, four 8-wide hallways leaving it N/S/E/W, and an
-8-wide corridor running the perimeter that joins all four ends into a loop.
-Everything else is solid rock. **There is nothing in it** — no props, no cover,
-no torches, only the ten wall variants and five floor variants that measured
-solid. That is deliberate for now: the props it used to hold had hand-typed
-collision boxes that matched nothing (a 4-unit invisible pillar over a
-knee-high column, a collider covering a quarter of the rubble), and an empty
-room that is honest beats a furnished one that lies. Cover is the obvious next
-thing to add, and the way to add it is a linked duplicate of the prop renamed
-`colhull_*` — never a box typed by hand.
+**The dungeon is furnished and solid.** ~820 props in a `props` collection with
+one child per themed section, and 334 colliders — the shell's, merged from the
+floor plan, plus one per prop that needs one. What is where, and how any of it
+was placed, is a property of the `.blend` rather than of this folder; the method
+is in [`levels/AUTHORING.md`](../../../levels/AUTHORING.md).
+
+**No dimension of the layout is written down here on purpose**: the shape is
+edited in Blender and everything else is regenerated from the floor tiles, so a
+number in this doc would be the one part that rots.
+
 
 **No baked lighting.** A level's lights are punctual and real-time, and for
 geometry this static the obvious next step is a Blender lightmap bake into a
@@ -630,7 +541,9 @@ enough to need per-room frustum culling would want chunk conventions to merge
 within.
 
 **No collision beyond the four primitives.** No capsule, no heightfield, no
-compound shapes.
+compound shapes — and no cylinder, which is the one that gets asked for. A
+computed convex hull covers that case exactly (see `levels/AUTHORING.md` §5);
+what is genuinely missing is a *concave* shape short of a trimesh.
 
 The arena's layout is fixed — no variants and no randomisation. There is exactly
 *one* spawn point per map and everybody uses it, so a full lobby arrives in a

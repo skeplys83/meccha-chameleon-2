@@ -105,7 +105,7 @@ export const MAPS: Record<MapId, GameMap> = {
     blurb: "A double-height hall, four hallways out of it, and a corridor looping them.",
     src: "/maps/dungeon.glb",
     spawn: [0, 2, 0],
-    bound: 28,
+    bound: 36,
     roundSeconds: 300,
     sky: false,
     background: "#0b0b0f",
