@@ -1,5 +1,4 @@
 import * as THREE from "three";
-import type { Part } from "@/game/figure/parts";
 import { encodeStroke, paint, SELF } from "./skin";
 import type { Brush } from "./brush";
 
@@ -8,6 +7,20 @@ import type { Brush } from "./brush";
 const PAINT_STEP = 0.012;
 /** Lift the ring off the skin so it does not z-fight with the body. */
 const RING_OFFSET = 0.02;
+/**
+ * How far outside the body a press or a drag still counts, in screen pixels.
+ *
+ * A limb is a few pixels wide at its tip, so a stroke that runs off the end of
+ * an arm used to stop dead — the cursor was a pixel past the silhouette and the
+ * ray hit nothing. Rays are fired in rings out to this distance and the first
+ * hit wins, which reads as the body simply being a bit easier to hit.
+ *
+ * Only presses and live drags pay for it: plain hovering casts once, because a
+ * ray against a skinned mesh transforms every triangle by its bones and doing
+ * that two dozen times per mouse move would cost more than it is worth.
+ */
+const EDGE_RINGS = [7, 13, 19];
+const EDGE_DIRS = 8;
 
 const pointerNdc = new THREE.Vector2();
 const worldNormal = new THREE.Vector3();
@@ -41,7 +54,7 @@ export function createBrushCursor({
   onDrawingChange?: (drawing: boolean) => void;
 }) {
   let drawing = false;
-  let last: { part: Part; u: number; v: number } | null = null;
+  let last: { u: number; v: number } | null = null;
 
   const setDrawing = (next: boolean) => {
     if (drawing === next) return;
@@ -49,25 +62,39 @@ export function createBrushCursor({
     onDrawingChange?.(next);
   };
 
-  /** Whatever part of your own body is under the cursor. */
-  function hit(e: MouseEvent): THREE.Intersection | null {
+  /** Whatever part of your own body is under the cursor.
+   *  `tolerant` widens the target — see `EDGE_RINGS`. */
+  function hit(e: MouseEvent, tolerant = false): THREE.Intersection | null {
     const group = figure();
     if (!group) return null;
 
     const rect = canvas.getBoundingClientRect();
-    pointerNdc.set(
-      ((e.clientX - rect.left) / rect.width) * 2 - 1,
-      -((e.clientY - rect.top) / rect.height) * 2 + 1,
-    );
-
     const meshes: THREE.Object3D[] = [];
     group.traverse((o) => {
-      if ((o as THREE.Mesh).isMesh && o.userData.part) meshes.push(o);
+      if ((o as THREE.Mesh).isMesh && o.userData.body) meshes.push(o);
     });
+    if (!meshes.length) return null;
 
-    raycaster.setFromCamera(pointerNdc, camera);
-    const found = raycaster.intersectObjects(meshes, false)[0];
-    return found?.uv ? found : null;
+    const cast = (px: number, py: number) => {
+      pointerNdc.set((px / rect.width) * 2 - 1, -(py / rect.height) * 2 + 1);
+      raycaster.setFromCamera(pointerNdc, camera);
+      const found = raycaster.intersectObjects(meshes, false)[0];
+      return found?.uv ? found : null;
+    };
+
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const direct = cast(x, y);
+    if (direct || !tolerant) return direct;
+
+    for (const radius of EDGE_RINGS) {
+      for (let i = 0; i < EDGE_DIRS; i++) {
+        const a = (i / EDGE_DIRS) * Math.PI * 2;
+        const found = cast(x + Math.cos(a) * radius, y + Math.sin(a) * radius);
+        if (found) return found;
+      }
+    }
+    return null;
   }
 
   /** Sit the ring on the body under the cursor, so you see the dot before you
@@ -92,17 +119,18 @@ export function createBrushCursor({
   }
 
   function drawAt(e: MouseEvent) {
-    const found = hit(e);
+    const found = hit(e, true);
     showRing(found);
     if (!found?.uv) return;
 
-    const part = found.object.userData.part as Part;
+    // The body is one mesh wearing one continuous unwrap, so the hit's own UV
+    // is the coordinate the canvas is drawn in — nothing to look up.
     const { x: u, y: v } = found.uv;
-    if (last && last.part === part && Math.hypot(last.u - u, last.v - v) < PAINT_STEP) return;
-    last = { part, u, v };
+    if (last && Math.hypot(last.u - u, last.v - v) < PAINT_STEP) return;
+    last = { u, v };
 
     const { size, color } = brush();
-    const stroke = { part, u, v, size, color };
+    const stroke = { u, v, size, color };
     paint(SELF, stroke);
     onStroke(encodeStroke(stroke));
   }
@@ -119,7 +147,7 @@ export function createBrushCursor({
 
     /** Left button went down on the body. Returns false if it missed. */
     begin(e: MouseEvent) {
-      if (!hit(e)) return false;
+      if (!hit(e, true)) return false;
       setDrawing(true);
       last = null;
       drawAt(e);

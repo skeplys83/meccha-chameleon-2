@@ -21,7 +21,10 @@ follows your head, and the footstep derivation.
 - `footsteps.ts` — turns a stream of positions into footfalls, and pitches them.
   The round sounds are deliberately *not* here: they have no cadence and no
   position, so there is nothing for this file to do with them.
-- `SoundStage.tsx` — mounted in the Canvas; drives the listener and plays the
+- `SoundStage.tsx` — mounted in the Canvas at **frame priority 1**, because the
+  listener copies the camera and must run after the frame that places it — the
+  same ordering rule `combat/Viewmodel` needs, and for the same reason. Drives
+  the listener and plays the
   networked events. Renders nothing.
 
 ## Invariants

@@ -1,13 +1,15 @@
 import * as THREE from "three";
-import { PARTS, PART_SHAPE, type Part } from "@/game/figure/parts";
+import { characterGeometry } from "@/game/figure/model";
+import { buildSurface, dab, type Surface } from "./surface";
 import { MAX_STROKES } from "@/game/shared/protocol";
 
-/** Per-player paint. */
+/** Per-player paint. One canvas per body: the body is a single skinned mesh
+ *  wearing a single continuous unwrap, so a stroke is just a point in that
+ *  unwrap and there is no per-part bookkeeping at all. */
 
-export type Skin = Record<Part, THREE.CanvasTexture>;
+export type Skin = THREE.CanvasTexture;
 
 export type Stroke = {
-  part: Part;
   u: number;
   v: number;
   /** Brush radius in figure-local units — the same physical dot everywhere on the body. */
@@ -15,16 +17,27 @@ export type Stroke = {
   color: string;
 };
 
-/** How much of a part's texture one unit of surface covers. */
-function textureScale(part: Part) {
-  const { radius, length } = PART_SHAPE[part];
-  return {
-    u: 1 / (2 * Math.PI * radius),
-    v: 1 / (length + Math.PI * radius),
-  };
+const TEXTURE_SIZE = 1024;
+
+/** Built once from the model, the first time anybody paints. */
+let surface: Surface | null = null;
+function getSurface() {
+  if (!surface) {
+    const geometry = characterGeometry();
+    if (geometry) surface = buildSurface(geometry);
+  }
+  return surface;
 }
 
-const TEXTURE_SIZE = 256;
+/** The canvas behind a skin, kept as pixels so a dab can be composited without
+ *  reading the whole texture back on every dot. */
+type Painted = { texture: Skin; canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; image: ImageData };
+const painted = new Map<string, Painted>();
+
+function hexToRgb(hex: string): [number, number, number] {
+  const n = parseInt(hex.replace("#", ""), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
 
 /** Everything painted on a body, so a part re-mount can repaint from scratch. */
 const skins = new Map<string, Skin>();
@@ -35,61 +48,47 @@ export const SELF = "self";
 
 export { MAX_STROKES };
 
-function blankTexture() {
+function blank(id: string): Painted {
   const canvas = document.createElement("canvas");
   canvas.width = TEXTURE_SIZE;
   canvas.height = TEXTURE_SIZE;
-  const ctx = canvas.getContext("2d");
-  if (ctx) {
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, TEXTURE_SIZE, TEXTURE_SIZE);
-  }
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, TEXTURE_SIZE, TEXTURE_SIZE);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 4;
-  return texture;
+  texture.flipY = false;
+  const entry = { texture, canvas, ctx, image: ctx.getImageData(0, 0, TEXTURE_SIZE, TEXTURE_SIZE) };
+  painted.set(id, entry);
+  skins.set(id, texture);
+  return entry;
 }
 
 export function getSkin(id: string): Skin {
-  const existing = skins.get(id);
-  if (existing) return existing;
-  const skin = Object.fromEntries(PARTS.map((p) => [p, blankTexture()])) as Skin;
-  skins.set(id, skin);
-  return skin;
+  return skins.get(id) ?? blank(id).texture;
 }
 
 export function paint(id: string, stroke: Stroke) {
-  const texture = getSkin(id)[stroke.part];
-  if (!texture) return;
-  const canvas = texture.image as HTMLCanvasElement;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
+  const entry = painted.get(id) ?? blank(id);
+  const s = getSurface();
+  if (!s) return;
 
-  const scale = textureScale(stroke.part);
-  const rx = Math.max(0.75, stroke.size * scale.u * canvas.width);
-  const ry = Math.max(0.75, stroke.size * scale.v * canvas.height);
-  const x = stroke.u * canvas.width;
-  // Canvas Y grows downward, UV V grows upward.
-  const y = (1 - stroke.v) * canvas.height;
-
-  ctx.fillStyle = stroke.color;
-  ctx.beginPath();
-  ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Capsule UVs wrap around the limb, so a dot near either edge has to be
-  // drawn again on the far side or the seam shows a hard cut.
-  if (x < rx) {
-    ctx.beginPath();
-    ctx.ellipse(x + canvas.width, y, rx, ry, 0, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (x > canvas.width - rx) {
-    ctx.beginPath();
-    ctx.ellipse(x - canvas.width, y, rx, ry, 0, 0, Math.PI * 2);
-    ctx.fill();
+  // The dab is a sphere on the body, so it cannot leak across a UV seam onto a
+  // limb you never touched — see `surface.ts`.
+  const rect = dab(s, entry.image, stroke.u, stroke.v, stroke.size, hexToRgb(stroke.color));
+  if (rect) {
+    entry.ctx.putImageData(
+      entry.image,
+      0,
+      0,
+      rect.x0,
+      rect.y0,
+      rect.x1 - rect.x0 + 1,
+      rect.y1 - rect.y0 + 1,
+    );
+    entry.texture.needsUpdate = true;
   }
-
-  texture.needsUpdate = true;
 
   const log = history.get(id) ?? [];
   log.push(stroke);
@@ -98,17 +97,12 @@ export function paint(id: string, stroke: Stroke) {
 }
 
 export function clearSkin(id: string) {
-  const skin = skins.get(id);
-  if (!skin) return;
-  for (const part of PARTS) {
-    const texture = skin[part];
-    const canvas = texture.image as HTMLCanvasElement;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) continue;
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    texture.needsUpdate = true;
-  }
+  const entry = painted.get(id);
+  if (!entry) return;
+  entry.ctx.fillStyle = "#ffffff";
+  entry.ctx.fillRect(0, 0, TEXTURE_SIZE, TEXTURE_SIZE);
+  entry.image = entry.ctx.getImageData(0, 0, TEXTURE_SIZE, TEXTURE_SIZE);
+  entry.texture.needsUpdate = true;
   history.set(id, []);
 }
 
@@ -118,32 +112,22 @@ export function forgetAllSkins() {
 }
 
 export function forgetSkin(id: string) {
-  const skin = skins.get(id);
-  if (skin) for (const part of PARTS) skin[part].dispose();
+  skins.get(id)?.dispose();
   skins.delete(id);
+  painted.delete(id);
   history.delete(id);
 }
 
-const partIndex = new Map(PARTS.map((p, i) => [p, i]));
-
 /** Compact wire form — strokes are stored per player on the server, so they
- *  have to stay small. */
+ *  have to stay small. `u,v,size,rrggbb`, about 24 characters. */
 export function encodeStroke(s: Stroke) {
-  return [
-    partIndex.get(s.part) ?? 0,
-    s.u.toFixed(3),
-    s.v.toFixed(3),
-    s.size.toFixed(3),
-    s.color.replace("#", ""),
-  ].join(",");
+  return [s.u.toFixed(3), s.v.toFixed(3), s.size.toFixed(3), s.color.replace("#", "")].join(",");
 }
 
 export function decodeStroke(raw: string): Stroke | null {
-  const [p, u, v, size, color] = raw.split(",");
-  const part = PARTS[Number(p)];
-  if (!part || !/^[0-9a-fA-F]{6}$/.test(color ?? "")) return null;
+  const [u, v, size, color] = raw.split(",");
+  if (!/^[0-9a-fA-F]{6}$/.test(color ?? "")) return null;
   const stroke = {
-    part,
     u: Number(u),
     v: Number(v),
     size: Number(size),

@@ -11,6 +11,7 @@ const CHAMELEON: Row[] = [
   ["Right drag", "Look around"],
   ["Scroll", "Zoom the camera"],
   ["Left drag", "Paint your body"],
+  ["Right drag", "Brush size (on you)"],
   ...POSES.map((p, i): Row => [String(i + 1), p.label]),
 ];
 

@@ -2,8 +2,6 @@ import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { Shotgun } from "./Shotgun";
-import { getSkin, SELF } from "@/game/paint/skin";
-import type { Part } from "@/game/figure/parts";
 
 /** The hunter's own arms and shotgun, held out in front of the camera. */
 
@@ -15,7 +13,7 @@ const SHOULDER_L = new THREE.Vector3(-0.32, -0.62, 0.1);
 const ARM_RADIUS = 0.075;
 
 /** A capsule stretched between two points, used for a whole visible arm. */
-function Arm({ from, to, part }: { from: THREE.Vector3; to: THREE.Vector3; part: Part }) {
+function Arm({ from, to }: { from: THREE.Vector3; to: THREE.Vector3 }) {
   const { position, quaternion, length } = useMemo(() => {
     const dir = new THREE.Vector3().subVectors(to, from);
     const len = dir.length();
@@ -30,12 +28,10 @@ function Arm({ from, to, part }: { from: THREE.Vector3; to: THREE.Vector3; part:
     };
   }, [from, to]);
 
-  const skin = getSkin(SELF);
-
   return (
     <mesh position={position} quaternion={quaternion}>
       <capsuleGeometry args={[ARM_RADIUS, length, 8, 16]} />
-      <meshStandardMaterial map={skin[part]} roughness={0.55} />
+      <meshStandardMaterial color="#ffffff" roughness={0.55} />
     </mesh>
   );
 }
@@ -43,12 +39,17 @@ function Arm({ from, to, part }: { from: THREE.Vector3; to: THREE.Vector3; part:
 export function Viewmodel() {
   const group = useRef<THREE.Group>(null);
 
+  // Priority 1: after every movement callback, which is where the camera is
+  // placed. Mount order cannot be relied on — `Player` is keyed on the room and
+  // this is not, so a lobby → match crossing re-registers the player *after*
+  // this and the gun starts reading last frame's camera. That reads as the
+  // shotgun swimming around while you walk, in matches but not in the lobby.
   useFrame(({ camera }) => {
     const g = group.current;
     if (!g) return;
     g.position.copy(camera.position);
     g.quaternion.copy(camera.quaternion);
-  });
+  }, 1);
 
   return (
     <group ref={group}>
@@ -56,8 +57,8 @@ export function Viewmodel() {
       <group position={GUN} rotation={[0.03, -0.06, 0]}>
         <Shotgun scale={1.1} />
       </group>
-      <Arm from={SHOULDER_R} to={GRIP} part="armForeR" />
-      <Arm from={SHOULDER_L} to={PUMP} part="armForeL" />
+      <Arm from={SHOULDER_R} to={GRIP} />
+      <Arm from={SHOULDER_L} to={PUMP} />
     </group>
   );
 }

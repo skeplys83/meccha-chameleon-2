@@ -11,7 +11,7 @@ import {
 import * as THREE from "three";
 import type { Control } from "./controls";
 import { controlMap, poseControl } from "./controls";
-import { followThirdPerson } from "./camera";
+import { followThirdPerson, resetFollow } from "./camera";
 import {
   CLIMB_SPEED,
   RECLING_GRACE,
@@ -34,7 +34,8 @@ import { sendKill, sendPaint, sendShoot, sendState } from "@/game/net";
 import { setLockTarget } from "@/game/players/pointerLock";
 import { SELF } from "@/game/paint/skin";
 import { createBrushCursor, type BrushCursor } from "@/game/paint/brushCursor";
-import type { Brush } from "@/game/paint/brush";
+import { cancelPick, requestPick, takePick } from "@/game/paint/eyedropper";
+import { MAX_SIZE, MIN_SIZE, type Brush } from "@/game/paint/brush";
 import { playSound, startLoop, stopLoop } from "@/game/sound/engine";
 import { Stepper, jitteredStepRate, strideFor } from "@/game/sound/footsteps";
 
@@ -53,6 +54,10 @@ const PITCH_MIN = -1.0;
 const PITCH_MAX = 0.9;
 const PAINT_FLUSH_MS = 100;
 const STATE_SEND_MS = 50;
+/** How much of the brush range one pixel of right-drag covers. The full range
+ *  is about 250 px across, which is a comfortable flick. */
+const SIZE_PER_PIXEL = (MAX_SIZE - MIN_SIZE) / 250;
+
 /** Thickness of the hover ring in world units — constant, so the outline does
  *  not thin out or fatten as the brush grows. */
 const RING_BORDER = 0.012;
@@ -87,6 +92,9 @@ export function Player({
   paused,
   frozen = false,
   brush,
+  onBrush,
+  picking = false,
+  onPicked,
   onHoverBody,
 }: {
   role: Role;
@@ -98,6 +106,11 @@ export function Player({
   /** Rooted to the spot, but still able to look around. */
   frozen?: boolean;
   brush: Brush;
+  /** Right-dragging the body resizes the brush, so this owns the change. */
+  onBrush: (b: Brush) => void;
+  /** The eyedropper is armed: the next left click takes a colour off the screen. */
+  picking?: boolean;
+  onPicked?: (hex: string) => void;
   /** Fires when the cursor moves on or off your own body. */
   onHoverBody: (hovering: boolean) => void;
 }) {
@@ -135,6 +148,12 @@ export function Player({
   const paintingRef = useRef(painting);
   /** Chameleons never take the pointer lock, so they look around by dragging. */
   const orbiting = useRef(false);
+  /** A right-drag that started on the body: where it began and the size it had. */
+  const sizing = useRef<{ x: number; size: number } | null>(null);
+  const brushRefFull = useRef(brush);
+  const onBrushRef = useRef(onBrush);
+  const pickingRef = useRef(picking);
+  const onPickedRef = useRef(onPicked);
   const pausedRef = useRef(paused);
   const frozenRef = useRef(frozen);
   useEffect(() => {
@@ -173,11 +192,36 @@ export function Player({
   const firstPerson = role === "hunter" && !painting;
   const rolled = POSES[pose].roll ?? false;
 
+  // This component is keyed on the room, so mounting means a new map. The
+  // follow camera's eased distance belongs to the old one and has to be
+  // dropped, or the first frame here flies in from wherever it was standing.
+  useEffect(() => resetFollow(), []);
+
   // The pointer handlers below are installed once, so the current brush and
   // mode reach them through refs rather than by re-binding every change.
   useEffect(() => {
     brushRef.current = brush;
+    brushRefFull.current = brush;
   }, [brush]);
+  useEffect(() => {
+    onBrushRef.current = onBrush;
+  }, [onBrush]);
+  useEffect(() => {
+    pickingRef.current = picking;
+    onPickedRef.current = onPicked;
+    // An armed eyedropper says so with the pointer, since the click it is
+    // waiting for lands in the world rather than on the panel that armed it.
+    // On the body rather than the canvas: the panel's own buttons set their
+    // own cursor, so the crosshair covers exactly what is pickable.
+    if (!picking) return;
+    // The ring is a real object in the scene and sits exactly under the cursor,
+    // so it would be the thing sampled.
+    cursor.current?.cancel();
+    document.body.style.cursor = "crosshair";
+    return () => {
+      document.body.style.cursor = "";
+    };
+  }, [picking, onPicked]);
   useEffect(() => {
     paintingRef.current = painting;
     if (!painting) cursor.current?.cancel();
@@ -231,12 +275,29 @@ export function Player({
       // grabbing the pointer lock back, which would cancel the menu.
       if (pausedRef.current) return;
 
-      // Right button always turns the camera while the cursor is free.
+      // Right button resizes the brush when it starts on your own body, and
+      // turns the camera anywhere else — so the gesture is contextual and the
+      // camera is never taken away from you when you are not painting.
       if (e.button === 2) {
-        if (!locked.current) orbiting.current = true;
+        if (locked.current) return;
+        if (!frozenRef.current && cursor.current?.over(e)) {
+          sizing.current = { x: e.clientX, size: brushRefFull.current.size };
+        } else {
+          orbiting.current = true;
+        }
         return;
       }
       if (e.button !== 0) return;
+
+      // The eyedropper takes whatever pixel is actually on the screen. The read
+      // happens after the next draw — see `paint/eyedropper.ts`.
+      if (pickingRef.current) {
+        const rect = canvas.getBoundingClientRect();
+        requestPick(e.clientX - rect.left, e.clientY - rect.top, (hex) =>
+          onPickedRef.current?.(hex),
+        );
+        return;
+      }
 
       // Left button on your own body draws on it — unless the round is over and
       // this body is being shown to everybody, which is not the moment to repaint
@@ -270,6 +331,7 @@ export function Player({
     const onPointerUp = () => {
       brushCursor.end();
       orbiting.current = false;
+      sizing.current = null;
     };
 
     // The right-drag look would otherwise raise the browser menu.
@@ -294,6 +356,25 @@ export function Player({
       if (e.buttons === 0 && (orbiting.current || brushCursor.drawing)) {
         brushCursor.end();
         orbiting.current = false;
+        sizing.current = null;
+      }
+
+      // A right-drag that began on the body is sizing the brush, not painting
+      // and not turning: one pixel across is one step through the range.
+      if (sizing.current) {
+        if (e.buttons === 0) {
+          sizing.current = null;
+        } else {
+          const next = THREE.MathUtils.clamp(
+            sizing.current.size + (e.clientX - sizing.current.x) * SIZE_PER_PIXEL,
+            MIN_SIZE,
+            MAX_SIZE,
+          );
+          if (next !== brushRefFull.current.size) {
+            onBrushRef.current({ ...brushRefFull.current, size: next });
+          }
+          return;
+        }
       }
 
       // While the menu is up the cursor belongs to the menu: moving it must not
@@ -314,7 +395,7 @@ export function Player({
 
       // A free cursor means the body can be painted, so keep the brush ring on
       // whatever it is over and tell the HUD, which pops the palette open.
-      if (!frozenRef.current && !locked.current && !orbiting.current) {
+      if (!frozenRef.current && !locked.current && !orbiting.current && !pickingRef.current) {
         hoverRef.current?.(brushCursor.move(e));
       } else {
         brushCursor.cancel();
@@ -364,6 +445,7 @@ export function Player({
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
+      cancelPick();
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("contextmenu", onContextMenu);
@@ -399,6 +481,33 @@ export function Player({
     }, PAINT_FLUSH_MS);
     return () => clearInterval(flush);
   }, []);
+
+  /**
+   * The eyedropper's read, at priority 3 — after `Scene.tsx`'s draw at 2, and
+   * before the browser composites the frame away. Reading the default
+   * framebuffer here is what makes the picked colour *exactly* the pixel on
+   * screen; see `paint/eyedropper.ts` for why the obvious alternatives are not.
+   */
+  useFrame(({ gl }) => {
+    const wanted = takePick();
+    if (!wanted) return;
+    const canvas = gl.domElement;
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const px = Math.min(canvas.width - 1, Math.round((wanted.x / rect.width) * canvas.width));
+    // WebGL counts rows from the bottom; the DOM counts them from the top.
+    const py = Math.min(
+      canvas.height - 1,
+      canvas.height - 1 - Math.round((wanted.y / rect.height) * canvas.height),
+    );
+    const ctx = gl.getContext();
+    const buffer = new Uint8Array(4);
+    ctx.readPixels(px, py, 1, 1, ctx.RGBA, ctx.UNSIGNED_BYTE, buffer);
+    const hex = [buffer[0], buffer[1], buffer[2]]
+      .map((n) => n.toString(16).padStart(2, "0"))
+      .join("");
+    wanted.done(`#${hex}`);
+  }, 3);
 
   useFrame((state, delta) => {
     const rb = body.current;
@@ -571,6 +680,10 @@ export function Player({
       y: bodyPos.y + allowed.y,
       z: bodyPos.z + allowed.z,
     });
+    // Catch `bodyPos` up to where the body is *going*, not where it was when the
+    // frame started. The camera below reads it, and a frame of lag against a
+    // world that has already moved is seen as the view lagging the body.
+    bodyPos.set(bodyPos.x + allowed.x, bodyPos.y + allowed.y, bodyPos.z + allowed.z);
     // Stop accumulating downward speed the moment the floor is under us, or a
     // long fall leaves `vy` at -40 and the first step off a kerb is a plummet.
     if (grounded.current && vy.current < 0) vy.current = 0;

@@ -30,10 +30,22 @@ const MAX_FPS = 60;
  *
  * **Passing a priority above 0 turns off r3f's automatic render**, which is what
  * makes this possible at all: this callback then owns `gl.render`, and skipping
- * it skips the frame. Every other `useFrame` in the game is priority 0, so they
- * have all run by the time this does — movement, physics and input still tick at
- * the full refresh rate and only the expensive pass is throttled. Input latency
- * and rapier's stability are untouched.
+ * it skips the frame. Movement, physics and input still tick at the full refresh
+ * rate and only the expensive pass is throttled — input latency and rapier's
+ * stability are untouched.
+ *
+ * **Frame priorities are the game's one ordering guarantee**, and this is the
+ * one that draws:
+ *
+ * | 0 | movement, physics, input — everything that decides where things are |
+ * | 1 | anything that must copy a result, i.e. `combat/Viewmodel` off the camera |
+ * | 2 | this, which draws |
+ * | 3 | anything that must read the drawn frame back — the eyedropper in
+ *       `players/Player.tsx`, which samples the framebuffer it just produced |
+ *
+ * Mount order is *not* a substitute. Components remount independently — `Player`
+ * is keyed on the room — so a callback that has to run after another has to say
+ * so with a priority.
  */
 function FrameLimiter({ fps }: { fps: number }) {
   const carry = useRef(0);
@@ -51,7 +63,7 @@ function FrameLimiter({ fps }: { fps: number }) {
     // debt would otherwise force a burst of catch-up renders.
     carry.current = Math.min(carry.current - interval, interval);
     gl.render(scene, camera);
-  }, 1);
+  }, 2);
 
   return null;
 }
@@ -69,6 +81,9 @@ export default function Scene({
   painting,
   paused,
   brush,
+  onBrush,
+  picking,
+  onPicked,
   onHoverBody,
 }: {
   /** Which map this room is playing, straight from room state. */
@@ -87,6 +102,9 @@ export default function Scene({
   painting: boolean;
   paused: boolean;
   brush: Brush;
+  onBrush: (b: Brush) => void;
+  picking: boolean;
+  onPicked: (hex: string) => void;
   onHoverBody: (hovering: boolean) => void;
 }) {
   const [marks, setMarks] = useState<Mark[]>([]);
@@ -167,6 +185,9 @@ export default function Scene({
               painting={painting}
               paused={paused}
               brush={brush}
+              onBrush={onBrush}
+              picking={picking}
+              onPicked={onPicked}
               onHoverBody={onHoverBody}
             />
           )}

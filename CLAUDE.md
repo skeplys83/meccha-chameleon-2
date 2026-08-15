@@ -1,4 +1,4 @@
-# Meccha Chameleon
+# Super Chameleon
 
 A multiplayer hide-and-seek game. Chameleons are stick figures who can lie on their
 side to pass as scenery; hunters hunt them in first person with a shotgun. No
@@ -96,11 +96,11 @@ reads the file and drifts from the doc the moment either changes. The rule now:
 The rest of the project-wide prose is split out, because it is reference rather
 than orientation and this file was becoming a thing nobody finishes:
 
-| | |
-| --- | --- |
-| [docs/TRAPS.md](docs/TRAPS.md) | eight project-wide traps, each one a debugging session already paid for. **Numbered, and referenced by number from code all over the repo.** |
-| [docs/RUNNING.md](docs/RUNNING.md) | the scripts, the ports, the env vars, and how `public/` and `dist/` relate |
-| [docs/VERIFYING.md](docs/VERIFYING.md) | the gates, and what can and cannot be checked without a browser |
+|                                        |                                                                                                                                              |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| [docs/TRAPS.md](docs/TRAPS.md)         | eight project-wide traps, each one a debugging session already paid for. **Numbered, and referenced by number from code all over the repo.** |
+| [docs/RUNNING.md](docs/RUNNING.md)     | the scripts, the ports, the env vars, and how `public/` and `dist/` relate                                                                   |
+| [docs/VERIFYING.md](docs/VERIFYING.md) | the gates, and what can and cannot be checked without a browser                                                                              |
 
 **Read the doc for the folder you are about to edit, and update it in the same
 change.** The pre-commit hook enforces the second half: staging code without
@@ -157,6 +157,11 @@ src/game/
   loading.ts        one counter: is the player waiting on something to arrive
 public/sounds/      the nine .mp3 files
 public/maps/        one .glb per map — the only map asset the game loads
+public/models/      player.glb — the one rigged body everyone wears
+characters/         figure.blend, the nine sculpted poses, and
+                    figure-poses.blend, which holds the rigged, unwrapped body
+                    exported to public/models/player.glb. Source and reference;
+                    nothing under src/ reads either
 levels/             the .blend files those are exported from, and the raw kit.
                     The real source; nothing under src/ reads any of it.
                     AUTHORING.md there is the map-building guide: shells,
@@ -197,7 +202,14 @@ in the console when they stop matching the file.
 one — `reveal` (light the survivors), `hunting` (drop their name badges) and
 `frozen` (root them where they stand) — because each is read by a different part
 of the tree and collapsing them into "the phase" would make every consumer
-re-derive the same conditions. `Scene.tsx` also owns the `<Physics>` and `<Canvas>` settings — see trap 4 for
+re-derive the same conditions. **`Scene.tsx` also owns the frame priorities, which are the game's one ordering
+guarantee**: `0` decides where things are, `1` copies a result of that (the
+viewmodel and the audio listener, both off the camera), `2` draws, and `3` reads
+the drawn frame back — which is only the eyedropper, sampling the pixel it just
+rendered. Mount order is
+not a substitute — components remount independently, so a callback that must run
+after another has to say so with a priority. `Scene.tsx` also owns the
+`<Physics>` and `<Canvas>` settings — see trap 4 for
 why the timestep is not the library default, and note that `shadows` is spelled
 `"percentage"` rather than left bare, because three has deprecated the
 `PCFSoftShadowMap` that a bare `shadows` selects and downgrades it to exactly
@@ -252,13 +264,14 @@ reason: the room being left says nothing true about the one being opened.
 **`Game.tsx` also decides when everything heavy is downloaded, and nothing is
 fetched on page load.** The Canvas is mounted behind the start menu, so anything
 hung on a mount effect is paid for by everybody who merely opens the game — which
-is what both of these were. There are now three triggers and no others:
+is what both of these were. There are now four triggers and no others:
 
-| what | how big | fetched when |
-| --- | --- | --- |
-| the match's map (`world/preload.ts`, `preloadMap`) | 722 KB | arriving in a lobby, keyed on `nextMap`; again at the countdown |
-| the music (`sound/engine.ts`, `preloadMusic`) | 1.2 MB | the same two moments — it is an asset of the round |
-| the other eight sounds (`preloadSounds`) | 126 KB | the join click, inside `unlockAudio` |
+| what                                               | how big | fetched when                                                    |
+| -------------------------------------------------- | ------- | --------------------------------------------------------------- |
+| the match's map (`world/preload.ts`, `preloadMap`) | 722 KB  | arriving in a lobby, keyed on `nextMap`; again at the countdown |
+| the music (`sound/engine.ts`, `preloadMusic`)      | 1.2 MB  | the same two moments — it is an asset of the round              |
+| the other eight sounds (`preloadSounds`)           | 126 KB  | the join click, inside `unlockAudio`                            |
+| the character (`figure/model.ts`, `preloadCharacter`) | 354 KB | the join click, beside the sounds                            |
 
 A lobby is the arena, which is 237 KB and arrives with the join, so the minute or
 more people spend gathering and painting is free budget for the two big ones. The triggers belong
@@ -349,3 +362,5 @@ https://kenney.nl/assets/category:3D
 https://kaylousberg.itch.io/kaykit-dungeon-pack
 https://freesound.org/people/Seth_Makes_Sounds/sounds/680134/
 https://freesound.org/people/NHumphrey/sounds/204466/
+
+https://cults3d.com/en/orders/164754001

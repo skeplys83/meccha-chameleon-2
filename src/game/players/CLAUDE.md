@@ -16,12 +16,17 @@ bugs have been fixed; the invariants below are all scars.
   and the network send timers.
 - `controller.ts` — rapier's kinematic character controller, one per physics
   world, made on first use *from the frame loop*.
-- `camera.ts` — the third-person follow and its pull-in out of walls.
+- `camera.ts` — the third-person follow and its pull-in out of walls. Also
+  `resetFollow`, which `Player.tsx` calls on mount.
 - `cling.ts` — finding a surface to climb, and holding onto it. Pure three.js
   geometry, no React and no rapier, so it imports straight into Node for testing.
-- `body.ts` — `BODY`, the collider half-extents per role, derived from the head
-  radius in `figure/parts.ts` rather than repeating it, and `GRAVITY`, which
-  `Player.tsx` integrates and `Scene.tsx` hands to `<Physics>`.
+- `body.ts` — `BODY`, the collider half-extents per role, and `GRAVITY`, which
+  `Player.tsx` integrates and `Scene.tsx` hands to `<Physics>`. **A chameleon's
+  collider is much smaller than the body it carries, on purpose**: the torso is
+  0.13 half-deep and the collider is 0.12, so pressing your back to a wall puts
+  the body *against* it rather than a body-depth short of it. That gap is the
+  hiding mechanic, and it costs nothing in fairness because a shot raycasts the
+  visual mesh and never the collider.
 - `pointerLock.ts` — the shared canvas handle, and the retry loop that actually
   gets the lock back.
 - `RemotePlayers.tsx` — everyone else, plus `remoteFigures`, the map
@@ -43,8 +48,8 @@ one role, and **adding a control means deciding whose it is.**
 | | Chameleon | Hunter |
 |---|---|---|
 | Camera | third person, orbit | first person |
-| Size | half-extents `[0.26, 1, 0.26]` | `[0.52, 1.3, 0.52]` |
-| Look | right-drag (cursor stays free) | mouse (pointer locked) |
+| Size | half-extents `[0.12, 1, 0.12]` — far smaller than the body | `[0.52, 1.3, 0.52]` |
+| Look | right-drag off your body (cursor stays free) | mouse (pointer locked) |
 | Turn the figure | `Q`/`E`, independent of the camera | none — the figure faces the aim |
 | Climb | walk into a surface; `W`/`S` up and down it, `A`/`D` across | none |
 | Poses | `1`–`5` | none, always upright |
@@ -200,6 +205,26 @@ one role, and **adding a control means deciding whose it is.**
     because a hunter's `bodyYaw` *is* their camera yaw — except while they are
     painting, when it is left alone so they can orbit around their own figure.
     Chameleons broadcast their `Q`/`E` body yaw and `pitch: 0`.
+32. **The camera is rigid on the body, and only its *distance* is ever
+    smoothed.** Both halves of this were once wrong at the same time and read as
+    the view wobbling:
+
+    - `camera.ts` lerped the camera's **position** toward where it should be, so
+      it trailed and swam behind the player on every direction change. Only the
+      pull-in distance is eased now, and only *outwards* — pulling in has to be
+      immediate or the lens enters the wall it is avoiding. The eased distance is
+      module state, so `resetFollow()` on mount stops a room change flying the
+      camera in from where it stood in the last map.
+    - `Player.tsx` fed it `bodyPos` as read at the *top* of the frame, before the
+      frame's movement was applied. With `timeStep="vary"` the body has already
+      moved by render time (trap 4), so the camera was a step behind a world that
+      had not waited — seen as the view lagging the body. `bodyPos` is advanced
+      by the controller's `allowed` before the camera reads it.
+
+    **There is no head-bob anywhere in this game and there should not be.** No
+    sine on the camera, no sway on the viewmodel — `Viewmodel` copies the camera
+    transform outright. Anything that looks like bob is the body's own vertical
+    motion or one of the two above.
 19. **The camera never leaves the arena.** `camera.ts` raycasts toward the desired
     position and pulls in to `hit.distance - 0.35`, floored at 1.4. Without it the
     camera walks through a wall and you find yourself looking at the arena from
@@ -262,6 +287,29 @@ one role, and **adding a control means deciding whose it is.**
     without a position (you are the listener) and a little quieter than everyone
     else's. The `Stepper` is built with `strideFor(role)`, so a chameleon's cadence is
     quicker than a hunter's. Remote footsteps are `sound/SoundStage.tsx`.
+
+33. **The right button is contextual: it sizes the brush on your own body and
+    turns the camera everywhere else.** Both gestures are a drag with the same
+    button, so they are told apart by what is under the cursor when it goes
+    down — `over()` on the brush cursor — and never by which one started more
+    recently. A sizing drag returns early from the move handler, so the camera
+    cannot creep while you scrub. The alternative was a modifier key, which is
+    worse for a game already using every finger on the left hand.
+34. **The eyedropper reads the real framebuffer, at frame priority 3.** A click
+    only *arms* it; the read happens after `Scene.tsx` draws and before the
+    browser composites the frame away, which is the one moment the pixel on
+    screen can be sampled without `preserveDrawingBuffer`.
+
+    **Rendering the scene again into a small render target does not work**, and
+    it is the obvious thing to try: three forces linear output and switches tone
+    mapping *off* whenever the destination is an ordinary render target, so the
+    bytes that come back are neither the colour on screen nor a useful
+    approximation of it. Sampling a material is wrong for the same reason one
+    step earlier — no lighting, no tone mapping. What a chameleon is matching is
+    what a hunter will see, so only the framebuffer will do.
+
+    The hover ring is hidden while the eyedropper is armed, because it is a real
+    object in the scene and sits exactly under the cursor.
 
 ## Contracts
 

@@ -1,25 +1,18 @@
-import { useRef, type ReactNode } from "react";
-import { useFrame } from "@react-three/fiber";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { POSES, safePose, type Joint } from "./poses";
 import { getSkin } from "@/game/paint/skin";
-import { PART_SHAPE, type Part } from "./parts";
-
-// Proportions are chosen so the figure fills its collider: the soles land at
-// -1 and the crown at +1, matching the half-height of 1 it is built to.
-const HEAD_Y = 0.74;
-const HEAD_R = PART_SHAPE.head.radius;
-const TORSO_Y = 0.22;
-const SHOULDER = new THREE.Vector3(0.28, 0.44, 0);
-const HIP = new THREE.Vector3(0.15, -0.1, 0);
-// Limb sizes come from PART_SHAPE so the geometry and the brush maths in
-// skin.ts can never drift apart.
-const UPPER_ARM = PART_SHAPE.armUpperL.length;
-const FORE_ARM = PART_SHAPE.armForeL.length;
-const UPPER_LEG = PART_SHAPE.legUpperL.length;
+import { makeCharacter, preloadCharacter, type Character } from "./model";
+import { applyPose, buildChain, makeAngles } from "./rig";
 
 /** How fast a limb settles into a new pose. Higher is snappier. */
 const POSE_DAMP = 14;
+
+/** Elbow to wrist, in the bone's own units — where the shotgun sits, since the
+ *  rig ends at the forearm. Measured off the model: the vertices weighted to
+ *  `LowerArmR` run 0 to 0.578 along that bone's own axis. */
+const FOREARM_LENGTH = 0.58;
 
 const REVEAL_ORDER = 20;
 const REVEAL_COLOR = new THREE.Color("#ff2a36");
@@ -42,56 +35,14 @@ function pulseReveal(elapsed: number) {
   revealMaterial.opacity = (Math.sin(elapsed * Math.PI * 2 * REVEAL_HZ) + 1) / 2;
 }
 
-/** The paint layer of a revealed body: the real texture, unlit and through walls. */
-function RevealedPaint({ texture }: { texture: THREE.CanvasTexture }) {
-  return (
-    <meshBasicMaterial map={texture} toneMapped={false} depthTest={false} depthWrite={false} />
-  );
-}
-
-/** The overlay never takes a raycast: a shot must find the body, not its marker. */
-const noRaycast = () => null;
-
-function Segment({
-  part,
-  skin,
-  highlight,
-}: {
-  part: Part;
-  skin: Record<Part, THREE.CanvasTexture>;
-  highlight: boolean;
-}) {
-  const { radius, length } = PART_SHAPE[part];
-  const geometry = <capsuleGeometry args={[radius, length, 8, 20]} />;
-  return (
-    <>
-      <mesh
-        position={[0, -length / 2, 0]}
-        castShadow={!highlight}
-        renderOrder={highlight ? REVEAL_ORDER : 0}
-        name={`PART:${part}`}
-        userData={{ part }}
-      >
-        {geometry}
-        {highlight ? (
-          <RevealedPaint texture={skin[part]} />
-        ) : (
-          <meshStandardMaterial map={skin[part]} roughness={0.55} />
-        )}
-      </mesh>
-      {highlight && (
-        <mesh
-          position={[0, -length / 2, 0]}
-          renderOrder={REVEAL_ORDER + 1}
-          material={revealMaterial}
-          raycast={noRaycast}
-        >
-          {geometry}
-        </mesh>
-      )}
-    </>
-  );
-}
+/** Everything one figure owns: its own skeleton, its own material, and the
+ *  chain the pose is written onto. */
+type Rig = {
+  character: Character;
+  material: THREE.Material;
+  overlay: THREE.SkinnedMesh | null;
+  chain: ReturnType<typeof buildChain>;
+};
 
 export function StickFigure({
   scale = 1,
@@ -115,185 +66,127 @@ export function StickFigure({
   highlight?: boolean;
 }) {
   const root = useRef<THREE.Group>(null);
-  const torso = useRef<THREE.Group>(null);
-  const head = useRef<THREE.Group>(null);
-  const shoulders = useRef<(THREE.Group | null)[]>([]);
-  const elbows = useRef<(THREE.Group | null)[]>([]);
-  const hips = useRef<(THREE.Group | null)[]>([]);
-  const knees = useRef<(THREE.Group | null)[]>([]);
+  const angles = useRef(makeAngles());
   const skin = getSkin(skinId);
+
+  /** Where the shotgun hangs. A child of the forearm bone, so it needs no frame
+   *  callback of its own. The rig has no hand bone, so the grip is pushed down
+   *  the forearm's own axis (+Y runs from elbow to wrist) by its length. */
+  const grip = useMemo(() => {
+    const g = new THREE.Group();
+    g.position.y = FOREARM_LENGTH;
+    return g;
+  }, []);
+  const [rig, setRig] = useState<Rig | null>(null);
+
+  // The body is built once the model has landed, and this component renders
+  // nothing until then — deliberately, because suspending here would tear down
+  // the collider the figure is mounted inside. `Game.tsx` starts the fetch on
+  // the join click; awaiting the same idempotent promise is what makes a figure
+  // that mounts first still get a body.
+  useEffect(() => {
+    let live = true;
+    let built: Rig | null = null;
+    void preloadCharacter().then(() => {
+      if (!live) return;
+      const character = makeCharacter();
+      if (!character) return;
+
+      const material = highlight
+        ? new THREE.MeshBasicMaterial({
+            map: skin,
+            toneMapped: false,
+            depthTest: false,
+            depthWrite: false,
+          })
+        : new THREE.MeshStandardMaterial({ map: skin, roughness: 0.55 });
+      character.mesh.material = material;
+      character.mesh.renderOrder = highlight ? REVEAL_ORDER : 0;
+      character.mesh.castShadow = !highlight;
+      // What the paint raycast looks for. There are no per-part meshes any
+      // more: the hit's UV says which part it landed on — see `parts.ts`.
+      character.mesh.userData.body = true;
+
+      // The reveal marker: a second skinned mesh on the *same* skeleton, so it
+      // follows the body for free rather than being posed twice.
+      let overlay: THREE.SkinnedMesh | null = null;
+      if (highlight) {
+        overlay = new THREE.SkinnedMesh(character.mesh.geometry, revealMaterial);
+        overlay.bind(character.mesh.skeleton, character.mesh.bindMatrix);
+        overlay.renderOrder = REVEAL_ORDER + 1;
+        overlay.frustumCulled = false;
+        // A shot must find the body, never its marker.
+        overlay.raycast = () => null;
+        character.mesh.parent?.add(overlay);
+      }
+
+      character.bones.LowerArmR?.add(grip);
+      built = { character, material, overlay, chain: buildChain(character) };
+      setRig(built);
+    });
+    return () => {
+      live = false;
+      setRig(null);
+      if (!built) return;
+      built.overlay?.parent?.remove(built.overlay);
+      built.character.bones.LowerArmR?.remove(grip);
+      built.material.dispose();
+    };
+  }, [skin, highlight, grip]);
 
   useFrame((state, delta) => {
     if (highlight) pulseReveal(state.clock.elapsedTime);
+    if (!rig) return;
+    const { chain } = rig;
+
     const p = POSES[safePose(typeof pose === "function" ? pose() : pose)];
+    const a = angles.current;
+    const to = (from: number, target: number) =>
+      THREE.MathUtils.damp(from, target, POSE_DAMP, delta);
+    const pick = (j: Joint | undefined, key: "x" | "spread") => j?.[key] ?? 0;
 
-    const settle = (g: THREE.Group | null | undefined, j: Joint | undefined, side: number) => {
-      if (!g) return;
-      g.rotation.x = THREE.MathUtils.damp(g.rotation.x, j?.x ?? 0, POSE_DAMP, delta);
-      g.rotation.z = THREE.MathUtils.damp(
-        g.rotation.z,
-        (j?.spread ?? 0) * side,
-        POSE_DAMP,
-        delta,
-      );
-    };
+    a.torsoX = to(a.torsoX, pick(p.torso, "x"));
+    a.headX = to(a.headX, pick(p.head, "x"));
+    a.rootX = to(a.rootX, p.rootX ?? 0);
+    a.roll = to(a.roll, p.roll ? Math.PI / 2 : 0);
+    a.offsetY = to(a.offsetY, p.offsetY ?? 0);
 
-    if (root.current) {
-      root.current.position.y = THREE.MathUtils.damp(
-        root.current.position.y,
-        p.offsetY ?? 0,
-        POSE_DAMP,
-        delta,
-      );
-      // Lying down is a roll of the whole body and crumpling is a tip forward,
-      // both damped like every other joint so the figure keels over instead of
-      // snapping into place.
-      root.current.rotation.z = THREE.MathUtils.damp(
-        root.current.rotation.z,
-        p.roll ? Math.PI / 2 : 0,
-        POSE_DAMP,
-        delta,
-      );
-      root.current.rotation.x = THREE.MathUtils.damp(
-        root.current.rotation.x,
-        p.rootX ?? 0,
-        POSE_DAMP,
-        delta,
-      );
-    }
-
-    settle(torso.current, p.torso, 1);
-    settle(head.current, p.head, 1);
     for (let i = 0; i < 2; i++) {
       const side = i === 0 ? -1 : 1;
       // The gun arm is driven by the aim instead of the pose.
       const aiming = aim !== null && i === 1;
-      if (!aiming) {
-        settle(shoulders.current[i], p.shoulder, side);
-        settle(elbows.current[i], p.elbow, side);
-      }
-      settle(hips.current[i], p.hip, side);
-      settle(knees.current[i], p.knee, side);
+      // Straight out in front at rest (x = π/2), rising and falling with pitch.
+      const shoulderX = aiming ? Math.PI / 2 + aim() : pick(p.shoulder, "x");
+      const shoulderZ = aiming ? 0.12 : pick(p.shoulder, "spread") * side;
+      a.shoulderX[i] = to(a.shoulderX[i], shoulderX);
+      a.shoulderZ[i] = to(a.shoulderZ[i], shoulderZ);
+      a.elbowX[i] = to(a.elbowX[i], aiming ? 0 : pick(p.elbow, "x"));
+      a.elbowZ[i] = to(a.elbowZ[i], aiming ? 0 : pick(p.elbow, "spread") * side);
+      a.hipX[i] = to(a.hipX[i], pick(p.hip, "x"));
+      a.hipZ[i] = to(a.hipZ[i], pick(p.hip, "spread") * side);
+      a.kneeX[i] = to(a.kneeX[i], pick(p.knee, "x"));
+      a.kneeZ[i] = to(a.kneeZ[i], pick(p.knee, "spread") * side);
     }
 
-    if (aim) {
-      // Straight out in front at rest (x = π/2), rising and falling with pitch.
-      settle(shoulders.current[1], { x: Math.PI / 2 + aim(), spread: 0.12 }, 1);
-      settle(elbows.current[1], undefined, 1);
+    const g = root.current;
+    if (g) {
+      g.position.y = a.offsetY;
+      // Lying down is a roll of the whole body and crumpling is a tip forward,
+      // both damped like every other joint so the figure keels over instead of
+      // snapping into place.
+      g.rotation.z = a.roll;
+      g.rotation.x = a.rootX;
     }
+
+    applyPose(chain, a);
   });
 
-  const sides: [index: number, sign: number, tag: "L" | "R"][] = [
-    [0, -1, "L"],
-    [1, 1, "R"],
-  ];
+  if (!rig) return null;
 
   return (
     <group ref={root} scale={scale}>
-      <group ref={torso}>
-        {/* torso */}
-        <mesh
-          position={[0, TORSO_Y, 0]}
-          castShadow={!highlight}
-          renderOrder={highlight ? REVEAL_ORDER : 0}
-          name="PART:torso"
-          userData={{ part: "torso" }}
-        >
-          <capsuleGeometry args={[PART_SHAPE.torso.radius, PART_SHAPE.torso.length, 8, 20]} />
-          {highlight ? (
-            <RevealedPaint texture={skin.torso} />
-          ) : (
-            <meshStandardMaterial map={skin.torso} roughness={0.55} />
-          )}
-        </mesh>
-        {highlight && (
-          <mesh
-            position={[0, TORSO_Y, 0]}
-            renderOrder={REVEAL_ORDER + 1}
-            material={revealMaterial}
-            raycast={noRaycast}
-          >
-            <capsuleGeometry args={[PART_SHAPE.torso.radius, PART_SHAPE.torso.length, 8, 20]} />
-          </mesh>
-        )}
-
-        {/* head */}
-        <group ref={head} position={[0, HEAD_Y - HEAD_R, 0]}>
-          <mesh
-            position={[0, HEAD_R, 0]}
-            castShadow={!highlight}
-            renderOrder={highlight ? REVEAL_ORDER : 0}
-            name="PART:head"
-            userData={{ part: "head" }}
-          >
-            <sphereGeometry args={[HEAD_R, 24, 24]} />
-            {highlight ? (
-              <RevealedPaint texture={skin.head} />
-            ) : (
-              <meshStandardMaterial map={skin.head} roughness={0.55} />
-            )}
-          </mesh>
-          {highlight && (
-            <mesh
-              position={[0, HEAD_R, 0]}
-              renderOrder={REVEAL_ORDER + 1}
-              material={revealMaterial}
-              raycast={noRaycast}
-            >
-              <sphereGeometry args={[HEAD_R, 24, 24]} />
-            </mesh>
-          )}
-        </group>
-
-        {/* arms */}
-        {sides.map(([i, sign, tag]) => (
-          <group
-            key={`arm${tag}`}
-            position={[sign * SHOULDER.x, SHOULDER.y, 0]}
-            ref={(g) => {
-              shoulders.current[i] = g;
-            }}
-          >
-            <Segment part={`armUpper${tag}`} skin={skin} highlight={highlight} />
-            <group
-              position={[0, -UPPER_ARM, 0]}
-              ref={(g) => {
-                elbows.current[i] = g;
-              }}
-            >
-              <Segment part={`armFore${tag}`} skin={skin} highlight={highlight} />
-              {/* The hand. Rotating -90° about X turns the gun's -Z barrel to
-                  run down the arm, so it points wherever the arm points. */}
-              {tag === "R" && holding && (
-                <group position={[0, -FORE_ARM, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-                  {holding}
-                </group>
-              )}
-            </group>
-          </group>
-        ))}
-      </group>
-
-      {/* legs hang off the hips, which do not follow the torso lean */}
-      {sides.map(([i, sign, tag]) => (
-        <group
-          key={`leg${tag}`}
-          position={[sign * HIP.x, HIP.y, 0]}
-          ref={(g) => {
-            hips.current[i] = g;
-          }}
-        >
-          <Segment part={`legUpper${tag}`} skin={skin} highlight={highlight} />
-          <group
-            position={[0, -UPPER_LEG, 0]}
-            ref={(g) => {
-              knees.current[i] = g;
-            }}
-          >
-            <Segment part={`legLower${tag}`} skin={skin} highlight={highlight} />
-          </group>
-        </group>
-      ))}
+      <primitive object={rig.character.root} />
+      {holding && createPortal(<group rotation={[Math.PI / 2, 0, 0]}>{holding}</group>, grip)}
     </group>
   );
 }

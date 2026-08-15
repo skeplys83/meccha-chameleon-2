@@ -1,7 +1,12 @@
 import type { World } from "@dimforge/rapier3d-compat";
 
-/** Skin width. Rapier keeps the character this far off what it touches. */
-const OFFSET = 0.01;
+/**
+ * Skin width. Rapier keeps the character this far off what it touches, so it
+ * adds to the collider when working out how close a body may get. Kept small
+ * because a chameleon is meant to *meet* what it hides against — see
+ * `body.ts` — but never zero, which rapier does not allow.
+ */
+const OFFSET = 0.005;
 
 /** The steepest slope that counts as ground rather than a wall. */
 const MAX_CLIMB = (50 * Math.PI) / 180;

@@ -125,7 +125,7 @@ a value derived from the level.
 
 | `render.lights.*` | what it does |
 | --- | --- |
-| `scale` | multiplies every light in the file, on top of `LIGHT_SCALE` |
+| `scale` | multiplies every light in the file, on top of `LIGHT_SCALE`. The dungeon runs **0.05**, half what it first shipped with — the lamps read as lamps rather than as floodlights, and the dark between them is the point |
 | `decay` | falloff exponent for point and spot. Overrides `LAMP_DECAY` |
 | `distance` | cut-off radius, 0 = infinite. three uses **Frostbite windowing**, so a 16 unit cut-off is a 0.3% dim at 3.2 units and exactly zero at 16 — it costs almost nothing near the lamp and ends the far tail |
 | `shadow.intensity` | how *dark* a shadow is, 0..1, independent of the light's brightness. The arena runs 0.75, because full-strength shadows in a white room read as holes |

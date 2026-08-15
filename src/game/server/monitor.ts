@@ -40,7 +40,7 @@ export function createMonitor(dev: boolean) {
     // No password in development is the documented case, not an oversight.
     if (!password) return next();
     if (authorised(req.headers.authorization)) return next();
-    res.setHeader("WWW-Authenticate", 'Basic realm="Meccha Chameleon"');
+    res.setHeader("WWW-Authenticate", 'Basic realm="Super Chameleon"');
     res.status(401).send("Not authorised");
   });
 

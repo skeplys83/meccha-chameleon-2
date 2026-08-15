@@ -343,6 +343,8 @@ A match is created with the same cap.
    both of them the host. Anyone could send someone else's id; the worst it buys
    is a Start button, which is the same trust model as everything else here.
 27. **The admin panel is not read-only, and is off by default in production.**
+    Its basic-auth realm is the game's own name, so a browser's password prompt
+    says what it is asking for; renaming the game means renaming that too.
    Its API exposes `matchMaker.remoteRoomCall`, which invokes any method on any
    room by name — `disconnect`, and this project's own `matchEnded` among them —
    so anyone who can reach it can end anybody's game. The rule is that a

@@ -3,6 +3,8 @@ import { fetchSessions, type Game, type Session } from "@/game/net";
 import { randomName } from "./names";
 import { mapName, type MapId } from "@/game/world/maps";
 import { CreateGamePanel } from "./CreateGamePanel";
+import { LegalPage } from "./LegalPage";
+import { Footer } from "./Footer";
 
 /** The name lives in `sessionStorage`, deliberately — it is scoped to the tab, not to the browser. */
 const NAME_KEY = "mc_name";
@@ -104,141 +106,164 @@ export function StartMenu({
     };
   }, []);
 
+  /** The legal page replaces this menu, so the arena behind it is unchanged. */
+  const [legal, setLegal] = useState(false);
+
   const takeName = () => {
     const trimmed = (input.current?.value ?? "").trim().slice(0, 16) || "player";
     writeName(trimmed);
     return trimmed;
   };
 
+  if (legal) return <LegalPage onBack={() => setLegal(false)} />;
+
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-8 overflow-y-auto bg-neutral-950/90 py-10 text-neutral-100 backdrop-blur-sm">
-      <div className="flex flex-col items-center gap-2">
-        <h1 className="text-3xl font-semibold tracking-tight">Meccha Chameleon 2</h1>
-        <p className="max-w-md text-center text-xs text-neutral-500">
-          Everyone waits in the arena, armed. When the host starts, one player
-          keeps the shotgun — the rest become chameleons.
-        </p>
-      </div>
-
-      <input
-        ref={input}
-        defaultValue=""
-        placeholder="Your name"
-        maxLength={16}
-        className="w-64 rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-center text-sm outline-none focus:border-neutral-500"
-      />
-
-      <div className="grid w-full max-w-3xl grid-cols-1 gap-10 px-6 md:grid-cols-2">
-        {/* ── Open a game of your own ───────────────────────────────────────── */}
-        <section>
-          <div className="mb-3 text-xs uppercase tracking-widest text-neutral-400">
-            Create game
-          </div>
-
-          <p className="mb-4 text-[11px] leading-relaxed text-neutral-500">
-            Pick a map, a size and whether strangers can see it. You get a code to
-            hand out either way.
+    <div className="absolute inset-0 bg-neutral-950/90 text-neutral-100 backdrop-blur-sm">
+      {/* The shell does not scroll, so the footer below it cannot scroll away.
+          The middle does, with room left at the foot for the footer. */}
+      <div className="flex h-full flex-col items-center justify-center gap-8 overflow-y-auto py-10 pb-16">
+        <div className="flex flex-col items-center gap-2">
+          <h1 className="text-3xl font-semibold tracking-tight">Super Chameleon</h1>
+          <p className="max-w-md text-center text-xs text-neutral-500">
+            Everyone waits in the arena, armed. When the host starts, one player keeps the shotgun —
+            the rest become chameleons.
           </p>
+        </div>
 
-          <button
-            onClick={() => setCreating(true)}
-            disabled={!self}
-            className="w-full rounded-lg border border-emerald-500 bg-emerald-600/20 px-6 py-3 text-sm font-medium text-emerald-200 transition hover:bg-emerald-600/40 disabled:opacity-40"
-          >
-            Create game
-          </button>
-        </section>
-
-        {/* ── Or type someone's code ────────────────────────────────────────── */}
-        <section>
-          <div className="mb-3 text-xs uppercase tracking-widest text-neutral-400">
-            Join game
-          </div>
-
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const wanted = code.trim().toUpperCase();
-              if (self && wanted) onJoinCode(takeName(), self, wanted);
-            }}
-            className="flex flex-col gap-3"
-          >
-            <input
-              value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
-              placeholder="CODE"
-              maxLength={8}
-              autoComplete="off"
-              className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-3 text-center font-mono text-xl tracking-[0.4em] outline-none focus:border-neutral-500"
-            />
-            <button
-              type="submit"
-              disabled={!self || !code.trim()}
-              className="w-full rounded-lg border border-neutral-600 px-6 py-3 text-sm transition hover:border-neutral-400 disabled:opacity-40"
-            >
-              Join
-            </button>
-          </form>
-          <p className="mt-2 text-[11px] leading-snug text-neutral-600">
-            Four letters, from whoever opened the game.
-          </p>
-
-          <div className="mb-1.5 mt-6 flex items-baseline justify-between">
-            <span className="text-[11px] uppercase tracking-widest text-neutral-500">
-              Public games
-            </span>
-            <span className="text-xs text-neutral-600">{games.length}</span>
-          </div>
-
-          {games.map((g) => (
-            <button
-              key={g.code}
-              disabled={g.started || g.starting}
-              onClick={() => self && onJoinCode(takeName(), self, g.code)}
-              className="mb-1.5 flex w-full items-center justify-between gap-2 rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-left text-sm transition hover:border-neutral-600 disabled:opacity-40 disabled:hover:border-neutral-800"
-            >
-              <span className="min-w-0">
-                <span className="font-mono tracking-[0.2em] text-neutral-200">
-                  {g.code}
-                </span>
-                <span className="ml-2 truncate text-xs text-neutral-500">
-                  {g.host ? `${g.host}'s game` : "waiting room"}
-                </span>
-              </span>
-              <span className="shrink-0 text-xs text-neutral-500">
-                {/* Both rooms are counted, so a started game reads as busy
-                    rather than empty. */}
-                {mapName(g.map)} · {g.players}
-                {g.maxPlayers ? ` / ${g.maxPlayers}` : ""}
-                {/* `started` first: a lobby whose match is running is not
-                    counting down, but if both were ever true "in play" is the
-                    one that lasts. */}
-                {g.started ? " · in play" : g.starting ? " · starting" : ""}
-              </span>
-            </button>
-          ))}
-
-          {games.length === 0 && (
-            <p className="px-1 pt-1 text-xs text-neutral-600">
-              No public games right now.
-            </p>
-          )}
-        </section>
-      </div>
-
-      {!self && (
-        <p className="text-xs text-neutral-600">Looking for the game server…</p>
-      )}
-
-      {creating && self && (
-        <CreateGamePanel
-          onCancel={() => setCreating(false)}
-          onCreate={(map, listed, maxPlayers) => {
-            setCreating(false);
-            onCreate(takeName(), self, map, listed, maxPlayers);
-          }}
+        <input
+          ref={input}
+          defaultValue=""
+          placeholder="Your name"
+          maxLength={16}
+          className="w-64 rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-center text-sm outline-none focus:border-neutral-500"
         />
-      )}
+
+        {/* Create above Join on the left, the public listing alone on the right.
+            The grid stretches its columns, so the listing box is exactly as tall
+            as the two sections beside it and scrolls inside that. */}
+        <div className="grid w-full max-w-3xl grid-cols-1 items-stretch gap-10 px-6 md:grid-cols-2">
+          <div className="flex flex-col gap-8">
+            {/* ── Open a game of your own ─────────────────────────────────── */}
+            <section>
+              <div className="mb-3 text-xs uppercase tracking-widest text-neutral-400">
+                Create game
+              </div>
+
+              <p className="mb-4 text-[11px] leading-relaxed text-neutral-500">
+                Pick a map, a size and whether strangers can see it. You get a code to hand out
+                either way.
+              </p>
+
+              <button
+                onClick={() => setCreating(true)}
+                disabled={!self}
+                className="w-full rounded-lg border border-emerald-500 bg-emerald-600/20 px-6 py-3 text-sm font-medium text-emerald-200 transition hover:bg-emerald-600/40 disabled:opacity-40"
+              >
+                Create game
+              </button>
+            </section>
+
+            {/* ── Or type someone's code ──────────────────────────────────── */}
+            <section>
+              <div className="mb-3 text-xs uppercase tracking-widest text-neutral-400">
+                Join game
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const wanted = code.trim().toUpperCase();
+                  if (self && wanted) onJoinCode(takeName(), self, wanted);
+                }}
+                className="flex flex-col gap-3"
+              >
+                <input
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.toUpperCase())}
+                  placeholder="CODE"
+                  maxLength={8}
+                  autoComplete="off"
+                  className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-3 text-center font-mono text-xl tracking-[0.4em] outline-none focus:border-neutral-500"
+                />
+                <button
+                  type="submit"
+                  disabled={!self || !code.trim()}
+                  className="w-full rounded-lg border border-neutral-600 px-6 py-3 text-sm transition hover:border-neutral-400 disabled:opacity-40"
+                >
+                  Join
+                </button>
+              </form>
+              <p className="mt-2 text-[11px] leading-snug text-neutral-600">
+                Four letters, from whoever opened the game.
+              </p>
+            </section>
+          </div>
+
+          {/* ── What is open right now ────────────────────────────────────── */}
+          {/* The box is taken out of flow so its own contents cannot decide the
+              row's height: a long listing would otherwise stretch the row and
+              drag the Create/Join column down with it. The height therefore
+              comes from the left column alone, and the list scrolls inside. */}
+          <div className="relative min-h-[240px]">
+            <section className="absolute inset-0 flex min-h-0 flex-col rounded-lg border border-neutral-800 bg-neutral-900/40 p-3">
+              <div className="mb-2 flex shrink-0 items-baseline justify-between">
+                <span className="text-[11px] uppercase tracking-widest text-neutral-500">
+                  Public games
+                </span>
+                <span className="text-xs text-neutral-600">{games.length}</span>
+              </div>
+
+              {/* The list is the only part that scrolls, so the heading stays put
+                however many games there are. */}
+              <div className="min-h-0 flex-1 overflow-y-auto pr-0.5">
+                {games.map((g) => (
+                  <button
+                    key={g.code}
+                    disabled={g.started || g.starting}
+                    onClick={() => self && onJoinCode(takeName(), self, g.code)}
+                    className="mb-1.5 flex w-full items-center justify-between gap-2 rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-left text-sm transition hover:border-neutral-600 disabled:opacity-40 disabled:hover:border-neutral-800"
+                  >
+                    <span className="min-w-0">
+                      <span className="font-mono tracking-[0.2em] text-neutral-200">{g.code}</span>
+                      <span className="ml-2 truncate text-xs text-neutral-500">
+                        {g.host ? `${g.host}'s game` : "waiting room"}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-xs text-neutral-500">
+                      {/* Both rooms are counted, so a started game reads as busy
+                      rather than empty. */}
+                      {mapName(g.map)} · {g.players}
+                      {g.maxPlayers ? ` / ${g.maxPlayers}` : ""}
+                      {/* `started` first: a lobby whose match is running is not
+                      counting down, but if both were ever true "in play" is the
+                      one that lasts. */}
+                      {g.started ? " · in play" : g.starting ? " · starting" : ""}
+                    </span>
+                  </button>
+                ))}
+
+                {games.length === 0 && (
+                  <p className="px-1 pt-1 text-xs text-neutral-600">No public games right now.</p>
+                )}
+              </div>
+            </section>
+          </div>
+        </div>
+
+        {!self && <p className="text-xs text-neutral-600">Looking for the game server…</p>}
+
+        {creating && self && (
+          <CreateGamePanel
+            onCancel={() => setCreating(false)}
+            onCreate={(map, listed, maxPlayers) => {
+              setCreating(false);
+              onCreate(takeName(), self, map, listed, maxPlayers);
+            }}
+          />
+        )}
+      </div>
+
+      <Footer onLegal={() => setLegal(true)} />
     </div>
   );
 }

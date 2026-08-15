@@ -24,53 +24,59 @@ export const POSES: Pose[] = [
   {
     key: "stand",
     label: "Stand",
+    // The rig's two hip bones share one origin, so a leg with no spread lands
+    // exactly on top of its twin. Every upright pose has to part them itself.
     shoulder: { spread: 0.09 },
+    hip: { spread: 0.38 },
+    knee: { spread: -0.38 },
   },
   {
-    key: "crumple",
-    label: "Crumple",
-    shape: "low",
-    // Kneeling and folded right down: shins flat on the floor, thighs upright,
-    // the torso doubled over past horizontal so the head reaches the ground and
-    // the arms tuck underneath. The root is NOT tipped — tipping it takes the
-    // legs with it and throws them out behind instead of folding them under.
-    offsetY: -0.02,
-    torso: { x: 1.62 },
-    head: { x: 0.3 },
-    shoulder: { x: -0.9, spread: 0.28 },
-    elbow: { x: -1.1 },
-    // Thighs swing forward and the knees fold right up, so the shins end up
-    // flat on the floor with the seat resting back on the heels.
-    hip: { x: 1.2, spread: 0.26 },
-    knee: { x: -2.75 },
+    key: "reach",
+    label: "Reach up",
+    // Fitted to `pose_7_arms_overhead`: straight up, forearms angled in so the
+    // hands meet. The fit put the legs together, which on this rig means one
+    // leg exactly inside the other, so they keep the standing stance instead.
+    head: { x: 0.02 },
+    shoulder: { x: 0.05, spread: 2.98 },
+    elbow: { x: 0.06, spread: 0.53 },
+    hip: { spread: 0.38 },
+    knee: { spread: -0.38 },
+  },
+  {
+    key: "star",
+    label: "Star jump",
+    // Arms and legs thrown wide — near the rig's own bind pose, which is why
+    // this one needed no fitting.
+    offsetY: -0.07,
+    shoulder: { spread: 2.36 },
+    hip: { spread: 0.44 },
   },
   {
     key: "lie",
-    label: "Lie on your side",
+    label: "Lie flat",
+    // Fitted to `pose_0_lie_flat`: straight out, arms reaching past the head.
+    // The body is upright here and *rolled* onto its side by `roll`, which is
+    // why the arms read as overhead rather than as lying beside the body.
     shape: "prone",
     roll: true,
-    head: { x: 0.2 },
-    shoulder: { x: 1.45, spread: 0.15 },
-    elbow: { x: 0.12 },
-    hip: { x: 0.3 },
-    knee: { x: -0.45 },
+    head: { x: 0.1 },
+    shoulder: { x: 0.05, spread: 3.15 },
+    elbow: { x: 0.13, spread: 0.56 },
+    hip: { spread: 0.5 },
+    knee: { spread: -0.61 },
   },
   {
-    key: "armsUp",
-    label: "Arms up",
-    shoulder: { x: 0.06, spread: 2.72 },
-    elbow: { spread: -0.18 },
-  },
-  {
-    key: "sit",
-    label: "Sit",
+    key: "curl",
+    label: "Curl up",
+    // Fitted to `pose_6_curl_ball` in characters/figure-poses.blend — the torso
+    // doubled right over, arms tucked under, knees folded in. See invariant 16.
     shape: "low",
-    offsetY: -0.12,
-    torso: { x: -0.08 },
-    hip: { x: 1.5, spread: 0.25 },
-    knee: { x: -1.25 },
-    shoulder: { x: 0.3, spread: 0.28 },
-    elbow: { x: 0.55 },
+    torso: { x: 2.0 },
+    head: { x: 0.78 },
+    shoulder: { x: -1.26, spread: -0.12 },
+    elbow: { x: -1.58, spread: -0.12 },
+    hip: { spread: 0.28 },
+    knee: { x: -1.49, spread: 0.19 },
   },
 ];
 

@@ -4,7 +4,8 @@
 you join.
 
 **Entry points:** `StartMenu`, `LobbyPanel`, `PauseMenu`, `ControlsPanel`,
-`PlayerList`, `PhaseBanner`, `RoundOverPanel`, `LoadingScreen`, `randomName`.
+`PlayerList`, `PhaseBanner`, `RoundOverPanel`, `LoadingScreen`, `LegalPage`,
+`Footer`, `randomName`.
 
 ## Files
 
@@ -24,6 +25,13 @@ you join.
 - `RoundOverPanel.tsx` — the reveal card: who won, and who was found where.
 - `LoadingScreen.tsx` — a spinner and the word Loading, over the whole screen,
   while the map you are standing in is still arriving. Opaque, and no props.
+- `LegalPage.tsx` — credits, what the game stores, and a placeholder for
+  whoever runs the server. It **replaces** `StartMenu` rather than navigating:
+  there is one page in this app and no router, so a page of text does not get to
+  put the game's state behind a URL, and the arena keeps rendering behind it, so
+  the background never changes.
+- `Footer.tsx` — the copyright line and the link to `LegalPage`, pinned to the
+  bottom of whichever panel renders it.
 - `names.ts` — random fallback player names.
 
 ## Creating a game is a modal, and the three choices in it are permanent
@@ -182,6 +190,15 @@ costs nothing.
    just disabled, and labelled "in play" or "starting", because the difference
    between waiting a whole round and waiting ten seconds is worth seeing. Display
    rule on top of a server rule, never instead of one.
+
+22. **The footer is pinned outside the scrolling part of its panel.** A panel
+    that fills the screen and scrolls its own contents cannot hold the footer
+    *inside* that scroll area — an absolutely positioned child of a scroll
+    container scrolls away with everything else, so the footer would sit at the
+    bottom of the content rather than at the bottom of the page. Both panels
+    that use it are therefore a fixed shell wrapping a scrolling middle, with
+    room left at its foot. **The year in it is read from the clock**, never
+    written down, so it cannot go stale.
 
 ## Contracts
 

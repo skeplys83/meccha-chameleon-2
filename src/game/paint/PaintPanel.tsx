@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { SWATCHES } from "@/game/paint/palette";
 import { MAX_SIZE, MIN_SIZE, type Brush } from "./brush";
 
-const WHEEL = 118;
+const WHEEL = 156;
 
 function hsvToHex(h: number, s: number, v: number) {
   const f = (n: number) => {
@@ -118,7 +118,7 @@ function ColorWheel({
       />
       {/* Where the current colour sits, so the wheel reflects the brush. */}
       <span
-        className="pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow"
+        className="pointer-events-none absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow"
         style={{ left: marker.left, top: marker.top, background: hsvToHex(h, s, v) }}
       />
     </div>
@@ -131,12 +131,17 @@ export function PaintPanel({
   onOpenChange,
   brush,
   onBrush,
+  picking,
+  onPickingChange,
   onClear,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   brush: Brush;
   onBrush: (b: Brush) => void;
+  /** The eyedropper is armed and the next click in the world takes its colour. */
+  picking: boolean;
+  onPickingChange: (picking: boolean) => void;
   onClear: () => void;
 }) {
   const { h, s, v } = useMemo(() => hexToHsv(brush.color), [brush.color]);
@@ -145,10 +150,10 @@ export function PaintPanel({
     return (
       <button
         onClick={() => onOpenChange(true)}
-        className="absolute bottom-4 right-4 flex select-none items-center gap-2 rounded-lg bg-black/70 px-3 py-2 font-mono text-xs text-neutral-200 backdrop-blur transition hover:bg-black/80"
+        className="absolute bottom-4 right-4 flex select-none items-center gap-2.5 rounded-lg bg-black/70 px-4 py-3 font-mono text-sm text-neutral-200 backdrop-blur transition hover:bg-black/80"
       >
         <span
-          className="h-3.5 w-3.5 rounded-full border border-white/40"
+          className="h-4 w-4 rounded-full border border-white/40"
           style={{ background: brush.color }}
         />
         Paint
@@ -158,14 +163,14 @@ export function PaintPanel({
 
   return (
     <div
-      className="absolute bottom-4 right-4 w-[142px] select-none rounded-lg bg-black/70 p-2.5 font-mono text-[11px] text-neutral-100 backdrop-blur"
+      className="absolute bottom-4 right-4 w-[184px] select-none rounded-lg bg-black/70 p-3 font-mono text-xs text-neutral-100 backdrop-blur"
     >
-      <div className="mb-1.5 flex items-center justify-between">
+      <div className="mb-2 flex items-center justify-between">
         <span className="uppercase tracking-widest text-neutral-400">Paint</span>
         <button
           onClick={() => onOpenChange(false)}
           title="Minimise"
-          className="flex h-5 w-6 items-center justify-center rounded border border-neutral-500 text-sm leading-none text-neutral-100 transition hover:bg-neutral-600"
+          className="flex h-7 w-8 items-center justify-center rounded border border-neutral-500 text-base leading-none text-neutral-100 transition hover:bg-neutral-600"
         >
           ▾
         </button>
@@ -178,7 +183,7 @@ export function PaintPanel({
         onPick={(hue, sat) => onBrush({ ...brush, color: hsvToHex(hue, sat, v || 1) })}
       />
 
-      <label className="mt-2 block text-[10px] uppercase tracking-wide text-neutral-400">
+      <label className="mt-3 block text-[11px] uppercase tracking-wide text-neutral-400">
         Brightness
         <input
           type="range"
@@ -187,10 +192,10 @@ export function PaintPanel({
           step={0.01}
           value={v}
           onChange={(e) => onBrush({ ...brush, color: hsvToHex(h, s, Number(e.target.value)) })}
-          className="w-full cursor-pointer accent-neutral-200"
+          className="mt-1 h-2 w-full cursor-pointer accent-neutral-200"
         />
       </label>
-      <label className="block text-[10px] uppercase tracking-wide text-neutral-400">
+      <label className="mt-2 block text-[11px] uppercase tracking-wide text-neutral-400">
         Brush size
         <input
           type="range"
@@ -199,17 +204,33 @@ export function PaintPanel({
           step={0.005}
           value={brush.size}
           onChange={(e) => onBrush({ ...brush, size: Number(e.target.value) })}
-          className="w-full cursor-pointer accent-neutral-300"
+          className="mt-1 h-2 w-full cursor-pointer accent-neutral-300"
         />
       </label>
+      <p className="mt-1 text-[10px] leading-tight text-neutral-500">
+        or right-drag across your body
+      </p>
 
-      <div className="mt-1.5 grid grid-cols-5 gap-1">
+      <button
+        onClick={() => onPickingChange(!picking)}
+        title="Take a colour from the screen"
+        className={`mt-2.5 flex w-full items-center justify-center gap-2 rounded border px-2 py-2 text-[11px] transition ${
+          picking
+            ? "border-white bg-white/15 text-white"
+            : "border-neutral-600 text-neutral-300 hover:bg-neutral-700"
+        }`}
+      >
+        <span aria-hidden>◎</span>
+        {picking ? "click a colour" : "pick colour"}
+      </button>
+
+      <div className="mt-2.5 grid grid-cols-5 gap-1.5">
         {SWATCHES.map((hex) => (
           <button
             key={hex}
             onClick={() => onBrush({ ...brush, color: hex })}
             style={{ background: hex }}
-            className={`h-4 rounded-sm border transition ${
+            className={`h-7 rounded border transition ${
               brush.color.toLowerCase() === hex
                 ? "border-white"
                 : "border-white/20 hover:border-white/60"
@@ -218,21 +239,21 @@ export function PaintPanel({
         ))}
       </div>
 
-      <div className="mt-1.5 flex items-center justify-between text-[10px] text-neutral-400">
-        <span className="flex items-center gap-1.5">
+      <div className="mt-2.5 flex items-center justify-between text-[11px] text-neutral-400">
+        <span className="flex items-center gap-2">
           <span
             className="rounded-full border border-white/30"
             style={{
               background: brush.color,
-              width: 5 + brush.size * 90,
-              height: 5 + brush.size * 90,
+              width: 6 + brush.size * 44,
+              height: 6 + brush.size * 44,
             }}
           />
           {brush.color}
         </span>
         <button
           onClick={onClear}
-          className="rounded border border-neutral-600 px-1.5 py-0.5 text-neutral-300 transition hover:bg-neutral-700"
+          className="rounded border border-neutral-600 px-2 py-1 text-neutral-300 transition hover:bg-neutral-700"
         >
           clear
         </button>

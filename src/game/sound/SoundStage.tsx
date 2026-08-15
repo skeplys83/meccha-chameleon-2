@@ -49,6 +49,9 @@ export function SoundStage() {
     [],
   );
 
+  // Priority 1, for the same reason as `combat/Viewmodel`: the listener copies
+  // the camera, so it must run after the frame that places it. Mount order does
+  // not guarantee that — see `Scene.tsx`.
   useFrame(({ camera }, delta) => {
     updateListener(camera);
 
@@ -75,7 +78,7 @@ export function SoundStage() {
     if (live.size > remotes.size) {
       for (const id of live.keys()) if (!remotes.has(id)) live.delete(id);
     }
-  });
+  }, 1);
 
   return null;
 }

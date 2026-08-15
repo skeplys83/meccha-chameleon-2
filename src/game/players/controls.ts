@@ -11,7 +11,7 @@ export type Control =
   | "turnRight"
   | `pose${number}`;
 
-/** `1`–`8` select a pose; index 0 is the upright stance. */
+/** `1`–`5` select a pose; index 0 is the upright stance. */
 export const poseControl = (index: number) => `pose${index}` as Control;
 
 export const controlMap: KeyboardControlsEntry<Control>[] = [

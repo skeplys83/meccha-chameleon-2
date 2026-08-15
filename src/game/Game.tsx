@@ -7,6 +7,7 @@ import { PaintPanel } from "@/game/paint/PaintPanel";
 import { DEFAULT_BRUSH, type Brush } from "@/game/paint/brush";
 import { DEFAULT_MAP } from "@/game/world/mapIds";
 import { preloadMap } from "@/game/world/preload";
+import { preloadCharacter } from "@/game/figure/model";
 import { LoadingScreen } from "@/game/hud/LoadingScreen";
 import { beginLoading, useLoading } from "@/game/loading";
 import { LobbyPanel } from "@/game/hud/LobbyPanel";
@@ -66,6 +67,8 @@ export function Game() {
   // itself while you were mixing a colour would be maddening.
   const [painting, setPainting] = useState(false);
   const [brush, setBrush] = useState<Brush>(DEFAULT_BRUSH);
+  /** The eyedropper is armed: the next click in the world takes its colour. */
+  const [picking, setPicking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("player");
   /** Who caught you, for the few seconds the notice is up. */
@@ -148,9 +151,14 @@ export function Game() {
       // audio context has been waiting for. Unlocking anywhere else — an effect,
       // a timer — is silently refused and the whole game stays mute.
       unlockAudio();
+      // The body everyone wears, 124 KB. Nothing renders a figure before this
+      // click, and `StickFigure` draws nothing until it lands rather than
+      // suspending — suspending there would tear down the collider it sits in.
+      void preloadCharacter();
       // Joining is a clean slate.
       forgetAllSkins();
       setBrush(DEFAULT_BRUSH);
+      setPicking(false);
       setError(null);
       setName(who);
       setJoined(true);
@@ -498,6 +506,12 @@ export function Game() {
         // and look at the spot that beat you.
         paused={paused || dropped}
         brush={brush}
+        onBrush={setBrush}
+        picking={picking}
+        onPicked={(hex) => {
+          setBrush((b) => ({ ...b, color: hex }));
+          setPicking(false);
+        }}
         onHoverBody={onHoverBody}
       />
       {joined ? (
@@ -541,6 +555,8 @@ export function Game() {
               onOpenChange={setPaintOpen}
               brush={brush}
               onBrush={setBrush}
+              picking={picking}
+              onPickingChange={setPicking}
               onClear={() => {
                 clearSkin(SELF);
                 sendClearSkin();

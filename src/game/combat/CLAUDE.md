@@ -14,7 +14,13 @@ the pointer-lock state. This folder owns what the shot hits, and the aftermath.
   an oriented wall hit, or nothing.
 - `Shotgun.tsx` — the prop, barrel pointing down −Z. Shared by the viewmodel and
   by the figure other players see.
-- `Viewmodel.tsx` — the hunter's own arms and gun, riding the camera.
+- `Viewmodel.tsx` — the hunter's own arms and gun, riding the camera. It copies
+  the camera's transform, so it runs at **frame priority 1** — after the movement
+  callback that places the camera. Mount order used to be what ordered these two,
+  and it is not reliable: `Player` is keyed on the room and this is not, so
+  crossing into a match re-registered the player *after* the viewmodel and the
+  gun spent every match reading last frame's camera — it swam around as you
+  walked, in matches but never in the lobby. See `Scene.tsx` for the priorities.
 - `Marks.tsx` — yellow patches where a shot hit a wall, each with the thin black
   line the shot travelled along. Three seconds. `Mark` is
   an **alias** of `net/events`'s `NetMark`, not a second declaration: a mark is
@@ -73,12 +79,19 @@ died, and each grave carries the name for the reveal.
    driven imperatively in `players/Player.tsx`, so the viewmodel copies its
    position and quaternion each frame. Everything in it is expressed in camera
    space: −Z is forward.
-11. **The viewmodel's arms wear the local player's paint** (`SELF` canvases), so a
-   hunter sees their own colours in first person.
+11. **The viewmodel's arms are plain white, and that is a known regression.**
+   They used to wear the local player's paint, which worked while every part had
+   its own texture. The model's unwrap scatters a forearm across four UV
+   islands, so there is no rectangle to map a capsule into and no honest way to
+   fake it. The fix is to build these arms from the model's own forearm
+   geometry, which carries the right UVs by construction; until then a hunter
+   does not see their own colours in first person.
 12. **A remote hunter's gun arm leaves the pose.** `figure/StickFigure` takes an
    `aim` prop that points the right arm along the aim and a `holding` prop that
-   puts the shotgun in that hand. Rotating the hand group −90° about X turns the
-   gun's −Z barrel to run down the arm.
+   puts the shotgun in that hand — portalled onto the model's `LowerArmR` bone,
+   so the skeleton carries it. The rig has no hand bone, so the grip is pushed
+   down the forearm's own axis by `FOREARM_LENGTH`. Rotating that group +90°
+   about X turns the gun's −Z barrel to run down the arm.
 
 ## Contracts
 

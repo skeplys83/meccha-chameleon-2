@@ -11,4 +11,4 @@ export type Brush = {
 export const DEFAULT_BRUSH: Brush = { color: "#e0245e", size: 0.06 };
 
 export const MIN_SIZE = 0.015;
-export const MAX_SIZE = 0.2;
+export const MAX_SIZE = 0.5;
