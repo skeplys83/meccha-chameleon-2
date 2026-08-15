@@ -116,7 +116,7 @@ half any time with `npm run check:docs`. The escape hatch for a genuine no-op is
 `SKIP_DOC_CHECK=1 git commit`.
 
 Anything not inside a documented folder — `Game.tsx`, `Scene.tsx`, `loading.ts`,
-`index.html`, `src/main.tsx`, `src/index.css` — is covered by this file. **The composition
+`dev.ts`, `index.html`, `src/main.tsx`, `src/index.css` — is covered by this file. **The composition
 roots stay here deliberately**: this is the only doc loaded into a session
 automatically, so what an agent needs without being told to go looking for it
 belongs in it.
@@ -155,13 +155,14 @@ src/game/
   Game.tsx          top-level state: joined, session, room, paused, painting, killed
   Scene.tsx         Canvas, Physics, mark and grave lifetimes
   loading.ts        one counter: is the player waiting on something to arrive
+  dev.ts            developer mode: the flag, and the player snapshot it shows
 public/sounds/      the nine .mp3 files
 public/maps/        one .glb per map — the only map asset the game loads
 public/models/      player.glb — the one rigged body everyone wears
-characters/         figure.blend, the nine sculpted poses, and
-                    figure-poses.blend, which holds the rigged, unwrapped body
-                    exported to public/models/player.glb. Source and reference;
-                    nothing under src/ reads either
+characters/         figure-poses.blend: two collections, `export` (the rigged,
+                    unwrapped body exported to public/models/player.glb) and
+                    `reference` (the eight sculpted poses the angles were
+                    fitted to). Source and reference; nothing under src/ reads it
 levels/             the .blend files those are exported from, and the raw kit.
                     The real source; nothing under src/ reads any of it.
                     AUTHORING.md there is the map-building guide: shells,
@@ -209,7 +210,9 @@ the drawn frame back — which is only the eyedropper, sampling the pixel it jus
 rendered. Mount order is
 not a substitute — components remount independently, so a callback that must run
 after another has to say so with a priority. `Scene.tsx` also owns the
-`<Physics>` and `<Canvas>` settings — see trap 4 for
+`<Physics>` and `<Canvas>` settings — including `debug`, which draws every
+collider and is `SHOW_COLLISION` from `world/surface.ts`, the same switch that
+lights up the raycast layer — see trap 4 for
 why the timestep is not the library default, and note that `shadows` is spelled
 `"percentage"` rather than left bare, because three has deprecated the
 `PCFSoftShadowMap` that a bare `shadows` selects and downgrades it to exactly
@@ -301,6 +304,44 @@ has usually been in cache for a minute, and a transition with nothing to wait
 for correctly waits for nothing. A player who *does* have to wait is not
 disadvantaged by it beyond the wait itself: they stand at the spawn point until
 the map lands, which is where they would have been anyway.
+
+**Developer mode is `DEV` in `dev.ts`, and *availability* is the environment
+rather than a setting.** It is `import.meta.env.DEV`, which vite *substitutes* at build time —
+so it is true under `npm run dev` (the server runs vite in middleware mode) and
+compiled to the literal `false` by `vite build`, which is the only thing the
+Dockerfile's build stage runs. Everything behind it is then dead code the bundler
+drops: the debug overlay and its imports are absent from `dist/`, checked by
+grepping it. Two things are on it today:
+
+- **The collision layer**, in `Scene.tsx` (`<Physics debug>`) and
+  `world/GltfLevel.tsx` (the green `ROOM_SURFACE` wireframes). This replaced
+  `SHOW_COLLISION`, a hand-flipped constant that shipped as `true`.
+- **`hud/DebugPanel`**, bottom left: fps, the local player's position, camera,
+  ground and cling state, and every number of the pose they are holding.
+
+**`DEV` decides whether any of it exists; the toggle decides whether it is
+showing.** `dev.ts` holds a small subscribable flag beside the build one — on by
+default, because a switch you have to find before you see anything is a switch
+nobody finds. It flips from the **DEV chip** at the bottom left, which is part
+of the readout and stays visible when the mode is off (a toggle that vanishes
+when you use it is a trap), or from **backquote**, which no game control uses
+and which is the only way in for a hunter, who holds the pointer lock and cannot
+click anything. The green collision layer over every wall is exactly what you
+want while hunting for a hole in a map and exactly what you do not want the rest
+of the time; that is the whole reason the switch exists.
+
+**`dev.ts` also owns the one channel between them.** The panel is DOM outside
+the Canvas and may not import from `players/` (`hud/CLAUDE.md`, invariant 1), and
+what it wants to show is written inside a frame loop, where React state would be
+sixty re-renders a second. So `players/Player.tsx` writes a snapshot into
+`dev.ts` and the panel samples it ten times a second. **Anything else worth
+watching goes through that snapshot**, not through a new import and not through
+props threaded down from `Game.tsx`. It is dropped on `onLeftRoom` with
+everything else that belongs to a room.
+
+**Do not make developer mode reachable in production** — not by an env var, not
+by a query parameter, not by a key. The point of tying it to the build is that
+there is no switch to find.
 
 Every mode transition in the game is decided in `Game.tsx` — which also means it
 owns the *teardown* of each: joining unlocks audio, pausing suspends it, and

@@ -14,6 +14,8 @@ import { LobbyPanel } from "@/game/hud/LobbyPanel";
 import { DroppedPanel } from "@/game/hud/DroppedPanel";
 import { PhaseBanner } from "@/game/hud/PhaseBanner";
 import { RoundOverPanel } from "@/game/hud/RoundOverPanel";
+import { DebugPanel } from "@/game/hud/DebugPanel";
+import { DEV, clearPlayerDebug, toggleDevMode } from "@/game/dev";
 import {
   createLobby,
   disconnect,
@@ -292,6 +294,7 @@ export function Game() {
         forgetAllSkins();
         stopAllLoops();
         setGraves([]);
+        clearPlayerDebug();
       }),
     [],
   );
@@ -483,6 +486,23 @@ export function Game() {
     };
   }, []);
 
+  // Developer mode's keyboard half. The chip in the readout is the visible
+  // toggle; this is here because a hunter holds the pointer lock and cannot
+  // click anything, and because backquote is bound to nothing in
+  // `players/controls.ts`. Compiled out of the build with the rest of it.
+  useEffect(() => {
+    if (!DEV) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== "Backquote" || e.metaKey || e.ctrlKey || e.altKey) return;
+      // Not while somebody is typing their name into the menu.
+      const target = e.target as HTMLElement | null;
+      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") return;
+      toggleDevMode();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   // The Canvas stays mounted and the menu sits over it, so creating or joining a
   // game drops you straight into the room instead of swapping out the whole tree.
   return (
@@ -609,6 +629,12 @@ export function Game() {
           overlay that is not about the game: while it is up there is no floor
           under the player and nothing behind it worth seeing. It cannot appear
           on the start menu — the arena downloads nothing and never suspends. */}
+      {/* Developer mode only, and compiled out of the build — see
+          `src/game/dev.ts`. Over the panels, because it is scaffolding rather
+          than part of the game, and pinned to the one corner nothing else uses.
+          Mounted whether or not the mode is *on*: the chip inside it is the
+          toggle, and a switch that vanishes when you use it is a trap. */}
+      {DEV && joined && <DebugPanel map={room?.map ?? DEFAULT_MAP} phase={room?.phase ?? "—"} />}
       {loading && <LoadingScreen />}
     </div>
   );

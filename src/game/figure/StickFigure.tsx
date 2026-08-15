@@ -143,34 +143,56 @@ export function StickFigure({
     const a = angles.current;
     const to = (from: number, target: number) =>
       THREE.MathUtils.damp(from, target, POSE_DAMP, delta);
-    const pick = (j: Joint | undefined, key: "x" | "spread") => j?.[key] ?? 0;
+    /** One leaning bone: pitch, yaw, tilt. Every joint carries all three — see
+     *  `Joint`, where none of them is optional. */
+    const lean = (j: Joint, of: "torso" | "chest" | "neck" | "head") => {
+      a[`${of}X`] = to(a[`${of}X`], j.x);
+      a[`${of}Y`] = to(a[`${of}Y`], j.twist);
+      a[`${of}Z`] = to(a[`${of}Z`], j.spread);
+    };
 
-    a.torsoX = to(a.torsoX, pick(p.torso, "x"));
-    a.headX = to(a.headX, pick(p.head, "x"));
-    a.rootX = to(a.rootX, p.rootX ?? 0);
+    lean(p.torso, "torso");
+    lean(p.chest, "chest");
+    lean(p.neck, "neck");
+    lean(p.head, "head");
+    a.rootX = to(a.rootX, p.rootX);
     a.roll = to(a.roll, p.roll ? Math.PI / 2 : 0);
-    a.offsetY = to(a.offsetY, p.offsetY ?? 0);
+    a.offsetY = to(a.offsetY, p.offsetY);
+    a.offsetZ = to(a.offsetZ, p.offsetZ);
 
     for (let i = 0; i < 2; i++) {
       const side = i === 0 ? -1 : 1;
+      // `Angles` is indexed [left, right]; the table names its two sides.
+      const of = i === 0 ? "left" : "right";
+      const clavicle = p.clavicle[of];
+      const shoulder = p.shoulder[of];
+      const elbow = p.elbow[of];
       // The gun arm is driven by the aim instead of the pose.
       const aiming = aim !== null && i === 1;
       // Straight out in front at rest (x = π/2), rising and falling with pitch.
-      const shoulderX = aiming ? Math.PI / 2 + aim() : pick(p.shoulder, "x");
-      const shoulderZ = aiming ? 0.12 : pick(p.shoulder, "spread") * side;
+      const shoulderX = aiming ? Math.PI / 2 + aim() : shoulder.x;
+      const shoulderZ = aiming ? 0.12 : shoulder.spread * side;
+      a.clavicleX[i] = to(a.clavicleX[i], clavicle.x);
+      a.clavicleY[i] = to(a.clavicleY[i], clavicle.twist * side);
+      a.clavicleZ[i] = to(a.clavicleZ[i], clavicle.spread * side);
       a.shoulderX[i] = to(a.shoulderX[i], shoulderX);
+      a.shoulderY[i] = to(a.shoulderY[i], aiming ? 0 : shoulder.twist * side);
       a.shoulderZ[i] = to(a.shoulderZ[i], shoulderZ);
-      a.elbowX[i] = to(a.elbowX[i], aiming ? 0 : pick(p.elbow, "x"));
-      a.elbowZ[i] = to(a.elbowZ[i], aiming ? 0 : pick(p.elbow, "spread") * side);
-      a.hipX[i] = to(a.hipX[i], pick(p.hip, "x"));
-      a.hipZ[i] = to(a.hipZ[i], pick(p.hip, "spread") * side);
-      a.kneeX[i] = to(a.kneeX[i], pick(p.knee, "x"));
-      a.kneeZ[i] = to(a.kneeZ[i], pick(p.knee, "spread") * side);
+      a.elbowX[i] = to(a.elbowX[i], aiming ? 0 : elbow.x);
+      a.elbowY[i] = to(a.elbowY[i], aiming ? 0 : elbow.twist * side);
+      a.elbowZ[i] = to(a.elbowZ[i], aiming ? 0 : elbow.spread * side);
+      a.hipX[i] = to(a.hipX[i], p.hip.x);
+      a.hipY[i] = to(a.hipY[i], p.hip.twist * side);
+      a.hipZ[i] = to(a.hipZ[i], p.hip.spread * side);
+      a.kneeX[i] = to(a.kneeX[i], p.knee.x);
+      a.kneeY[i] = to(a.kneeY[i], p.knee.twist * side);
+      a.kneeZ[i] = to(a.kneeZ[i], p.knee.spread * side);
     }
 
     const g = root.current;
     if (g) {
       g.position.y = a.offsetY;
+      g.position.z = a.offsetZ;
       // Lying down is a roll of the whole body and crumpling is a tip forward,
       // both damped like every other joint so the figure keels over instead of
       // snapping into place.

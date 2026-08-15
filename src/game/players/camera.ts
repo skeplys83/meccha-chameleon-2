@@ -3,12 +3,11 @@ import * as THREE from "three";
 const CAMERA_MIN_DISTANCE = 1.4;
 /** Keep the lens off the surface it would otherwise touch. */
 const CAMERA_SKIN = 0.35;
-/** Aim at the chest rather than the origin, which is the middle of the body. */
-const LOOK_HEIGHT = 0.6;
 
 const lookAt = new THREE.Vector3();
 const toCamera = new THREE.Vector3();
 const ray = new THREE.Raycaster();
+const hitNormal = new THREE.Vector3();
 
 /**
  * Last frame's distance. Only the *distance* is smoothed — the camera itself is
@@ -27,15 +26,32 @@ export function followThirdPerson(
   solids: THREE.Object3D[],
   delta: number,
 ) {
-  lookAt.copy(bodyPos).setY(bodyPos.y + LOOK_HEIGHT);
+  // The body's origin is the middle of the figure in every pose — measured, it
+  // is within 0.05 of the posed mesh's own centre — so aiming there frames the
+  // player centred whether they are standing, lying or curled up.
+  lookAt.copy(bodyPos);
 
   toCamera.copy(lookDir).negate().normalize();
   let distance = zoom;
+  // The height the lens may not go below, when what is in the way is the floor.
+  let floor = -Infinity;
   if (solids.length) {
     ray.set(lookAt, toCamera);
     ray.far = zoom;
     const blocked = ray.intersectObjects(solids, false)[0];
-    if (blocked) distance = Math.max(CAMERA_MIN_DISTANCE, blocked.distance - CAMERA_SKIN);
+    if (blocked?.face) {
+      hitNormal.copy(blocked.face.normal).transformDirection(blocked.object.matrixWorld);
+      // **The ground is slid along, not backed away from.** Pulling in on a
+      // floor hit is what put the lens inside a lying player: the aim point is
+      // barely above the ground, so any look from below the horizon crosses it
+      // within a metre and the shot collapses to the minimum distance. Lifting
+      // instead keeps the whole zoom and skims the surface, which is what a
+      // player crouching to look at something along the floor expects.
+      if (hitNormal.y > 0.5) floor = blocked.point.y + CAMERA_SKIN;
+      else distance = Math.max(CAMERA_MIN_DISTANCE, blocked.distance - CAMERA_SKIN);
+    } else if (blocked) {
+      distance = Math.max(CAMERA_MIN_DISTANCE, blocked.distance - CAMERA_SKIN);
+    }
   }
 
   // **The camera is rigid on the body.** Lerping its *position* made it trail
@@ -48,6 +64,7 @@ export function followThirdPerson(
   else held += (distance - held) * (1 - Math.pow(0.0001, delta));
 
   camera.position.copy(lookAt).addScaledVector(toCamera, held);
+  if (camera.position.y < floor) camera.position.y = floor;
   camera.lookAt(lookAt);
 }
 

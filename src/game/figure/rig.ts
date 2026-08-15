@@ -8,12 +8,17 @@ import type { Character } from "./model";
 const UP = new THREE.Vector3(0, 1, 0);
 const DOWN = new THREE.Vector3(0, -1, 0);
 
-/** Which bones a pose drives. Everything else — the shoulders, the second spine
- *  bone, the neck, the hands — stays at its bind rotation and simply carries
- *  what hangs off it. */
+/** Every bone in the rig is drivable — the table decides which ones a given pose
+ *  bothers to touch, and a joint left out is exactly its bind rotation. The six
+ *  in `LEANS` are turned about the figure's own axes; the eight limb bones are
+ *  aimed. */
 export type Driven =
   | "Spine1"
+  | "Spine1001"
+  | "Neck"
   | "Head"
+  | "ShoulderL"
+  | "ShoulderR"
   | "UpperArmL"
   | "LowerArmL"
   | "UpperArmR"
@@ -23,9 +28,25 @@ export type Driven =
   | "UpperLegR"
   | "LowerLegR";
 
+/** The bones that lean rather than aim. A lean is identity at zero, so these
+ *  cost nothing until a pose asks for one — see invariant 10 for why the spine
+ *  and the head cannot be aimed like a limb. */
+const LEANS: ReadonlySet<string> = new Set([
+  "Spine1",
+  "Spine1001",
+  "Neck",
+  "Head",
+  "ShoulderL",
+  "ShoulderR",
+]);
+
 const DRIVEN: ReadonlySet<string> = new Set<Driven>([
   "Spine1",
+  "Spine1001",
+  "Neck",
   "Head",
+  "ShoulderL",
+  "ShoulderR",
   "UpperArmL",
   "LowerArmL",
   "UpperArmR",
@@ -40,23 +61,45 @@ const DRIVEN: ReadonlySet<string> = new Set<Driven>([
  *  toward the pose every frame, so the table stays a table of angles and the
  *  easing stays where it always was. Every pair is `[left, right]`: the gun arm
  *  leaves the pose entirely while aiming, so the two sides cannot share one
- *  number — and a walk cycle will want the same freedom in the legs. */
+ *  number — and a walk cycle will want the same freedom in the legs.
+ *
+ *  Every joint carries three numbers, `X` / `Y` / `Z`. On a lean they are pitch,
+ *  yaw and sideways tilt about the *figure's* axes; on a limb `X`/`Z` aim the
+ *  bone and `Y` twists it about its own length. */
 export type Angles = ReturnType<typeof makeAngles>;
 
 export function makeAngles() {
   return {
     torsoX: 0,
+    torsoY: 0,
+    torsoZ: 0,
+    chestX: 0,
+    chestY: 0,
+    chestZ: 0,
+    neckX: 0,
+    neckY: 0,
+    neckZ: 0,
     headX: 0,
+    headY: 0,
+    headZ: 0,
     rootX: 0,
     roll: 0,
     offsetY: 0,
+    offsetZ: 0,
+    clavicleX: [0, 0],
+    clavicleY: [0, 0],
+    clavicleZ: [0, 0],
     shoulderX: [0, 0],
+    shoulderY: [0, 0],
     shoulderZ: [0, 0],
     elbowX: [0, 0],
+    elbowY: [0, 0],
     elbowZ: [0, 0],
     hipX: [0, 0],
+    hipY: [0, 0],
     hipZ: [0, 0],
     kneeX: [0, 0],
+    kneeY: [0, 0],
     kneeZ: [0, 0],
   };
 }
@@ -106,13 +149,52 @@ const scratch = {
   joint: new THREE.Quaternion(),
   invParent: new THREE.Quaternion(),
   swing: new THREE.Quaternion(),
+  lean: new THREE.Quaternion(),
+  twist: new THREE.Quaternion(),
   dir: new THREE.Vector3(),
   restDir: new THREE.Vector3(),
-  axis: new THREE.Vector3(),
+  angles: { x: 0, y: 0, z: 0 },
 };
 
-/** The figure's own left-right axis, which a lean turns about. */
-const PITCH = new THREE.Vector3(1, 0, 0);
+/** A bone's own length axis: Blender points a bone down its local +Y, which is
+ *  what `restDir` reads and what a twist turns about. */
+const AXIS = new THREE.Vector3(0, 1, 0);
+
+/** The three angles a leaning bone holds, written into scratch rather than
+ *  returned, since six bones per figure per frame would otherwise allocate. */
+function leanAngles(role: Driven, a: Angles) {
+  const out = scratch.angles;
+  switch (role) {
+    case "Spine1":
+      [out.x, out.y, out.z] = [a.torsoX, a.torsoY, a.torsoZ];
+      break;
+    case "Spine1001":
+      [out.x, out.y, out.z] = [a.chestX, a.chestY, a.chestZ];
+      break;
+    case "Neck":
+      [out.x, out.y, out.z] = [a.neckX, a.neckY, a.neckZ];
+      break;
+    case "Head":
+      [out.x, out.y, out.z] = [a.headX, a.headY, a.headZ];
+      break;
+    default: {
+      const i = role === "ShoulderR" ? 1 : 0;
+      [out.x, out.y, out.z] = [a.clavicleX[i], a.clavicleY[i], a.clavicleZ[i]];
+    }
+  }
+  return out;
+}
+
+/** How far a bone is twisted about its own length. Zero for anything leaning —
+ *  a lean's yaw is already one of its three axes. */
+function twistOf(role: Driven, a: Angles): number {
+  const i = role.endsWith("R") ? 1 : 0;
+  if (role.startsWith("UpperLeg")) return a.hipY[i];
+  if (role.startsWith("LowerLeg")) return a.kneeY[i];
+  if (role.startsWith("UpperArm")) return a.shoulderY[i];
+  if (role.startsWith("LowerArm")) return a.elbowY[i];
+  return 0;
+}
 
 /**
  * Where a limb bone's own axis should point, in the figure's own frame.
@@ -139,7 +221,11 @@ function target(role: Driven, a: Angles, out: THREE.Vector3): THREE.Vector3 {
     limb.multiply(joint.setFromEuler(euler.set(a.elbowX[i], 0, a.elbowZ[i])));
   }
   out.copy(DOWN).applyQuaternion(limb);
-  return out.applyQuaternion(torso.setFromEuler(euler.set(a.torsoX, 0, 0)));
+  // The arms ride the two spine leans, in the order the chain composes them —
+  // and only those. A collar bone moves where an arm starts, never where it
+  // points, which is the same cancelling that keeps the legs out of the lean.
+  out.applyQuaternion(torso.setFromEuler(euler.set(a.torsoX, a.torsoY, a.torsoZ)));
+  return out.applyQuaternion(joint.setFromEuler(euler.set(a.chestX, a.chestY, a.chestZ)));
 }
 
 /**
@@ -152,28 +238,41 @@ function target(role: Driven, a: Angles, out: THREE.Vector3): THREE.Vector3 {
  * inside out.
  */
 export function applyPose(chain: Chain, a: Angles) {
-  const { invParent, swing, dir, restDir, axis } = scratch;
+  const { euler, invParent, swing, lean, twist, dir, restDir } = scratch;
   for (let i = 0; i < chain.order.length; i++) {
     const link = chain.order[i];
     // The skeleton sits inside a node the exporter rotated to stand the model
     // up, so the chain starts from that rather than from nothing — miss it and
     // every target is solved in a frame tipped on its side.
     const parentQ = link.parent >= 0 ? chain.accumulated[link.parent] : chain.base;
+    if (!link.role) {
+      chain.accumulated[i].copy(parentQ).multiply(link.bone.quaternion);
+      continue;
+    }
 
-    if (link.role === "Spine1" || link.role === "Head") {
+    if (LEANS.has(link.role)) {
       // A lean, not an aim. `Spine1` runs *downward* from the waist, so asking
       // it to point at the sky folds the body in half; the head already points
-      // where it should. Both simply turn about the figure's own left-right
-      // axis, the head on top of whatever the torso did.
-      axis.copy(PITCH).applyQuaternion(invParent.copy(parentQ).invert()).normalize();
-      swing.setFromAxisAngle(axis, link.role === "Spine1" ? a.torsoX : a.headX);
+      // where it should, and a collar bone points sideways. All six turn about
+      // the figure's own axes, each stacked on whatever the one below it did.
+      // Conjugating by the parent is what states the turn in the figure's frame
+      // rather than in the frame it inherited.
+      const { x, y, z } = leanAngles(link.role, a);
+      lean.setFromEuler(euler.set(x, y, z));
+      invParent.copy(parentQ).invert();
+      swing.copy(invParent).multiply(lean).multiply(parentQ);
       link.bone.quaternion.copy(swing).multiply(link.rest);
-    } else if (link.role) {
+    } else {
       target(link.role, a, dir).normalize();
       dir.applyQuaternion(invParent.copy(parentQ).invert());
       restDir.copy(UP).applyQuaternion(link.rest).normalize();
       swing.setFromUnitVectors(restDir, dir);
       link.bone.quaternion.copy(swing).multiply(link.rest);
+      // A twist turns the bone about its own length, so it goes on the *inside*
+      // of the rest rotation, where the bone's axis is local +Y. It leaves the
+      // limb pointing exactly where the aim put it and rolls what hangs off it.
+      const t = twistOf(link.role, a);
+      if (t) link.bone.quaternion.multiply(twist.setFromAxisAngle(AXIS, t));
     }
     chain.accumulated[i].copy(parentQ).multiply(link.bone.quaternion);
   }

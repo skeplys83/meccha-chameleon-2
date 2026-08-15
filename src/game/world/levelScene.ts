@@ -74,37 +74,6 @@ export function colliderKindOf(name: string): ColliderKind | null {
   return null;
 }
 
-/**
- * The second way a piece gets collision: a `collider` custom property in
- * Blender, which the exporter writes to glTF `extras` and the loader hands over
- * as `userData`.
- *
- * **A prefix and a tag are for different jobs.** A `col*_` object is a *separate*
- * shape, which is what lets the dungeon collide with 74 merged boxes instead of
- * its 690 drawn pieces, and lets a shot raycast a 12-triangle proxy rather than
- * a torch's forty. A tag says "collide with exactly this, as drawn" — one
- * object, nothing to drift, and the right answer for a prop whose collider was
- * only ever going to be a copy of it. The rule: **if the collider should differ
- * from the drawn shape, author it; otherwise tag it.**
- *
- * Untagged means *no* collision, which is what decoration wants — a banner on a
- * wall should not be something you walk into.
- */
-// `| undefined` on purpose: without it the index signature promises a hit for
-// every string and the unknown-value branch below is narrowed away as dead.
-const TAGGED_KINDS: Record<string, ColliderKind | undefined> = {
-  cuboid: "cuboid",
-  hull: "hull",
-  trimesh: "trimesh",
-  ball: "ball",
-};
-
-function taggedKindOf(mesh: THREE.Mesh) {
-  const asked = mesh.userData?.collider;
-  if (asked === undefined || asked === "none") return null;
-  return TAGGED_KINDS[String(asked)] ?? "unknown";
-}
-
 export type PreparedLevel = {
   scene: THREE.Object3D;
   colliders: LevelCollider[];
@@ -115,10 +84,6 @@ export type PreparedLevel = {
     batches: number;
     lights: number;
     shadowCasters: number;
-    /** Colliders that came from a `collider` custom property rather than a name. */
-    tagged: number;
-    /** `collider` values that are not a collider kind, for `checkLevel` to report. */
-    badTags: string[];
   };
 };
 
@@ -301,10 +266,7 @@ export function prepareLevel(
   const scene = source.clone(true);
   scene.updateMatrixWorld(true);
 
-  // mesh, kind, and whether it stays in the visual half (a tag) or is
-  // removed from it (a `col*_` object).
-  const collision: [THREE.Mesh, ColliderKind, boolean][] = [];
-  const badTags: string[] = [];
+  const collision: [THREE.Mesh, ColliderKind][] = [];
   const drawn: THREE.Mesh[] = [];
   const sunShadows: THREE.DirectionalLight[] = [];
   let lights = 0;
@@ -360,15 +322,9 @@ export function prepareLevel(
 
     const kind = colliderKindOf(mesh.name);
     if (kind) {
-      collision.push([mesh, kind, false]);
+      collision.push([mesh, kind]);
       return;
     }
-
-    // A tagged piece collides *and* stays drawn, so it falls through to the
-    // decoration handling below rather than returning here.
-    const asked = taggedKindOf(mesh);
-    if (asked === "unknown") badTags.push(`${mesh.name}: ${mesh.userData.collider}`);
-    else if (asked) collision.push([mesh, asked, true]);
 
     // Decoration. Deliberately *not* named `ROOM_SURFACE`: shots, the ground
     // test and the camera all read the collision layer instead. See invariant 5.
@@ -384,14 +340,11 @@ export function prepareLevel(
   });
 
   const colliders: LevelCollider[] = [];
-  let tagged = 0;
-  for (const [mesh, kind, keepDrawn] of collision) {
+  for (const [mesh, kind] of collision) {
     const collider = colliderFrom(mesh, kind);
     if (collider) colliders.push(collider);
-    // A `col*_` object is collision *instead of* being drawn — invariant 13. A
-    // tagged one is collision *as well as*, so it stays where it is.
-    if (keepDrawn) tagged += 1;
-    else mesh.removeFromParent();
+    // A collision object is collision *instead of* being drawn — invariant 13.
+    mesh.removeFromParent();
   }
 
   // Now the level's extent is known, so every sun can be given a shadow camera
@@ -459,7 +412,7 @@ export function prepareLevel(
   return {
     scene,
     colliders,
-    stats: { drawn: drawn.length, instanced, batches, lights, shadowCasters, tagged, badTags },
+    stats: { drawn: drawn.length, instanced, batches, lights, shadowCasters },
   };
 }
 
@@ -548,16 +501,9 @@ export function checkLevel(
   console.info(
     `level "${level.id}": ${stats.drawn} meshes → ` +
     `${stats.drawn - stats.instanced + stats.batches} draw calls, ` +
-    `${plural(colliders.length, "collider")}` +
-    `${stats.tagged ? ` (${stats.tagged} tagged)` : ""}, ` +
+    `${plural(colliders.length, "collider")}, ` +
     `${plural(stats.lights, "light")} (${stats.shadowCasters} casting shadows)`,
   );
-
-  // A misspelled `collider` property is otherwise indistinguishable from not
-  // setting one: the piece is simply drawn and walked through.
-  for (const bad of stats.badTags) {
-    say(`\`collider\` on ${bad} is not one of cuboid, hull, trimesh, ball, none`);
-  }
 
   // Every point light that casts is six render passes. Four is already a lot
   // for a browser; past that the frame cost stops being worth the darkness.

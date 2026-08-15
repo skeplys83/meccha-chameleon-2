@@ -20,13 +20,15 @@ bugs have been fixed; the invariants below are all scars.
   `resetFollow`, which `Player.tsx` calls on mount.
 - `cling.ts` — finding a surface to climb, and holding onto it. Pure three.js
   geometry, no React and no rapier, so it imports straight into Node for testing.
-- `body.ts` — `BODY`, the collider half-extents per role, and `GRAVITY`, which
-  `Player.tsx` integrates and `Scene.tsx` hands to `<Physics>`. **A chameleon's
+- `body.ts` — `BODY`, the collider half-extents per *upright* role, and
+  `GRAVITY`, which `Player.tsx` integrates and `Scene.tsx` hands to `<Physics>`. **A chameleon's
   collider is much smaller than the body it carries, on purpose**: the torso is
   0.13 half-deep and the collider is 0.12, so pressing your back to a wall puts
   the body *against* it rather than a body-depth short of it. That gap is the
   hiding mechanic, and it costs nothing in fairness because a shot raycasts the
-  visual mesh and never the collider.
+  visual mesh and never the collider. **A folded pose replaces the box outright**
+  rather than shortening this one — a curled body lies down, so it needs a lying
+  box; `figure/poses.ts`'s `poseExtents` owns that.
 - `pointerLock.ts` — the shared canvas handle, and the retry loop that actually
   gets the lock back.
 - `RemotePlayers.tsx` — everyone else, plus `remoteFigures`, the map
@@ -225,6 +227,25 @@ one role, and **adding a control means deciding whose it is.**
     sine on the camera, no sway on the viewmodel — `Viewmodel` copies the camera
     transform outright. Anything that looks like bob is the body's own vertical
     motion or one of the two above.
+35. **The camera aims at the body's origin, which is the middle of the figure in
+    every pose.** It used to aim 0.6 above it — the chest of a *standing* body —
+    which frames a stander acceptably and everything else badly: a curled
+    chameleon sat in the bottom corner of the screen with the camera staring at
+    the empty air above them, worst of all when a wall had pulled the lens in to
+    its 1.4 minimum. `StickFigure` is built to a half-height of 1 about its
+    origin and every pose is measured to sit within 0.05 of it (`figure/`
+    invariant 16 is the other half of that: a folded pose uses `offsetY` to stay
+    centred), so the origin is the one point that frames all five.
+
+    **Aiming that low needs the floor handled differently from a wall.** The pull-in
+    of invariant 19 is right for something the camera would walk through and wrong
+    for the ground: with the aim point half a metre up, any look from below the
+    horizon crosses the floor within a metre, and pulling in there parks the lens
+    inside the player — a screen full of one white limb, which is what a curled
+    chameleon actually got. So a hit whose normal points up (`n.y > 0.5`) lifts the
+    camera to just above that surface at full zoom instead, and only walls pull it
+    in. The camera slides along the ground rather than backing into the body.
+
 19. **The camera never leaves the arena.** `camera.ts` raycasts toward the desired
     position and pulls in to `hit.distance - 0.35`, floored at 1.4. Without it the
     camera walks through a wall and you find yourself looking at the arena from
@@ -327,6 +348,13 @@ one role, and **adding a control means deciding whose it is.**
   `hud/ControlsPanel.tsx` is the other half of this contract: if a row is on a
   card, that role must really have it wired up here.
 - Sends on a 50 ms `setInterval`, not from `useFrame` — see `net/CLAUDE.md`.
+- **Reports a snapshot to `src/game/dev.ts` at the end of the frame loop, behind
+  `DEV`.** This file is the only place that knows most of it — `grounded`, `vy`
+  and `cling` are not on the wire and not in React state — and
+  `hud/DebugPanel.tsx` displays it without importing from this folder, which it
+  is forbidden to do. It is a *display*: nothing reads it back, and the frame
+  loop's own values stay the truth. In a build the call and the module are
+  compiled out.
 - **Reads `sound/`** for `playSound`, `startLoop`/`stopLoop` and the `Stepper`,
   and `shared/` for `FIRE_INTERVAL_MS`.
 - **Climbing needs `world/`'s `ROOM_SURFACE` meshes**, the same list already

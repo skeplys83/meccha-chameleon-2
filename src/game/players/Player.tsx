@@ -26,6 +26,7 @@ import { BODY, GRAVITY } from "./body";
 import { characterController } from "./controller";
 import { FIRE_INTERVAL_MS, type Role } from "@/game/shared/protocol";
 import { POSES, poseExtents } from "@/game/figure/poses";
+import { DEV, reportPlayer } from "@/game/dev";
 import { ROOM_SURFACE } from "@/game/world/Room";
 import { surfaceRevision } from "@/game/world/surface";
 import { StickFigure } from "@/game/figure/StickFigure";
@@ -190,7 +191,7 @@ export function Player({
   const halfHeight = useRef(hy);
   // In paint mode even a hunter steps out to third person to see their body.
   const firstPerson = role === "hunter" && !painting;
-  const rolled = POSES[pose].roll ?? false;
+  const rolled = POSES[pose].roll;
 
   // This component is keyed on the room, so mounting means a new map. The
   // follow camera's eased distance belongs to the old one and has to be
@@ -713,6 +714,29 @@ export function Player({
     const cp = Math.cos(pitch.current);
     lookDir.set(-Math.sin(y) * cp, Math.sin(pitch.current), -Math.cos(y) * cp);
 
+    // Developer mode only, and compiled out of the build entirely — see
+    // `src/game/dev.ts`. Reported from here because this is the only place that
+    // knows any of it: none of `grounded`, `vy` or `cling` is on the wire.
+    if (DEV) {
+      reportPlayer({
+        role,
+        x: bodyPos.x,
+        y: bodyPos.y,
+        z: bodyPos.z,
+        yaw: y,
+        pitch: pitch.current,
+        bodyYaw: bodyYaw.current,
+        vy: vy.current,
+        grounded: grounded.current,
+        clinging,
+        zoom: zoom.current,
+        firstPerson,
+        pose,
+        half: poseExtents(pose, [hx, hy, hz]),
+        surfaces: solids.current.length,
+      });
+    }
+
     if (firstPerson) {
       // Always eye height: a hunter cannot pose, so there is no rolled-over
       // body to drop the camera into.
@@ -748,7 +772,7 @@ export function Player({
         canSleep={false}
       >
         <CuboidCollider
-          key={POSES[pose].shape ?? "stand"}
+          key={POSES[pose].shape}
           ref={collider}
           args={poseExtents(pose, [hx, hy, hz])}
         />

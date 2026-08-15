@@ -76,9 +76,6 @@ bpy.ops.export_scene.gltf(
     # A map with no lights arrives black.
     export_lights=True,
     export_cameras=False,
-    # Object custom properties land in node `extras`. Nothing reads them today;
-    # they are the obvious place for per-object gameplay data later.
-    export_extras=True,
 )
 
 for child in restore:

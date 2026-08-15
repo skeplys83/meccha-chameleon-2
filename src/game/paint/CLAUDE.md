@@ -19,7 +19,10 @@ from `skin.ts`; `Brush` / `DEFAULT_BRUSH` from
 - `surface.ts` — the model as a paintable surface: triangles indexed by UV and
   by position, which texels the body covers, and `dab`, which paints a sphere
   onto it and pads the result into the gutter.
-- `brushCursor.ts` — the cursor end: raycast your own figure, place the hover
+- `pick.ts` — finding the point on your own body under the cursor. Skins the
+  model once and tests rays against that, because three's skinned raycast
+  re-skins it per ray — see invariant 14.
+- `brushCursor.ts` — the cursor end: pick your own figure, place the hover
   ring, lay strokes down as the mouse drags, and report when a drag starts or
   ends.
 - `PaintPanel.tsx` — colour wheel, brightness slider, brush size, clear, pin.
@@ -110,13 +113,45 @@ from `skin.ts`; `Brush` / `DEFAULT_BRUSH` from
 12. **A press or a live drag may land slightly off the body.** A limb is a few
     pixels wide at its tip, so a stroke running off the end of an arm used to
     stop dead. `EDGE_RINGS` in `brushCursor.ts` fires rays in rings out to 19 px
-    and takes the first hit. **Hovering deliberately does not**, and casts once:
-    a ray against a skinned mesh transforms every triangle by its bones, so two
-    dozen of them per mouse move would cost more than the convenience is worth.
+    and takes the first hit — up to 25 rays, which is affordable only because of
+    invariant 14. **Hovering still casts once**: it is on the mouse-move path,
+    and one ray there is the difference between a cursor and a cost.
 13. **`createBrushCursor` takes getters, not values.** The figure and the ring
    mount after the handlers are installed, and the brush changes while they are
    live; reading them through getters is what lets the pointer handlers be bound
    exactly once, which is the invariant `Player.tsx` depends on.
+
+14. **Nothing here uses three's raycast against the body, and that is a
+    performance rule with a measured number behind it.** `SkinnedMesh.raycast`
+    re-skins the model *inside the ray loop* — `applyBoneTransform` on every
+    vertex of every triangle it tests, three times per triangle, 28,692 bone
+    transforms for this body — and then does it all again for the next ray.
+    Measured against `player.glb`: **6.15 ms per ray, hit or miss.**
+
+    That was a third of a frame on every mouse move a chameleon made, painting
+    or not — the free cursor means `brushCursor.move` runs on every
+    `mousemove` — and the tolerant edge search turned a drag that slipped off a
+    limb into **~153 ms**, a freeze rather than a slow frame. It is the whole of
+    "painting lags the game".
+
+    `pick.ts` splits the two halves that three fuses: skinning depends on the
+    *pose*, not on the ray, so it happens once per `MAX_AGE_MS` (8 ms, one frame
+    at 120 Hz) and per *vertex* rather than per triangle corner — 5,745
+    transforms instead of 28,692 — and every ray after that is a Möller–Trumbore
+    sweep over a flat `Float32Array` behind a posed-bounding-box reject.
+    **6.15 ms → 0.098 ms a ray; the 25-ray search 153 ms → 2.4 ms**, with the
+    skinning pass itself at 0.08 ms.
+
+    It is verified against three rather than trusted: over a 41×41 grid of rays
+    across the body, all 170 shared hits agree to 3.4e-8 in UV and 1.2e-7 in
+    world space, with no ray that one finds and the other does not. **Keep that
+    check** — it is the only thing standing between a hand-written intersector
+    and paint landing a centimetre from the cursor. Front faces only, matching
+    the `FrontSide` material, or a cursor over an arm sometimes picks the inside
+    of the chest behind it.
+
+    `combat/shoot.ts` still uses three's raycast, deliberately: a shot happens
+    twice a second at most, where a mouse move happens sixty times.
 
 ## Contracts
 
@@ -124,10 +159,12 @@ from `skin.ts`; `Brush` / `DEFAULT_BRUSH` from
   every body shares. `parts.ts` is gone: `PARTS`, `PART_SHAPE` and the atlas
   went with the per-part model, and no constant replaced them — the brush works
   in the body's own units now.
-- **`surface.ts` is built once, lazily, the first time anybody paints** — 10 ms
-  for 9,564 triangles, including rasterising the coverage mask the padding needs
-  — and is shared by every player's canvas, because it describes the model
-  rather than any one body. Dabs after that are ~0.2 ms.
+- **`surface.ts` is built once, lazily, the first time anybody paints** — 8 ms
+  for 9,564 triangles, plus 12 ms on the first dab for the coverage mask the
+  padding needs — and is shared by every player's canvas, because it describes
+  the model rather than any one body. **Dabs after that are 0.14 ms** at the
+  default brush and 0.9 ms at the largest, so the dab has never been the
+  expensive half of a stroke; the raycast was (invariant 14).
 - **The body mesh is found by `userData.body`**, and the hit's UV is used as-is.
 - **Reads `MAX_STROKES` from `shared/protocol.ts`**, the same cap the server
   keeps in schema.
@@ -153,6 +190,23 @@ from `skin.ts`; `Brush` / `DEFAULT_BRUSH` from
   match any more**: changing a preset here silently stops it matching the room.
   Never "tidy" a preset without opening the .blend. See `world/CLAUDE.md`,
   invariant 16.
+
+## The one cost left, and why it was not touched
+
+**Every dab re-uploads the whole 1024² texture.** `putImageData` already writes
+only the dirty rectangle, but `texture.needsUpdate = true` on a `CanvasTexture`
+hands the entire canvas to the GPU — 4 MB, plus regenerating ten mip levels —
+for a dab that may have touched a hundred texels. At a drag's throttled rate
+that is bounded and it is GPU-side, which is why it was left alone: the CPU cost
+above was 60× larger and could be measured here, and this cannot be measured
+without a browser.
+
+The lever if it ever matters: three uploads a **`DataTexture`** in pieces —
+`texture.addUpdateRange(start, count)`, which `WebGLTextures` turns into
+`texSubImage2D` per contiguous row range — and this folder already holds the
+pixels as an `ImageData`, so the canvas is not load-bearing. The thing to check
+before doing it is mipmaps: a partial upload must not leave the lower levels
+stale, or the body goes blurry-wrong at distance rather than obviously broken.
 
 ## Not built yet
 

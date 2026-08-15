@@ -7,6 +7,7 @@ import { controlMap } from "@/game/players/controls";
 import { GRAVITY } from "@/game/players/body";
 import { Player } from "@/game/players/Player";
 import { Room } from "@/game/world/Room";
+import { DEV, reportDraw, useDevMode } from "@/game/dev";
 import { MAPS, mapSpawn, safeMapId } from "@/game/world/maps";
 import { Marks } from "@/game/combat/Marks";
 import { Graves } from "@/game/combat/Graves";
@@ -63,6 +64,9 @@ function FrameLimiter({ fps }: { fps: number }) {
     // debt would otherwise force a burst of catch-up renders.
     carry.current = Math.min(carry.current - interval, interval);
     gl.render(scene, camera);
+    // Counted here rather than in the frame loop, so the readout's "fps" is the
+    // rate this cap actually produces — see `reportDraw`.
+    if (DEV) reportDraw();
   }, 2);
 
   return null;
@@ -129,6 +133,9 @@ export default function Scene({
     };
   }, []);
 
+  // Both debug pictures follow the toggle, so this re-renders on the flip.
+  const devMode = useDevMode();
+
   /** Marks belong to the room that produced them, so leaving it drops them. */
   useEffect(
     () =>
@@ -169,11 +176,16 @@ export default function Scene({
             rapier does not accelerate it — so this governs any *other* dynamic
             body. There are none today; sharing the constant is what stops the
             two quietly disagreeing the day there is one. */}
+        {/* `debug` draws rapier's own outline for every collider, the player's
+            included — the wireframes in `world/GltfLevel` are the raycast layer
+            beside it. Both follow the developer-mode toggle, and neither
+            exists in the image at all — see `src/game/dev.ts`. */}
         <Physics
           key={map}
           gravity={[0, -GRAVITY, 0]}
           timeStep="vary"
           interpolate={false}
+          debug={devMode}
         >
           <Room map={map} />
           {role && (

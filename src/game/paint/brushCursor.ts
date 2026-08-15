@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { encodeStroke, paint, SELF } from "./skin";
+import { pickBody, type BodyHit } from "./pick";
 import type { Brush } from "./brush";
 
 /** Minimum UV travel before a drag lays down another dot — a smear at 60 fps
@@ -15,16 +16,15 @@ const RING_OFFSET = 0.02;
  * ray hit nothing. Rays are fired in rings out to this distance and the first
  * hit wins, which reads as the body simply being a bit easier to hit.
  *
- * Only presses and live drags pay for it: plain hovering casts once, because a
- * ray against a skinned mesh transforms every triangle by its bones and doing
- * that two dozen times per mouse move would cost more than it is worth.
+ * Only presses and live drags pay for it, and it is affordable at all because
+ * `pick.ts` skins the body once and shares that between the rays: through
+ * three's own raycast this search measured ~153 ms — a freeze every time a drag
+ * ran off a limb — against ~2.4 ms now.
  */
 const EDGE_RINGS = [7, 13, 19];
 const EDGE_DIRS = 8;
 
 const pointerNdc = new THREE.Vector2();
-const worldNormal = new THREE.Vector3();
-const quat = new THREE.Quaternion();
 const facing = new THREE.Vector3();
 
 export type BrushCursor = ReturnType<typeof createBrushCursor>;
@@ -64,22 +64,26 @@ export function createBrushCursor({
 
   /** Whatever part of your own body is under the cursor.
    *  `tolerant` widens the target — see `EDGE_RINGS`. */
-  function hit(e: MouseEvent, tolerant = false): THREE.Intersection | null {
+  function hit(e: MouseEvent, tolerant = false): BodyHit | null {
     const group = figure();
     if (!group) return null;
 
-    const rect = canvas.getBoundingClientRect();
-    const meshes: THREE.Object3D[] = [];
+    // The one skinned mesh wearing the paint. `figure/StickFigure` marks it;
+    // the reveal overlay deliberately is not marked, so it cannot be picked.
+    let body: THREE.SkinnedMesh | null = null;
     group.traverse((o) => {
-      if ((o as THREE.Mesh).isMesh && o.userData.body) meshes.push(o);
+      const mesh = o as THREE.SkinnedMesh;
+      if (!body && mesh.isSkinnedMesh && mesh.userData.body) body = mesh;
     });
-    if (!meshes.length) return null;
+    if (!body) return null;
 
+    const rect = canvas.getBoundingClientRect();
     const cast = (px: number, py: number) => {
       pointerNdc.set((px / rect.width) * 2 - 1, -(py / rect.height) * 2 + 1);
       raycaster.setFromCamera(pointerNdc, camera);
-      const found = raycaster.intersectObjects(meshes, false)[0];
-      return found?.uv ? found : null;
+      // Not `raycaster.intersectObject`: three re-skins the whole body for
+      // every ray, at 6.15 ms each. See `pick.ts`.
+      return pickBody(body!, raycaster.ray);
     };
 
     const x = e.clientX - rect.left;
@@ -100,32 +104,28 @@ export function createBrushCursor({
   /** Sit the ring on the body under the cursor, so you see the dot before you
    *  commit to it. The ring is built at the right radius by the caller, so this
    *  only has to place it. */
-  function showRing(found: THREE.Intersection | null) {
+  function showRing(found: BodyHit | null) {
     const mesh = ring();
     if (!mesh) return;
-    if (!found || !found.face) {
+    if (!found) {
       mesh.visible = false;
       return;
     }
 
-    worldNormal
-      .copy(found.face.normal)
-      .applyQuaternion(found.object.getWorldQuaternion(quat))
-      .normalize();
-
+    // The normal is already in world space — it is built from posed vertices.
     mesh.visible = true;
-    mesh.position.copy(found.point).addScaledVector(worldNormal, RING_OFFSET);
-    mesh.lookAt(facing.copy(mesh.position).add(worldNormal));
+    mesh.position.copy(found.point).addScaledVector(found.normal, RING_OFFSET);
+    mesh.lookAt(facing.copy(mesh.position).add(found.normal));
   }
 
   function drawAt(e: MouseEvent) {
     const found = hit(e, true);
     showRing(found);
-    if (!found?.uv) return;
+    if (!found) return;
 
     // The body is one mesh wearing one continuous unwrap, so the hit's own UV
     // is the coordinate the canvas is drawn in — nothing to look up.
-    const { x: u, y: v } = found.uv;
+    const { u, v } = found;
     if (last && Math.hypot(last.u - u, last.v - v) < PAINT_STEP) return;
     last = { u, v };
 

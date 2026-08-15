@@ -28,8 +28,8 @@ public/maps/<id>.glb  the committed artefact. The game loads only this.
 There is **no build step between the two** in the sense that nothing generates
 the level. The `.glb` is committed. The exporter is a convenience wrapper so the
 export settings live in one place rather than in somebody's memory; exporting by
-hand is fine (glTF Binary, +Y up, apply modifiers, include punctual lights, limit
-to visible objects, and export custom properties).
+hand is fine (glTF Binary, +Y up, apply modifiers, include punctual lights, and
+limit to visible objects).
 
 **The exporter defends against the two ways an export goes silently wrong:**
 
@@ -80,28 +80,20 @@ sidecar; an object's name is the whole interface.
 | a light | a light |
 | an Empty named `spawn` | the spawn marker |
 
-There is a second mechanism: a **`collider` custom property** on a drawn object
-(`"cuboid"`, `"hull"`, `"trimesh"`, `"ball"`, `"none"`) makes it collide *as
-itself* while staying drawn.
-
-**Choosing between them is a real decision, and it scales badly in one
-direction.** Every collider also produces an invisible raycast proxy, and the
-proxy for a tagged object is its **render geometry**. The runtime raycasts every
-proxy several times a frame against a flat, unindexed list. So:
-
-- **Tag** when there are a handful of pieces and the collider was only ever going
-  to be a copy of the drawn shape. Nothing can drift.
-- **Author `col*_` objects** when there are many, or when the collider should
-  differ from the art. This is the right default for a furnished map: an authored
-  box is 12 triangles where a tagged prop can be several hundred.
+**A name is the *only* mechanism.** There was briefly a second one — a
+`collider` custom property on a drawn object, which made it collide as itself
+while staying drawn — and it is gone. It never suited a furnished map: every
+collider also produces an invisible raycast proxy, the proxy for a tagged object
+is its **render geometry**, and the runtime raycasts every proxy several times a
+frame against a flat, unindexed list. An authored box is 12 triangles where a
+tagged prop is several hundred, so the mechanism that read as the convenient one
+was the one that could not be used at the scale a map actually has. Author the
+collision; it all lives in the `.blend` either way.
 
 **Two directions of failure, both silent.** Give the visual meshes colliders and
 you get hundreds of hulls decomposed on every load and a physics step that costs
 more than the frame. Name a piece of decoration `col_` and it becomes an
 invisible wall that nothing on screen explains.
-
-**A misspelled tag is indistinguishable from no tag** — the piece is simply drawn
-and walked through — which is why the loader reports unknown values.
 
 ---
 

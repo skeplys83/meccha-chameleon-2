@@ -12,7 +12,9 @@
   — no React, no three.js, because the **server** imports it.
 - `mapIds.ts` — the ids alone, **import-free on purpose**. Also `LOBBY_MAP` and
   `MATCH_MAP_IDS`, which the server validates against.
-- `surface.ts` — `ROOM_SURFACE`, alone for the same reason.
+- `surface.ts` — `ROOM_SURFACE` and the surface revision counter, alone for the
+  same reason. **Import-free**, which is why the collision-drawing switch is no
+  longer here — see "Seeing the collision" below.
 - `Room.tsx` — renders whichever map the room is playing, sets the background
   and the sky, and raises the loading flag while the file arrives. It preloads
   **nothing**; see `preload.ts`.
@@ -87,13 +89,14 @@ sidecar; an object's name is the whole interface.
 | a light | a light, with shadows switched on at load |
 | an Empty named `spawn` | the author's marker for the spawn point |
 
-A **`collider` custom property** on a drawn object (`"cuboid"`, `"hull"`,
-`"trimesh"`, `"ball"`, `"none"`) is the second way in: the piece collides *as
-itself* and stays drawn. The property rides glTF `extras` (`export_extras` is
-already on) and arrives as three's `userData`. A value that is not one of the
-five is reported by `checkLevel`, because a misspelled one is otherwise
-indistinguishable from not setting one — the piece is simply drawn and walked
-through.
+**A name is the only mechanism, and `userData` is read for nothing.** There was
+briefly a second way in — a `collider` custom property on a drawn object, riding
+glTF `extras`, which made the piece collide as itself and stay drawn. It is
+gone, along with `export_extras` in `scripts/export-level.py`. It was never
+usable at the scale a furnished map has: a tagged piece's raycast proxy is its
+*render* geometry, several hundred triangles against 12 for an authored box, in
+a list `players/Player.tsx` walks several times a frame (invariant 25). All
+collision is authored in Blender as `col*_` objects.
 
 Everything else about the map — round length, background, sky, and the `bound`
 the server clamps to — is typed in `maps.ts`. **Lighting is not on that list and
@@ -158,6 +161,37 @@ expected and affects none of the above.
 **The checks worth running, and how to run them, are in
 [`levels/AUTHORING.md`](../../../levels/AUTHORING.md) §6** — sightlines,
 walkability, clipping, headroom. That file is the authoring half of this one.
+
+## Seeing the collision
+
+**Developer mode draws it** — `DEV` in `src/game/dev.ts`, which is
+`import.meta.env.DEV` and therefore true under `npm run dev` and compiled to
+`false` by `vite build`. It is on by default there and switched by the DEV chip
+in the HUD or by backquote; `GltfLevel` subscribes **once** and passes `show`
+down to every proxy, because a furnished map has hundreds of them and they all
+appear and disappear together. It used to be `SHOW_COLLISION`, a constant in
+`surface.ts` that had to be flipped by hand and, inevitably, was committed as
+`true`. It could not stay there once it was tied to the environment: this file
+is import-free by invariant 1, and `import.meta.env` is a bundler substitution
+that Node has no answer for.
+
+**It is one flag feeding two different pictures on purpose**:
+
+- **`GltfLevel`'s proxies**, as green wireframes. That is the `ROOM_SURFACE`
+  layer — what a shot, the ground test, the climb probes and the camera pull-in
+  actually hit.
+- **`<Physics debug>`** in `Scene.tsx`, which is rapier's own outline of every
+  collider, the player's box included.
+
+They are two lists built from the same map and **a piece that appears in one and
+not the other is exactly the bug this is for**: a collider with no proxy is a
+wall you can shoot and see through, a proxy with no collider is a surface you
+walk into and fall past. Invariant 13 is the other half of it — anything drawn
+in green here that also has a visible mesh under it means a piece of decoration
+got named `col_`.
+
+Flipping it recompiles the proxy material, so it is a switch you throw while
+looking at something rather than something to bind to a held key.
 
 ## Adding a map
 
@@ -482,10 +516,11 @@ downloading in the background cannot raise it.
     a frame. Furnishing the dungeon took that list from 68 to 334. Two things
     keep it affordable and both are easy to undo by accident:
 
-    - **Colliders are authored, never tagged, past a handful of pieces.** A
-      tagged prop's proxy is its render geometry — several hundred triangles
-      against 12 for a box — so tagging ~800 props would put ~800 render meshes
-      in the raycast list.
+    - **Every collider is authored as a `col*_` object**, so every proxy is a
+      simple shape. This is why the `collider` custom property was removed
+      rather than kept for convenience: a tagged prop's proxy is its render
+      geometry — several hundred triangles against 12 for a box — so tagging
+      ~800 props would put ~800 render meshes in the raycast list.
     - **Hulls are computed compactly and shared per asset.** A barrel's 700
       vertices become a 74-vertex hull, and one hull mesh serves every instance.
 

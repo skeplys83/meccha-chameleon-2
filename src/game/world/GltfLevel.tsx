@@ -8,6 +8,7 @@ import {
 } from "@react-three/rapier";
 import type * as THREE from "three";
 import { ROOM_SURFACE } from "./surface";
+import { useDevMode } from "@/game/dev";
 import { checkLevel, prepareLevel, type LevelCollider } from "./levelScene";
 import type { GameMap } from "./maps";
 
@@ -21,6 +22,9 @@ import type { GameMap } from "./maps";
  */
 export function GltfLevel({ level }: { level: GameMap }) {
   const { scene } = useGLTF(level.src);
+  // Subscribed once here rather than in every `Proxy`: a furnished map has
+  // hundreds of them, and they all show and hide together anyway.
+  const showCollision = useDevMode();
 
   // In a `useMemo` rather than an effect, so the `ROOM_SURFACE` meshes below
   // exist by the time `players/Player.tsx` collects them — see invariant 9.
@@ -42,7 +46,7 @@ export function GltfLevel({ level }: { level: GameMap }) {
       {/* No `RigidBody`: nothing that is drawn is collided with. */}
       <primitive object={prepared.scene} />
       {prepared.colliders.map((collider, i) => (
-        <Collider key={i} collider={collider} />
+        <Collider key={i} collider={collider} show={showCollision} />
       ))}
     </>
   );
@@ -57,9 +61,12 @@ export function GltfLevel({ level }: { level: GameMap }) {
  */
 function Proxy({
   children,
+  show,
   ...placement
 }: {
   children?: ReactNode;
+  /** Drawn only in developer mode, and only while its toggle is on. */
+  show: boolean;
   geometry?: THREE.BufferGeometry;
   position?: THREE.Vector3;
   quaternion?: THREE.Quaternion;
@@ -68,8 +75,14 @@ function Proxy({
     <mesh name={ROOM_SURFACE} {...placement}>
       {children}
       {/* `visible` sits on the *material*, because three's raycaster skips an
-          object whose own `visible` is false and this one has to stay findable. */}
-      <meshBasicMaterial visible={false} />
+          object whose own `visible` is false and this one has to stay findable.
+          Developer mode is what draws it — see `src/game/dev.ts`. */}
+      <meshBasicMaterial
+        visible={show}
+        wireframe
+        color="#39ff88"
+        toneMapped={false}
+      />
     </mesh>
   );
 }
@@ -81,14 +94,14 @@ function Proxy({
  * Hulls and trimeshes carry their world transform in their vertices, so those
  * colliders stay at the origin and only the proxy is placed.
  */
-function Collider({ collider }: { collider: LevelCollider }) {
+function Collider({ collider, show }: { collider: LevelCollider; show: boolean }) {
   switch (collider.kind) {
     case "cuboid": {
       const { half, position, quaternion } = collider;
       return (
         <>
           <CuboidCollider args={half} position={position} quaternion={quaternion} />
-          <Proxy position={position} quaternion={quaternion}>
+          <Proxy show={show} position={position} quaternion={quaternion}>
             <boxGeometry args={[half[0] * 2, half[1] * 2, half[2] * 2]} />
           </Proxy>
         </>
@@ -99,7 +112,7 @@ function Collider({ collider }: { collider: LevelCollider }) {
       return (
         <>
           <BallCollider args={[radius]} position={position} quaternion={quaternion} />
-          <Proxy position={position} quaternion={quaternion}>
+          <Proxy show={show} position={position} quaternion={quaternion}>
             <sphereGeometry args={[radius, 16, 12]} />
           </Proxy>
         </>
@@ -109,14 +122,14 @@ function Collider({ collider }: { collider: LevelCollider }) {
       return (
         <>
           <ConvexHullCollider args={[collider.vertices]} />
-          <Proxy geometry={collider.geometry} />
+          <Proxy show={show} geometry={collider.geometry} />
         </>
       );
     case "trimesh":
       return (
         <>
           <TrimeshCollider args={[collider.vertices, collider.indices]} />
-          <Proxy geometry={collider.geometry} />
+          <Proxy show={show} geometry={collider.geometry} />
         </>
       );
   }
