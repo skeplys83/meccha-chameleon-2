@@ -148,7 +148,7 @@ export function Game() {
   }, [joined, role, dropped]);
 
   const enter = useCallback(
-    (who: string, target: Session, go: () => Promise<RoomInfo>, what: string) => {
+    (who: string, target: Session | null, go: () => Promise<RoomInfo>, what: string) => {
       // This runs from a button's click handler, which is the user gesture the
       // audio context has been waiting for. Unlocking anywhere else — an effect,
       // a timer — is silently refused and the whole game stays mute.
@@ -162,6 +162,10 @@ export function Game() {
       setBrush(DEFAULT_BRUSH);
       setPicking(false);
       setError(null);
+      if (!target) {
+        setError(`Could not ${what} because no game server was selected.`);
+        return;
+      }
       setName(who);
       setJoined(true);
       setSession(target);
@@ -182,9 +186,11 @@ export function Game() {
           sendClearSkin();
         })
         .catch((e: unknown) => {
+          const serverName = target?.name ?? "this server";
+          const host = target?.host ?? location.hostname;
+          const port = target?.gamePort ?? 443;
           setError(
-            `Could not ${what} on ${target.name} at ${target.host}:${target.gamePort}. ${e instanceof Error ? e.message : ""
-            }`,
+            `Could not ${what} on ${serverName} at ${host}:${port}. ${e instanceof Error ? e.message : ""}`,
           );
         })
         .finally(arrived);

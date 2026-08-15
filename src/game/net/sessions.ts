@@ -37,8 +37,20 @@ export async function fetchSessions(): Promise<{
     const data = await res.json();
     return {
       // The browser reaches its own host by the address it loaded the page from.
-      self: data.self ? { ...data.self, host: location.hostname } : null,
-      sessions: data.sessions ?? [],
+      self: data.self
+        ? {
+            ...data.self,
+            name: String(data.self.name ?? "Meccha Chameleon"),
+            host: location.hostname,
+          }
+        : null,
+      sessions: (data.sessions ?? []).map((session: Partial<Session>) => ({
+        id: String(session.id ?? ""),
+        name: String(session.name ?? "session"),
+        host: String(session.host ?? location.hostname),
+        port: Number(session.port ?? 3000),
+        gamePort: Number(session.gamePort ?? 443),
+      })),
       games: data.games ?? [],
     };
   } catch {

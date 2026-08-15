@@ -138,6 +138,13 @@ runs once per *room*, not once per session.
    there. The fall-back is a fresh player and a chameleon, because the server takes
    no role from a client. Both are correct for their case, so it is one function
    rather than two.
+17. **`Game.tsx` must never read `target.name` on a missing target.** When the
+   session list is empty or stale, the menu can still render a button that calls
+   into the lobby flow; the correct behaviour is to stop before any join call and
+   surface a normal error instead of crashing on `undefined`. `fetchSessions`
+   also coerces the server payload to always include `name`, `host` and numeric
+   ports, because a null or malformed session is a client bug and not a reason to
+   dereference it blindly.
 
 ## Contracts
 

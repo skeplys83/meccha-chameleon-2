@@ -129,6 +129,13 @@ config in this repo sets that to `443` for the common nginx case; leaving it at
 2567 while the page is served over HTTPS makes the browser connect to the wrong
 port and fail at join time.
 
+**A join must never dereference a missing target.** The menu can render while the
+session list is empty or stale; a lobby button still tries to call through the
+same flow, and the correct behaviour is to stop with a normal error before a join
+reaches the socket layer. The browser is allowed to say "no game server selected"
+— it is not allowed to crash on `undefined.name` while it is still building the
+error message.
+
 ## Stack
 
 - Vite 8 + React 19, TypeScript, Tailwind v4
@@ -277,12 +284,12 @@ fetched on page load.** The Canvas is mounted behind the start menu, so anything
 hung on a mount effect is paid for by everybody who merely opens the game — which
 is what both of these were. There are now four triggers and no others:
 
-| what                                               | how big | fetched when                                                    |
-| -------------------------------------------------- | ------- | --------------------------------------------------------------- |
-| the match's map (`world/preload.ts`, `preloadMap`) | 722 KB  | arriving in a lobby, keyed on `nextMap`; again at the countdown |
-| the music (`sound/engine.ts`, `preloadMusic`)      | 1.2 MB  | the same two moments — it is an asset of the round              |
-| the other eight sounds (`preloadSounds`)           | 126 KB  | the join click, inside `unlockAudio`                            |
-| the character (`figure/model.ts`, `preloadCharacter`) | 354 KB | the join click, beside the sounds                            |
+| what                                                  | how big | fetched when                                                    |
+| ----------------------------------------------------- | ------- | --------------------------------------------------------------- |
+| the match's map (`world/preload.ts`, `preloadMap`)    | 722 KB  | arriving in a lobby, keyed on `nextMap`; again at the countdown |
+| the music (`sound/engine.ts`, `preloadMusic`)         | 1.2 MB  | the same two moments — it is an asset of the round              |
+| the other eight sounds (`preloadSounds`)              | 126 KB  | the join click, inside `unlockAudio`                            |
+| the character (`figure/model.ts`, `preloadCharacter`) | 354 KB  | the join click, beside the sounds                               |
 
 A lobby is the arena, which is 237 KB and arrives with the join, so the minute or
 more people spend gathering and painting is free budget for the two big ones. The triggers belong
