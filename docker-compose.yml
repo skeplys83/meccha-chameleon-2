@@ -17,9 +17,10 @@ services:
       SESSION_NAME: "Meccha Chameleon"
       # No same-network peers on a hosted box, so nothing to broadcast to.
       LAN_DISCOVERY: "0"
-      # Set this when a proxy terminates TLS in front of Colyseus: the server
-      # keeps listening on GAME_PORT, clients are told to connect here instead.
-      # PUBLIC_GAME_PORT: "443"
+      # When HTTPS terminates at nginx, clients must connect to the public port
+      # that fronts the game socket. The app will advertise this value in the
+      # session list and in the browser's Colyseus connection string.
+      PUBLIC_GAME_PORT: "443"
       #
       # The admin panel at /monitor is off in production until this is set, and
       # then it is behind HTTP Basic auth. It is not read-only — it can end any
