@@ -39,10 +39,10 @@ export async function fetchSessions(): Promise<{
       // The browser reaches its own host by the address it loaded the page from.
       self: data.self
         ? {
-            ...data.self,
-            name: String(data.self.name ?? "Meccha Chameleon"),
-            host: location.hostname,
-          }
+          ...data.self,
+          name: String(data.self.name ?? "Meccha Chameleon"),
+          host: location.hostname,
+        }
         : null,
       sessions: (data.sessions ?? []).map((session: Partial<Session>) => ({
         id: String(session.id ?? ""),

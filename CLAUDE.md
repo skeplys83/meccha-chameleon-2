@@ -124,10 +124,9 @@ belongs in it.
 **Hosted deployments are a reverse-proxy concern.** The game server listens on
 `GAME_PORT` (default 2567) but a browser behind TLS is not allowed to open a raw
 `ws://` socket to it, so a hosted box should terminate HTTPS in front of the app
-and set `PUBLIC_GAME_PORT` to the public port clients are told to use. The Docker
-config in this repo sets that to `443` for the common nginx case; leaving it at
-2567 while the page is served over HTTPS makes the browser connect to the wrong
-port and fail at join time.
+and set `PUBLIC_GAME_PORT` to the public port clients are told to use. For a
+plain VPS host the default stays at 2567; the HTTPS override is only needed when
+nginx terminates TLS and fronts the game socket.
 
 **A join must never dereference a missing target.** The menu can render while the
 session list is empty or stale; a lobby button still tries to call through the

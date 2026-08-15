@@ -146,6 +146,14 @@ runs once per *room*, not once per session.
    ports, because a null or malformed session is a client bug and not a reason to
    dereference it blindly.
 
+18. **The browser-facing socket port is normalized before a join.** The server
+   reports its bind and public ports separately, and the client rewrites any
+   missing values to safe defaults: `gamePort` becomes a number, `host` falls back
+   to `location.hostname`, and the local server record keeps its name stable even
+   when the list is empty or stale. That is how the app stays resilient behind
+   nginx and a TLS terminator without guessing at a `ws://` target that was never
+   actually advertised.
+
 ## Contracts
 
 - **Out** (`send.ts` → `server/room.ts`): `state` at 20 Hz — position, yaw,
