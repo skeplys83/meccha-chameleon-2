@@ -23,7 +23,7 @@ import {
   type NetMark,
   type RoomInfo,
 } from "./events";
-import type { Session } from "./sessions";
+import { getAdvertisedGamePort } from "./sessions";
 
 /** Mirrors the Player schema declared in server/schema.ts. */
 type PlayerSchema = {
@@ -82,27 +82,26 @@ type Seat = {
 /** Open a lobby of your own. */
 export async function createLobby(
   name: string,
-  target: Session,
   map: string,
   listed: boolean,
   maxPlayers: number,
 ) {
-  return open(target, (client) =>
+  return open((client) =>
     client.create("lobby", { name, map, listed, maxPlayers, pid: playerId() }),
   );
 }
 
 /** Join someone else's lobby by its invite code, which is its room id. */
-export async function joinLobby(name: string, target: Session, code: string) {
-  return open(target, (client) =>
+export async function joinLobby(name: string, code: string) {
+  return open((client) =>
     client.joinById(code.trim().toUpperCase(), { name, pid: playerId() }),
   );
 }
 
 /** Get back into a room you were in — after a drop, or after being shot. */
-export async function rejoin(name: string, target: Session, roomId: string) {
+export async function rejoin(name: string, roomId: string) {
   const token = getToken();
-  return open(target, async (client) => {
+  return open(async (client) => {
     if (token) {
       try {
         return await client.reconnect(token);
@@ -114,10 +113,17 @@ export async function rejoin(name: string, target: Session, roomId: string) {
   });
 }
 
-async function open(target: Session, join: (client: Client) => Promise<Room>) {
+async function open(join: (client: Client) => Promise<Room>) {
   await disconnect();
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  const client = new Client(`${proto}//${target.host}:${target.gamePort}`);
+  const port =
+    getAdvertisedGamePort() ??
+    (location.port
+      ? Number(location.port)
+      : location.protocol === "https:"
+        ? 443
+        : 80);
+  const client = new Client(`${proto}//${location.hostname}:${port}`);
   setClient(client);
   const joined = await join(client);
   return attach(joined);

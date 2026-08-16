@@ -33,7 +33,6 @@ import {
   sendWhistle,
   type Grave,
   type RoomInfo,
-  type Session,
 } from "@/game/net";
 import { clearSkin, forgetAllSkins, SELF } from "@/game/paint/skin";
 import { cancelLock, lockTargetEl, requestLock } from "@/game/players/pointerLock";
@@ -62,7 +61,6 @@ export function Game() {
   /** Whether this client is in a game at all. Not the same question as which
    *  side it is on, which only the room can answer. */
   const [joined, setJoined] = useState(false);
-  const [session, setSession] = useState<Session | null>(null);
   const [paused, setPaused] = useState(false);
   // `painting` means the palette is up. Hovering your own body opens it, and
   // from then on it stays open until it is minimised — a palette that closed
@@ -148,7 +146,7 @@ export function Game() {
   }, [joined, role, dropped]);
 
   const enter = useCallback(
-    (who: string, target: Session | null, go: () => Promise<RoomInfo>, what: string) => {
+    (who: string, go: () => Promise<RoomInfo>, what: string) => {
       // This runs from a button's click handler, which is the user gesture the
       // audio context has been waiting for. Unlocking anywhere else — an effect,
       // a timer — is silently refused and the whole game stays mute.
@@ -162,13 +160,8 @@ export function Game() {
       setBrush(DEFAULT_BRUSH);
       setPicking(false);
       setError(null);
-      if (!target) {
-        setError(`Could not ${what} because no game server was selected.`);
-        return;
-      }
       setName(who);
       setJoined(true);
-      setSession(target);
       // Nothing about the room we are leaving is true of the one we are opening,
       // and a stale `map` or `role` would be rendered for the round trip.
       setRoom(null);
@@ -186,11 +179,8 @@ export function Game() {
           sendClearSkin();
         })
         .catch((e: unknown) => {
-          const serverName = target?.name ?? "this server";
-          const host = target?.host ?? location.hostname;
-          const port = target?.gamePort ?? 443;
           setError(
-            `Could not ${what} on ${serverName} at ${host}:${port}. ${e instanceof Error ? e.message : ""}`,
+            `Could not ${what}. ${e instanceof Error ? e.message : ""}`,
           );
         })
         .finally(arrived);
@@ -199,19 +189,18 @@ export function Game() {
   );
 
   const create = useCallback(
-    (who: string, target: Session, wanted: string, listed: boolean, maxPlayers: number) =>
+    (who: string, wanted: string, listed: boolean, maxPlayers: number) =>
       enter(
         who,
-        target,
-        () => createLobby(who, target, wanted, listed, maxPlayers),
+        () => createLobby(who, wanted, listed, maxPlayers),
         "open a game",
       ),
     [enter],
   );
 
   const joinCode = useCallback(
-    (who: string, target: Session, code: string) =>
-      enter(who, target, () => joinLobby(who, target, code), `join ${code}`),
+    (who: string, code: string) =>
+      enter(who, () => joinLobby(who, code), `join ${code}`),
     [enter],
   );
 
@@ -221,19 +210,12 @@ export function Game() {
   useEffect(() => onRoom(setRoom), []);
 
   const nextMap = room?.nextMap;
+  const counting = room?.phase === "countdown";
   useEffect(() => {
     if (!nextMap) return;
     preloadMap(nextMap);
     void preloadMusic();
-  }, [nextMap]);
-
-  /** The backstop, at the ten-second mark. */
-  const counting = room?.phase === "countdown";
-  useEffect(() => {
-    if (!counting || !nextMap) return;
-    preloadMap(nextMap);
-    void preloadMusic();
-  }, [counting, nextMap]);
+  }, [nextMap, counting]);
 
   /** One tick per second of a countdown, for everybody at once. */
   const secondsLeft = room?.timeLeft ?? 0;
@@ -370,7 +352,6 @@ export function Game() {
     stopAllLoops();
     void disconnect();
     setJoined(false);
-    setSession(null);
     setRoom(null);
     setPaused(false);
     setPainting(false);
@@ -380,13 +361,13 @@ export function Game() {
 
   /** What the pause menu's second button does, which is not the same thing in both rooms. */
   const quit = useCallback(() => {
-    if (room?.mode === "match" && room.lobbyCode && session) {
+    if (room?.mode === "match" && room.lobbyCode) {
       const { lobbyCode } = room;
-      enter(name, session, () => joinLobby(name, session, lobbyCode), "return to the lobby");
+      enter(name, () => joinLobby(name, lobbyCode), "return to the lobby");
       return;
     }
     leave();
-  }, [enter, leave, name, room, session]);
+  }, [enter, leave, name, room]);
 
   /** You were caught. */
   useEffect(() => {
@@ -429,10 +410,10 @@ export function Game() {
   // Back into the seat the server is still holding, if it still is — and a plain
   // re-join of the same room if it is not.
   const reconnect = useCallback(() => {
-    if (!session || !room) return;
+    if (!room) return;
     const { code } = room;
-    enter(name, session, () => rejoin(name, session, code), "reconnect");
-  }, [enter, name, room, session]);
+    enter(name, () => rejoin(name, code), "reconnect");
+  }, [enter, name, room]);
 
   /**
    * Esc opens the pause menu, and closes it again — but only for a chameleon,
@@ -594,7 +575,7 @@ export function Game() {
           )}
           {paused && !painting && !dropped && (
             <PauseMenu
-              sessionName={session?.name ?? "session"}
+              sessionName={room?.code ? `Game ${room.code}` : "Super Chameleon"}
               mode={room?.mode ?? "lobby"}
               onResume={resume}
               onLeave={quit}

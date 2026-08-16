@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { KeyboardControls } from "@react-three/drei";
@@ -15,9 +15,8 @@ import { Viewmodel } from "@/game/combat/Viewmodel";
 import { RemotePlayers } from "@/game/players/RemotePlayers";
 import { SoundStage } from "@/game/sound/SoundStage";
 import type { Role } from "@/game/shared/protocol";
-import type { Mark } from "@/game/combat/Marks";
 import type { Brush } from "@/game/paint/brush";
-import { onLeftRoom, onMark, type Grave } from "@/game/net";
+import type { Grave } from "@/game/net";
 
 /**
  * Frames drawn per second, at most. `requestAnimationFrame` already pins the
@@ -43,10 +42,6 @@ const MAX_FPS = 60;
  * | 2 | this, which draws |
  * | 3 | anything that must read the drawn frame back — the eyedropper in
  *       `players/Player.tsx`, which samples the framebuffer it just produced |
- *
- * Mount order is *not* a substitute. Components remount independently — `Player`
- * is keyed on the room — so a callback that has to run after another has to say
- * so with a priority.
  */
 function FrameLimiter({ fps }: { fps: number }) {
   const carry = useRef(0);
@@ -64,15 +59,11 @@ function FrameLimiter({ fps }: { fps: number }) {
     // debt would otherwise force a burst of catch-up renders.
     carry.current = Math.min(carry.current - interval, interval);
     gl.render(scene, camera);
-    // Counted here rather than in the frame loop, so the readout's "fps" is the
-    // rate this cap actually produces — see `reportDraw`.
     if (DEV) reportDraw();
   }, 2);
 
   return null;
 }
-
-const MARK_LIFETIME = 3000;
 
 export default function Scene({
   map,
@@ -111,47 +102,14 @@ export default function Scene({
   onPicked: (hex: string) => void;
   onHoverBody: (hovering: boolean) => void;
 }) {
-  const [marks, setMarks] = useState<Mark[]>([]);
-  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const chosen = MAPS[safeMapId(map)];
   const render = chosen.render;
-
-  useEffect(() => {
-    const pending = timers.current;
-    const off = onMark((m) => {
-      setMarks((prev) => [...prev, m]);
-      pending.push(
-        setTimeout(
-          () => setMarks((prev) => prev.filter((x) => x.id !== m.id)),
-          MARK_LIFETIME,
-        ),
-      );
-    });
-    return () => {
-      off();
-      pending.forEach(clearTimeout);
-    };
-  }, []);
 
   // Both debug pictures follow the toggle, so this re-renders on the flip.
   const devMode = useDevMode();
 
-  /** Marks belong to the room that produced them, so leaving it drops them. */
-  useEffect(
-    () =>
-      onLeftRoom(() => {
-        timers.current.forEach(clearTimeout);
-        timers.current = [];
-        setMarks([]);
-      }),
-    [],
-  );
-
   return (
     <KeyboardControls map={controlMap}>
-      {/* "percentage" is PCFShadowMap. Bare `shadows` means PCFSoftShadowMap,
-          which three has deprecated and silently downgrades to exactly this —
-          so naming it changes nothing on screen and drops the warning. */}
       <Canvas
         shadows={render.shadows?.enabled ?? true}
         camera={{ fov: 60, position: [0, 5, 11] }}
@@ -169,17 +127,6 @@ export default function Scene({
         }}
       >
         <FrameLimiter fps={MAX_FPS} />
-        {/* The background and every light belong to the map now, and are set by
-            `world/Room` — a Blender-authored level carries its own, and one
-            hardcoded here would be added to them. */}
-        {/* The player integrates `GRAVITY` itself — it is a kinematic body and
-            rapier does not accelerate it — so this governs any *other* dynamic
-            body. There are none today; sharing the constant is what stops the
-            two quietly disagreeing the day there is one. */}
-        {/* `debug` draws rapier's own outline for every collider, the player's
-            included — the wireframes in `world/GltfLevel` are the raycast layer
-            beside it. Both follow the developer-mode toggle, and neither
-            exists in the image at all — see `src/game/dev.ts`. */}
         <Physics
           key={map}
           gravity={[0, -GRAVITY, 0]}
@@ -205,9 +152,8 @@ export default function Scene({
           )}
         </Physics>
         <RemotePlayers reveal={reveal} hunting={hunting} />
-        {/* Needs the camera every frame to keep the audio listener on your head. */}
         <SoundStage />
-        <Marks marks={marks} />
+        <Marks />
         <Graves graves={graves} />
         {role === "hunter" && !painting && <Viewmodel />}
       </Canvas>

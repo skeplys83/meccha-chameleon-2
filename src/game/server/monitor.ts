@@ -1,5 +1,4 @@
 import { timingSafeEqual } from "node:crypto";
-import type { IncomingMessage, ServerResponse } from "node:http";
 import express from "express";
 import { monitor } from "@colyseus/monitor";
 
@@ -8,7 +7,7 @@ import { monitor } from "@colyseus/monitor";
 export const MONITOR_PATH = "/monitor";
 
 const user = process.env.MONITOR_USER || "admin";
-const password = process.env.MONITOR_PASSWORD || "admin";
+const password = process.env.MONITOR_PASSWORD ?? "";
 
 /** Constant-time, and length-safe: comparing different lengths would throw. */
 function matches(given: string, expected: string) {
@@ -18,6 +17,7 @@ function matches(given: string, expected: string) {
 }
 
 function authorised(header: string | undefined) {
+  if (!password) return false;
   const [scheme, encoded] = (header ?? "").split(" ");
   if (scheme !== "Basic" || !encoded) return false;
   const decoded = Buffer.from(encoded, "base64").toString("utf8");
@@ -29,23 +29,21 @@ function authorised(header: string | undefined) {
   );
 }
 
-/** The panel as a plain request handler, or `null` if it should not exist. */
+/** The panel router, or `null` if it should not exist. */
 export function createMonitor(dev: boolean) {
   const wanted = dev ? process.env.MONITOR !== "0" : Boolean(password);
   if (!wanted) return null;
 
-  const app = express();
-  // Trust nothing about the URL beyond the mount point; express handles the rest.
-  app.use(MONITOR_PATH, (req, res, next) => {
+  const router = express.Router();
+  router.use((req, res, next) => {
     // No password in development is the documented case, not an oversight.
-    if (!password) return next();
+    if (dev && !password) return next();
     if (authorised(req.headers.authorization)) return next();
     res.setHeader("WWW-Authenticate", 'Basic realm="Super Chameleon"');
     res.status(401).send("Not authorised");
   });
 
-  app.use(
-    MONITOR_PATH,
+  router.use(
     monitor({
       // The default columns plus this game's own metadata, which is what makes
       // the list readable: `host` and `map` are only ever set on a lobby, so a
@@ -62,8 +60,7 @@ export function createMonitor(dev: boolean) {
     }),
   );
 
-  return (req: IncomingMessage, res: ServerResponse) =>
-    (app as unknown as (q: IncomingMessage, s: ServerResponse) => void)(req, res);
+  return router;
 }
 
 /** One line for the startup banner, or nothing if the panel is not mounted. */

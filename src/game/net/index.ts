@@ -23,7 +23,7 @@ export {
   type Remote,
   type RemoteTarget,
 } from "./remotes";
-export { fetchSessions, type Game, type Session } from "./sessions";
+export { fetchSessions, type Game } from "./sessions";
 export {
   sendClearSkin,
   sendKill,

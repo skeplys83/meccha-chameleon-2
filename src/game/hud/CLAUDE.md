@@ -247,7 +247,7 @@ costs nothing.
   patch like any other. In particular `PaintPanel` — which lives in `paint/`, not here
   — can clear `paused` as a side effect of opening, which is why `Game.tsx`
   guards hover reporting while the menu is up.
-- **Reads `net/`** for `fetchSessions` (self and games), `onRoster` and
+- **Reads `net/`** for `fetchSessions` (public games), `onRoster` and
   `remotes` (the player list), plus `sendStart` / `sendMap` in `LobbyPanel`.
 - **Reads `shared/protocol.ts`** for `Role` and `figure/poses.ts` for pose labels.
 

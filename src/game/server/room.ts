@@ -10,7 +10,7 @@ import { mapRoundSeconds } from "../world/maps.ts";
 import { freeRoomCode } from "./code.ts";
 import { HostRule } from "./host.ts";
 import { clamp, registerMessages } from "./messages.ts";
-import { setSessionName } from "./discovery.ts";
+import { setSessionName } from "./session.ts";
 import {
   COUNTDOWN_SECONDS,
   HIDE_SECONDS,

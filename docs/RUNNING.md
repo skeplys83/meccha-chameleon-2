@@ -26,12 +26,11 @@ page for everybody who is not the developer. It replaces Next's
 machine's addresses because Vite checks the *host* once rather than the origin of
 every asset request.
 
-Useful env vars: `PORT` (web, default 3000), `GAME_PORT` (Colyseus, default 2567),
+Useful env vars: `PORT` (web, default 3000), `GAME_PORT` (Colyseus, default 2567 in dev, defaults to `PORT` in production for single-port hosting),
 `HMR_PORT` (Vite's dev socket, default 24678), `PUBLIC_GAME_PORT` (what clients
-are *told* to connect to, when a proxy fronts Colyseus), `LAN_DISCOVERY=0` (skip
-UDP broadcast on a hosted box), `SESSION_NAME`, `MONITOR_PASSWORD` /
-`MONITOR_USER` / `MONITOR=0` (the admin panel — see "Watching it run" in the
-README).
+are *told* to connect to, when a proxy fronts Colyseus), `SESSION_NAME`,
+`MONITOR_PASSWORD` / `MONITOR_USER` / `MONITOR=0` (the admin panel — see
+"Watching it run" in the README).
 
 **The admin panel is at `/monitor`** and is the only way to see the matchmaking
 from outside: a lobby and its match are two rooms, and a player only ever sees

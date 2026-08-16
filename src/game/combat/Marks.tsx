@@ -1,6 +1,6 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import type { NetMark } from "@/game/net";
+import { onLeftRoom, onMark, type NetMark } from "@/game/net";
 
 /** A shot patch, as the scene holds it. */
 export type Mark = NetMark;
@@ -10,6 +10,8 @@ const TRACER_RADIUS = 0.004;
 
 /** Faint enough to read as a trace of something that has already gone. */
 const TRACER_OPACITY = 0.35;
+
+const MARK_LIFETIME = 3000;
 
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -36,9 +38,6 @@ function Tracer({ from, to }: { from: NetMark["origin"]; to: NetMark["position"]
         color="#000000"
         transparent
         opacity={TRACER_OPACITY}
-        // Depth-tested so a wall still hides it — a tracer visible through
-        // geometry would give away shots nobody could have seen. Not
-        // depth-*written*, so it never sorts against itself or the patch.
         depthWrite={false}
       />
     </mesh>
@@ -46,7 +45,38 @@ function Tracer({ from, to }: { from: NetMark["origin"]; to: NetMark["position"]
 }
 
 /** Yellow patches where a hunter's shot landed, each with the line it travelled. */
-export function Marks({ marks }: { marks: Mark[] }) {
+export function Marks() {
+  const [marks, setMarks] = useState<Mark[]>([]);
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useEffect(() => {
+    const pending = timers.current;
+    const off = onMark((m) => {
+      setMarks((prev) => [...prev, m]);
+      pending.push(
+        setTimeout(
+          () => setMarks((prev) => prev.filter((x) => x.id !== m.id)),
+          MARK_LIFETIME,
+        ),
+      );
+    });
+    return () => {
+      off();
+      pending.forEach(clearTimeout);
+    };
+  }, []);
+
+  /** Marks belong to the room that produced them, so leaving it drops them. */
+  useEffect(
+    () =>
+      onLeftRoom(() => {
+        timers.current.forEach(clearTimeout);
+        timers.current = [];
+        setMarks([]);
+      }),
+    [],
+  );
+
   return (
     <>
       {marks.map((m) => (

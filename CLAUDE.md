@@ -4,10 +4,8 @@ A multiplayer hide-and-seek game. Chameleons are stick figures who can lie on th
 side to pass as scenery; hunters hunt them in first person with a shotgun. No
 accounts, no third-party services.
 
-It runs two ways, and both matter. **On one machine per player**, every machine
-runs the whole app and UDP discovery lists the others on the same network. **On a single hosted server**,
-one container serves everybody and discovery is switched off — see "Hosting it"
-in the README. It is **not deployed to a serverless platform**: the game is one
+A central server serves all players via web and WebSocket connections.
+It is **not deployed to a serverless platform**: the game is one
 long-lived process holding websocket rooms, which is the opposite of what those
 platforms do.
 
@@ -121,14 +119,13 @@ roots stay here deliberately**: this is the only doc loaded into a session
 automatically, so what an agent needs without being told to go looking for it
 belongs in it.
 
-**Hosted deployments are a reverse-proxy concern.** The game server listens on
-`GAME_PORT` (default 2567) but a browser behind TLS is not allowed to open a raw
-`ws://` socket to it, so a hosted box should terminate HTTPS in front of the app
-and set `PUBLIC_GAME_PORT` to the public port clients are told to use. For a
-plain VPS host the default stays at 2567; the HTTPS override is only needed when
-nginx terminates TLS and fronts the game socket. The compose service also pins
-Docker log rotation (`max-size` 10 MB, `max-file` 3) so repeated deploys do not
-fill a small VPS disk through `json-file` logs alone.
+**Hosted deployments can run on a single exposed port.** In production (and in
+Docker), Colyseus attaches directly to the HTTP server on `PORT` (default 3000)
+unless `GAME_PORT` is explicitly set to a different port. When behind a TLS
+reverse proxy, the proxy terminates HTTPS on 443 and fronts the web and socket
+traffic, and `PUBLIC_GAME_PORT` informs clients to connect over port 443. The
+compose service also pins Docker log rotation (`max-size` 10 MB, `max-file` 3)
+so repeated deploys do not fill a small VPS disk through `json-file` logs alone.
 
 **A join must never dereference a missing target.** The menu can render while the
 session list is empty or stale; a lobby button still tries to call through the
@@ -191,7 +188,7 @@ scripts/            check-docs.mjs, check-constants.mjs, make-favicon.mjs,
 | folder     | owns                                                    | read it before touching                       |
 | ---------- | ------------------------------------------------------- | --------------------------------------------- |
 | `shared/`  | `Role` and the constants both halves must agree on      | anything the server also reads                |
-| `server/`  | Colyseus rooms, matchmaking, schema, UDP, HTTP          | messages, validation, authority, lobbies      |
+| `server/`  | Colyseus rooms, matchmaking, schema, HTTP               | messages, validation, authority, lobbies      |
 | `net/`     | the Colyseus **client**, remotes, which room you are in | joining, moving rooms, remote transforms      |
 | `world/`   | the maps, and the registry that picks one               | room layout, collision, cover, editing a map  |
 | `figure/`  | the stick figure rig, the poses, `PART_SHAPE`           | proportions, poses, limb geometry             |

@@ -1,7 +1,7 @@
 # server — the authoritative half
 
 **Owns:** the Colyseus rooms and their state, the matchmaking between them,
-same-network discovery over UDP, and the HTTP bootstrap that serves the client.
+and the HTTP bootstrap that serves the client.
 
 **Entry point:** `node src/game/server/index.ts`, which is what both `npm run
 dev` and `npm start` run. Vite has no dev server of its own here — it runs as
@@ -15,10 +15,9 @@ code never reaches the browser, and nothing here may import from `world/`,
 
 ## Files
 
-- `index.ts` — starts discovery, serves `/monitor` and `/api/sessions` itself
-  and hands everything else to the app (Vite in middleware mode in development,
-  `express.static("dist")` in production), defines both room types, starts
-  Colyseus, prints the banner.
+- `index.ts` — serves `/monitor` and `/api/sessions`, defines both room types,
+  starts Colyseus, and prints the banner.
+- `session.ts` — session ID, session naming, and LAN IP resolution.
 - `room.ts` — `GameRoom`: the shape of a round. Which phase it is in, who is in
   it, when it ends, and every hand-off between the two rooms.
 - `messages.ts` — everything a client may *say*, and the trust model that decides
@@ -30,7 +29,6 @@ code never reaches the browser, and nothing here may import from `world/`,
 - `code.ts` — the invite alphabet and a code no live room is using.
 - `monitor.ts` — Colyseus's admin panel at `/monitor`, and the rule for when it
   is allowed to exist.
-- `discovery.ts` — the UDP socket, the peer table, the session name.
 
 ## Why it is four files and not one
 
@@ -195,14 +193,15 @@ A match is created with the same cap.
    `defineTypes(...)` rather than `@type`. Imports must name the real file
    (`./room.ts`), which is what `allowImportingTsExtensions` in tsconfig permits.
 3. **Nothing here touches `upgrade`.** This HTTP server carries the page and
-   `/api/sessions`; Colyseus binds `GAME_PORT` and builds its own server there;
-   and in development Vite's HMR socket binds `HMR_PORT` of its own. and in development Vite's HMR
-   socket binds `HMR_PORT` of its own rather than being handed this server via
-   `server.hmr.server`. Handing a WebSocket server the HTTP server's `upgrade`
-   event destroys every non-matching upgrade, including the dev HMR socket —
-   which stops the client bootstrap, so **nothing mounts and no button on the
-   page works**. The symptom is "connection refused" plus a completely dead UI.
-   Three listeners is the cost of never rediscovering that.
+   `/api/sessions`; in multi-port mode (dev) Colyseus binds `GAME_PORT` and builds
+   its own server there, while in single-port mode (production default or when
+   `GAME_PORT === PORT`) it attaches its WebSocket transport to `web`. Vite's
+   dev HMR socket binds `HMR_PORT` of its own rather than being handed this
+   server via `server.hmr.server`. Handing a WebSocket server the HTTP server's
+   `upgrade` event without care destroys every non-matching upgrade, including
+   the dev HMR socket — which stops the client bootstrap, so **nothing mounts
+   and no button on the page works**. Isolating HMR and using explicit
+   transport attachment is the cost of never rediscovering that.
 4. **State is what a late joiner still has to see.** Paint strokes and graves are
    permanent, so they are schema fields and arrive via `onAdd` backlog. Shot
    marks expire after three seconds, so they are a `broadcast` and are never
@@ -478,16 +477,12 @@ A match is created with the same cap.
   client has no `getAvailableRooms`, so `publicGames()` reads `matchMaker.query`
   in the process that owns the room directory. It queries lobbies and matches
   together, since a game's count spans both.
-- **Discovery is best-effort, and optional.** A failed UDP bind logs a warning
-  and the game runs on regardless. `LAN_DISCOVERY=0` skips it entirely, which is
-  what a hosted server wants: there are no peers to broadcast to. `/api/sessions`
-  still answers with `self`, and `self` is the entry the menu actually joins, so
-  the game works with discovery off.
 - **`PUBLIC_GAME_PORT` is what clients are told, `GAME_PORT` is what we bind.**
-  They are the same when served directly. Behind a reverse proxy they are not: TLS is
-  terminated on 443 and forwarded to 2567, so the browser must be handed 443 —
-  both because it cannot reach the internal port, and because a `wss://` page is
-  forbidden from opening a plain `ws://` socket.
+  They are the same when served directly (and in single-port mode both match
+  `PORT`, default 3000). Behind a reverse proxy they differ: TLS is terminated
+  on 443 and forwarded to the application port, so the browser must be handed
+  443 — both because it cannot reach the internal port, and because a `wss://`
+  page is forbidden from opening a plain `ws://` socket.
 
 ## Testing it
 

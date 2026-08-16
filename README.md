@@ -66,11 +66,10 @@ roles, the phases and every constant both halves must agree on.
         BROWSER                              NODE
   ┌──────────────────────┐          ┌──────────────────────┐
   │ React 19 · Vite 8    │  :3000   │ node:http + express  │
-  │ three.js / R3F       │◀────────▶│ Vite (middleware)    │  page + assets
+  │ three.js / R3F       │◀────────▶│ Vite (dev middleware)│  page + assets
   │ rapier (wasm)        │          │ /api/sessions        │
-  │ colyseus.js          │◀════════▶│ Colyseus 0.16  :2567 │  gameplay
-  └──────────────────────┘   ws     │ node:dgram    :41234 │  peer discovery
-                                    └──────────────────────┘
+  │ colyseus.js          │◀════════▶│ Colyseus 0.16        │  gameplay (:3000 / :2567)
+  └──────────────────────┘   ws     └──────────────────────┘
 ```
 
 ### Browser
@@ -148,21 +147,18 @@ The image has been built and run: the page is served, a lobby is created, a
 second client joins it by code, Start moves both into one match on the chosen
 map, and no `typescript` or Tailwind is present at runtime.
 
-Two ports are published, because the browser talks to both: the page comes from
-`PORT` (3000) and the game socket connects straight to `GAME_PORT` (2567). Over
-plain http on an IP that is all you need.
+In production and Docker, a single port is published: both the web app and
+Colyseus WebSockets run on `PORT` (3000).
 
-**With a domain and HTTPS it is not enough.** A page served over `https://`
-cannot open a plain `ws://` socket, so 2567 needs TLS as well. Put a reverse
-proxy in front, terminate TLS for both, and tell clients where the socket really
-is:
+**With a domain and HTTPS:** Put a reverse proxy (e.g. Caddy / Nginx) in front
+to terminate TLS on 443, and set `PUBLIC_GAME_PORT: 443` so clients connect over
+`wss://`.
 
 | variable | what it does |
 |---|---|
 | `PORT` | web port, default 3000 |
-| `GAME_PORT` | Colyseus port the server **listens** on, default 2567 |
-| `PUBLIC_GAME_PORT` | Colyseus port clients are **told** to use — set this when a proxy fronts it |
-| `LAN_DISCOVERY` | `0` turns off UDP broadcast; it finds nothing on a hosted box |
+| `GAME_PORT` | Colyseus listener port (default 2567 in dev, defaults to `PORT` in production) |
+| `PUBLIC_GAME_PORT` | Colyseus port clients are **told** to use — set to `443` when a TLS proxy fronts it |
 | `SESSION_NAME` | name the server reports for itself |
 | `MONITOR_PASSWORD` | enables the admin panel in production, behind Basic auth |
 | `MONITOR_USER` | username for that, default `admin` |

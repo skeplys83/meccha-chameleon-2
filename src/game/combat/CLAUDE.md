@@ -97,8 +97,8 @@ died, and each grave carries the name for the reveal.
 
 - **Reads `players/RemotePlayers`** for `remoteFigures` and their `userData.remoteId`.
 - **Reads `world/Room`** for `ROOM_SURFACE` (via `Player`'s collected list).
-- **`Scene.tsx` owns the mark timers** and the grave list, feeding both as props.
-- **`Game.tsx` owns the death screen** — the victim is out of the room by the
+- **`Marks.tsx` manages its own mark timers and subscriptions**, while `Scene.tsx` passes the grave list to `Graves.tsx`.
+- **`Game.tsx` owns the round-over and caught overlays** — the victim is out of the room by the
   time it appears, so respawning is a fresh join to the same session.
 
 ## Not built yet

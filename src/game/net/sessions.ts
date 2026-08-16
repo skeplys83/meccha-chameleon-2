@@ -1,12 +1,4 @@
-/** Server discovery, client half. */
-
-export type Session = {
-  id: string;
-  name: string;
-  host: string;
-  port: number;
-  gamePort: number;
-};
+/** Public games and server port discovery on the client. */
 
 /** One public game, as the listing describes it. */
 export type Game = {
@@ -25,35 +17,26 @@ export type Game = {
   maxPlayers: number;
 };
 
-/** The local server's identity, its peers on the same network, and its public games. */
-export async function fetchSessions(): Promise<{
-  self: Session | null;
-  sessions: Session[];
-  games: Game[];
-}> {
+let cachedGamePort: number | null = null;
+
+export function getAdvertisedGamePort(): number | null {
+  return cachedGamePort;
+}
+
+/** Fetches the public games list and discovers the server's advertised game port. */
+export async function fetchSessions(): Promise<{ ready: boolean; games: Game[] }> {
   try {
     const res = await fetch("/api/sessions", { cache: "no-store" });
-    if (!res.ok) return { self: null, sessions: [], games: [] };
+    if (!res.ok) return { ready: false, games: [] };
     const data = await res.json();
+    if (data.self?.gamePort) {
+      cachedGamePort = Number(data.self.gamePort);
+    }
     return {
-      // The browser reaches its own host by the address it loaded the page from.
-      self: data.self
-        ? {
-          ...data.self,
-          name: String(data.self.name ?? "Meccha Chameleon"),
-          host: location.hostname,
-        }
-        : null,
-      sessions: (data.sessions ?? []).map((session: Partial<Session>) => ({
-        id: String(session.id ?? ""),
-        name: String(session.name ?? "session"),
-        host: String(session.host ?? location.hostname),
-        port: Number(session.port ?? 3000),
-        gamePort: Number(session.gamePort ?? 443),
-      })),
+      ready: true,
       games: data.games ?? [],
     };
   } catch {
-    return { self: null, sessions: [], games: [] };
+    return { ready: false, games: [] };
   }
 }

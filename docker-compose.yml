@@ -4,11 +4,9 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
-      - "2567:2567"
     environment:
       SESSION_NAME: "Meccha Chameleon"
-      LAN_DISCOVERY: "0"
-      PUBLIC_GAME_PORT: "${PUBLIC_GAME_PORT:-2567}"
+      PUBLIC_GAME_PORT: "${PUBLIC_GAME_PORT:-3000}"
     logging:
       driver: json-file
       options:

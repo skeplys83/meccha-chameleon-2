@@ -20,9 +20,9 @@ The other half is `server/`. Every message named below has a handler there.
 - `events.ts` — `onShot` / `onWhistle` / `onMark` / `onGrave` / `onKilled` /
   `onRoom` / `onMoved` / `onMoveFailed` / `onDropped` / `onLeftRoom` and their
   emitters.
-- `sessions.ts` — `fetchSessions` against `/api/sessions`: which server, and the
-  public games on it. A `Game` carries `started` **and** `starting`, which are
-  the two states the server refuses a join in.
+- `sessions.ts` — `fetchSessions` against `/api/sessions`: public games and
+  discovering the server's advertised game port. A `Game` carries `started`
+  **and** `starting`, which are the two states the server refuses a join in.
 - `identity.ts` — `playerId()`, this tab's id for as long as it is open.
 - `index.ts` — the public surface.
 
@@ -222,7 +222,7 @@ runs once per *room*, not once per session.
   cannot drift apart the way two client-side timers would. `onRoom` only fires on
   a real difference, so a repeat is impossible by construction.
 - `hud/StartMenu` polls `fetchSessions` every 5 s while it is on screen and the
-  tab is in front, for `self` **and** the public games list; `Game.tsx`
+  tab is in front for the public games list; `Game.tsx`
   calls `createLobby` / `joinLobby` / `rejoin` / `disconnect` and subscribes to
   `onKilled`, `onRoom`, `onMoveFailed` and `onDropped`.
 
