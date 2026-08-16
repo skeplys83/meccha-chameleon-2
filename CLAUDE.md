@@ -182,9 +182,13 @@ levels/             the .blend files those are exported from, and the raw kit.
                     AUTHORING.md there is the map-building guide: shells,
                     props, collision, and the checks that prove a map is sound
 Dockerfile          the single-port production container build
+.github/workflows/  deploy.yml: automated Docker build & push to Docker Hub on main push
 scripts/            check-docs.mjs, check-constants.mjs, make-favicon.mjs,
                     export-level.sh + export-level.py (Blender → public/maps/)
 ```
+
+**Building and pushing the Docker image is a mandatory step after every push to `main`.**
+Run `npm run docker:deploy` (`docker build --platform linux/amd64 -t skplys83/superchameleon:latest . && docker push skplys83/superchameleon:latest`), which builds for `linux/amd64` and publishes to Docker Hub for VPS / Portainer deployment. GitHub Actions `.github/workflows/deploy.yml` also runs on every push.
 
 | folder     | owns                                                    | read it before touching                       |
 | ---------- | ------------------------------------------------------- | --------------------------------------------- |

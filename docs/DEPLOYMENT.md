@@ -37,11 +37,17 @@ A guide to building, pushing, and deploying Super Chameleon to a multi-tenant VP
 
 ---
 
-## 1. Local Machine: Build & Push to Docker Hub
+## 1. Build & Push to Docker Hub (Mandatory Post-Push Step)
 
 Because the build host is typically macOS and the target VPS is Linux `x86_64`, build for `linux/amd64` to prevent OOM on low-memory VPS instances.
 
+Every push to `main` must immediately be followed by building and pushing the Docker image (or automated via `.github/workflows/deploy.yml`):
+
 ```bash
+# Automated via npm script:
+npm run docker:deploy
+
+# Or manual steps:
 # 1. Login to Docker Hub
 docker login
 

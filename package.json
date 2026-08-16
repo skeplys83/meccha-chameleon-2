@@ -10,7 +10,10 @@
     "lint": "eslint",
     "check:docs": "node scripts/check-docs.mjs",
     "check:constants": "node scripts/check-constants.mjs",
-    "favicon": "node scripts/make-favicon.mjs"
+    "favicon": "node scripts/make-favicon.mjs",
+    "docker:build": "docker build --platform linux/amd64 -t skplys83/superchameleon:latest .",
+    "docker:push": "docker push skplys83/superchameleon:latest",
+    "docker:deploy": "npm run docker:build && npm run docker:push"
   },
   "dependencies": {
     "@colyseus/monitor": "^0.16.7",
