@@ -10,10 +10,10 @@ you join.
 ## Files
 
 - `StartMenu.tsx` — name entry, the map picker, Create game, Join by code. Two
-  questions and nothing else.
+  questions and nothing else, with invite codes pre-populated from SDK / URL parameters.
 - `CreateGamePanel.tsx` — the modal behind Create: map, public flag, size.
 - `LobbyPanel.tsx` — the invite code, the queued map and Start, over the
-  waiting room.
+  waiting room, with copy support for portal and direct invite links.
 - `DroppedPanel.tsx` — the connection died: reconnect, or go back to the menu.
 - `PauseMenu.tsx` — resume / leave, where "leave" is a different place in each
   room.

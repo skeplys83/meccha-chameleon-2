@@ -5,6 +5,7 @@ import { mapName, type MapId } from "@/game/world/maps";
 import { CreateGamePanel } from "./CreateGamePanel";
 import { LegalPage } from "./LegalPage";
 import { Footer } from "./Footer";
+import { getInitialInviteRoom } from "@/game/crazygames";
 
 /** The name lives in `sessionStorage`, scoped to the tab. */
 const NAME_KEY = "mc_name";
@@ -42,7 +43,7 @@ export function StartMenu({
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [ready, setReady] = useState(false);
-  const [code, setCode] = useState("");
+  const [code, setCode] = useState(() => getInitialInviteRoom() ?? "");
   const [games, setGames] = useState<Game[]>([]);
   /** The create modal. Map, listing and size all live inside it. */
   const [creating, setCreating] = useState(false);

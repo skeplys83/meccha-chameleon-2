@@ -34,6 +34,17 @@ import {
   type Grave,
   type RoomInfo,
 } from "@/game/net";
+import { fetchSessions } from "@/game/net/sessions";
+import { randomName } from "@/game/hud/names";
+import {
+  initCrazySDK,
+  isInstantMultiplayer,
+  getInitialInviteRoom,
+  updateCrazyRoom,
+  leaveCrazyRoom,
+  addCrazyJoinListener,
+  removeCrazyJoinListener,
+} from "@/game/crazygames";
 import { clearSkin, forgetAllSkins, SELF } from "@/game/paint/skin";
 import { cancelLock, lockTargetEl, requestLock } from "@/game/players/pointerLock";
 import {
@@ -203,6 +214,87 @@ export function Game() {
       enter(who, () => joinLobby(who, code), `join ${code}`),
     [enter],
   );
+
+  // Ensure audio is unlocked on first user gesture if entered via instant join.
+  useEffect(() => {
+    const unlockOnGesture = () => {
+      unlockAudio();
+      window.removeEventListener("pointerdown", unlockOnGesture);
+      window.removeEventListener("keydown", unlockOnGesture);
+    };
+    window.addEventListener("pointerdown", unlockOnGesture);
+    window.addEventListener("keydown", unlockOnGesture);
+    return () => {
+      window.removeEventListener("pointerdown", unlockOnGesture);
+      window.removeEventListener("keydown", unlockOnGesture);
+    };
+  }, []);
+
+  // Initialize CrazyGames SDK, handle deep-link invites, and instant multiplayer.
+  useEffect(() => {
+    let active = true;
+
+    void initCrazySDK().then(async () => {
+      if (!active) return;
+
+      // 1. If launched with an invite room code (CrazyGames invite or URL query ?code=...), join directly.
+      const inviteCode = getInitialInviteRoom();
+      if (inviteCode) {
+        const playerName = randomName();
+        joinCode(playerName, inviteCode);
+        return;
+      }
+
+      // 2. If instant multiplayer requested, quick-join or create a lobby.
+      if (isInstantMultiplayer()) {
+        const playerName = randomName();
+        try {
+          const { games: openSessions } = await fetchSessions();
+          if (!active) return;
+
+          const joinable = openSessions.find(
+            (g) => !g.started && !g.starting && g.players < g.maxPlayers,
+          );
+
+          if (joinable) {
+            joinCode(playerName, joinable.code);
+          } else {
+            create(playerName, DEFAULT_MAP, true, 8);
+          }
+        } catch {
+          if (active) {
+            create(playerName, DEFAULT_MAP, true, 8);
+          }
+        }
+      }
+    });
+
+    // 3. Handle live room join invitations from CrazyGames while already in-game.
+    const onLiveInvite = (params: Record<string, string>) => {
+      const targetRoom = params?.roomId || params?.roomName;
+      if (targetRoom) {
+        joinCode(name || randomName(), targetRoom);
+      }
+    };
+
+    addCrazyJoinListener(onLiveInvite);
+    return () => {
+      active = false;
+      removeCrazyJoinListener(onLiveInvite);
+    };
+  }, [create, joinCode, name]);
+
+  // Sync room presence and joinability with CrazyGames.
+  useEffect(() => {
+    if (!joined || !room) {
+      leaveCrazyRoom();
+      return;
+    }
+
+    const roomIdentifier = room.lobbyCode ?? room.code;
+    const isJoinable = room.phase === "waiting";
+    updateCrazyRoom(roomIdentifier, isJoinable);
+  }, [joined, room]);
 
   // Every later change to the room — the host starting the match, a new host,
   // a different map queued up, the clock — arrives as a patch rather than a

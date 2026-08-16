@@ -2,6 +2,7 @@ import { useState } from "react";
 import { sendMap, sendStart } from "@/game/net";
 import { MATCH_MAP_LIST, mapName } from "@/game/world/maps";
 import { MIN_PLAYERS, type Phase } from "@/game/shared/protocol";
+import { generateInviteLink } from "@/game/crazygames";
 
 /** The waiting room's own overlay: the invite code, the map you are about to play, and Start. */
 export function LobbyPanel({
@@ -31,20 +32,22 @@ export function LobbyPanel({
    *  refuses Start below it too — this only greys the button out. */
   const enough = players >= MIN_PLAYERS;
 
-  /** Copy the code, by whichever of the two routes exists here. */
+  /** Copy the code or invite link, by whichever of the two routes exists here. */
   const copy = () => {
     const done = () => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1200);
     };
 
+    const textToCopy = generateInviteLink(code);
+
     if (navigator.clipboard) {
-      navigator.clipboard.writeText(code).then(done, () => {});
+      navigator.clipboard.writeText(textToCopy).then(done, () => {});
       return;
     }
 
     const scratch = document.createElement("textarea");
-    scratch.value = code;
+    scratch.value = textToCopy;
     // Off-screen rather than hidden: `display: none` cannot hold a selection.
     scratch.style.position = "fixed";
     scratch.style.opacity = "0";
