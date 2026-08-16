@@ -126,7 +126,9 @@ belongs in it.
 `ws://` socket to it, so a hosted box should terminate HTTPS in front of the app
 and set `PUBLIC_GAME_PORT` to the public port clients are told to use. For a
 plain VPS host the default stays at 2567; the HTTPS override is only needed when
-nginx terminates TLS and fronts the game socket.
+nginx terminates TLS and fronts the game socket. The compose service also pins
+Docker log rotation (`max-size` 10 MB, `max-file` 3) so repeated deploys do not
+fill a small VPS disk through `json-file` logs alone.
 
 **A join must never dereference a missing target.** The menu can render while the
 session list is empty or stale; a lobby button still tries to call through the

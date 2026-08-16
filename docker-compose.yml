@@ -9,3 +9,8 @@ services:
       SESSION_NAME: "Meccha Chameleon"
       LAN_DISCOVERY: "0"
       PUBLIC_GAME_PORT: "${PUBLIC_GAME_PORT:-2567}"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
