@@ -150,9 +150,7 @@ map, and no `typescript` or Tailwind is present at runtime.
 In production and Docker, a single port is published: both the web app and
 Colyseus WebSockets run on `PORT` (3000).
 
-**With a domain and HTTPS:** Put a reverse proxy (e.g. Caddy / Nginx) in front
-to terminate TLS on 443, and set `PUBLIC_GAME_PORT: 443` so clients connect over
-`wss://`.
+**With a domain, HTTPS, or Cloudflare Tunnel:** See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for the complete guide on building locally, pushing to Docker Hub, and deploying via Portainer and Cloudflare Zero Trust. Put a reverse proxy (e.g. Caddy / Nginx) or Cloudflare Tunnel in front on 443, and set `PUBLIC_GAME_PORT: 443`.
 
 | variable | what it does |
 |---|---|

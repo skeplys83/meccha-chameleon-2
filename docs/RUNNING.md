@@ -37,7 +37,7 @@ from outside: a lobby and its match are two rooms, and a player only ever sees
 the one they are standing in. It is on in development and, because it can end any
 room, absent in production unless `MONITOR_PASSWORD` is set.
 
-`Dockerfile` and `docker-compose.yml` are the hosted path. The image is Node 22
+`Dockerfile` and `docker-compose.yml` are the hosted path (see [DEPLOYMENT.md](DEPLOYMENT.md) for Portainer & Cloudflare Tunnel details). The image is Node 22
 because the server is TypeScript that Node strips at load — there is no build
 step for it, and an older Node fails to parse rather than misbehaving. The
 runtime stage carries `dist/` and `src/` and installs `--omit=dev`, which works
