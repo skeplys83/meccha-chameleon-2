@@ -14,7 +14,7 @@ The other half is `server/`. Every message named below has a handler there.
   the last reconnection token, plus `selfId()`. It exists so `send.ts` can reach the room without importing
   `client.ts` and forming a cycle.
 - `client.ts` — `createLobby` / `joinLobby` / `rejoin` / `disconnect`, the schema
-  callback wiring, and the move from a lobby into its match.
+  callback wiring, automatic HTTPS/WSS WebSocket port resolution, and the move from a lobby into its match.
 - `send.ts` — everything this client tells the room.
 - `remotes.ts` — the `remotes` map and the roster event.
 - `events.ts` — `onShot` / `onWhistle` / `onMark` / `onGrave` / `onKilled` /

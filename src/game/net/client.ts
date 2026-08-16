@@ -115,15 +115,24 @@ export async function rejoin(name: string, roomId: string) {
 
 async function open(join: (client: Client) => Promise<Room>) {
   await disconnect();
-  const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  const port =
-    getAdvertisedGamePort() ??
-    (location.port
-      ? Number(location.port)
-      : location.protocol === "https:"
-        ? 443
-        : 80);
-  const client = new Client(`${proto}//${location.hostname}:${port}`);
+  const isHttps = location.protocol === "https:";
+  const proto = isHttps ? "wss:" : "ws:";
+
+  const advertised = getAdvertisedGamePort();
+  let portStr = "";
+  if (location.port) {
+    // If the browser URL has an explicit port (e.g. http://noah-pick.de:3000 or http://localhost:3000),
+    // use advertised game port if different (e.g. dev 2567), otherwise location.port.
+    const p =
+      advertised && advertised !== Number(location.port) && !isHttps
+        ? advertised
+        : location.port;
+    portStr = `:${p}`;
+  } else if (advertised && advertised !== (isHttps ? 443 : 80) && advertised !== 3000) {
+    portStr = `:${advertised}`;
+  }
+
+  const client = new Client(`${proto}//${location.hostname}${portStr}`);
   setClient(client);
   const joined = await join(client);
   return attach(joined);
