@@ -5,7 +5,7 @@ you join.
 
 **Entry points:** `StartMenu`, `LobbyPanel`, `PauseMenu`, `ControlsPanel`,
 `PlayerList`, `PhaseBanner`, `RoundOverPanel`, `LoadingScreen`, `DebugPanel`,
-`LegalPage`, `Footer`, `randomName`.
+`LegalPage`, `Footer`, `MobileUnsupported`, `randomName`.
 
 ## Files
 
@@ -25,6 +25,7 @@ you join.
 - `RoundOverPanel.tsx` — the reveal card: who won, and who was found where.
 - `LoadingScreen.tsx` — a spinner and the word Loading, over the whole screen,
   while the map you are standing in is still arriving. Opaque, and no props.
+- `MobileUnsupported.tsx` — full-screen blocker when the site is opened on a mobile or tablet device.
 - `DebugPanel.tsx` — the developer-mode readout, bottom left: **drawn fps and
   frame-loop ticks, which are different numbers** (`MAX_FPS` throttles the draw
   only, so a 120 Hz display ticks 120 and draws 60), the local

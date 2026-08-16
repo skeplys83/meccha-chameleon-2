@@ -9,6 +9,7 @@ import { DEFAULT_MAP } from "@/game/world/mapIds";
 import { preloadMap } from "@/game/world/preload";
 import { preloadCharacter } from "@/game/figure/model";
 import { LoadingScreen } from "@/game/hud/LoadingScreen";
+import { MobileUnsupported, useIsMobileOrTablet } from "@/game/hud/MobileUnsupported";
 import { beginLoading, useLoading } from "@/game/loading";
 import { LobbyPanel } from "@/game/hud/LobbyPanel";
 import { DroppedPanel } from "@/game/hud/DroppedPanel";
@@ -95,6 +96,7 @@ export function Game() {
   /** Rooted where you are, camera free. */
   const rooted = room?.phase === "reveal" && role === "chameleon";
   const loading = useLoading();
+  const isMobile = useIsMobileOrTablet();
 
   // Paint mode deliberately gives the cursor back, so the pointer-lock handler
   // below must not read that as "the player wants the pause menu".
@@ -581,6 +583,10 @@ export function Game() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  if (isMobile) {
+    return <MobileUnsupported />;
+  }
 
   // The Canvas stays mounted and the menu sits over it, so creating or joining a
   // game drops you straight into the room instead of swapping out the whole tree.

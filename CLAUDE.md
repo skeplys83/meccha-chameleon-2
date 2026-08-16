@@ -165,7 +165,7 @@ src/main.tsx        createRoot(...).render(<Game />) — no StrictMode, see trap
 src/index.css       the one stylesheet: @import "tailwindcss" and four tokens
 dist/               `vite build` output. Generated, gitignored, never edited
 src/game/
-  Game.tsx          top-level state: joined, session, room, paused, painting, killed
+  Game.tsx          top-level state: joined, session, room, paused, painting, killed, mobile gate
   Scene.tsx         Canvas, Physics, mark and grave lifetimes
   crazygames.ts     CrazyGames SDK v3 integration: instant multiplayer, invite links, room reporting
   loading.ts        one counter: is the player waiting on something to arrive
