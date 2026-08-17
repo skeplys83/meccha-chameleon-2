@@ -167,7 +167,9 @@ dist/               `vite build` output. Generated, gitignored, never edited
 src/game/
   Game.tsx          top-level state: joined, session, room, paused, painting, killed, mobile gate
   Scene.tsx         Canvas, Physics, mark and grave lifetimes
-  crazygames.ts     CrazyGames SDK v3 integration: instant multiplayer, invite links, room reporting
+  crazygames.ts     CrazyGames SDK v3 integration: instant multiplayer, invite links, room reporting;
+                     call it only in its `local` or `crazygames` environment — the SDK rejects
+                     every call on third-party production domains, where URL invite fallbacks remain available
   loading.ts        one counter: is the player waiting on something to arrive
   dev.ts            developer mode: the flag, and the player snapshot it shows
 public/sounds/      the nine .mp3 files

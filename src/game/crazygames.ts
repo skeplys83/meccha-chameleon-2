@@ -14,6 +14,7 @@ declare global {
   interface Window {
     CrazyGames?: {
       SDK?: {
+        environment?: "local" | "crazygames" | "disabled";
         init: () => Promise<void>;
         game?: {
           isInstantMultiplayer?: boolean;
@@ -33,6 +34,15 @@ declare global {
 let sdkPromise: Promise<boolean> | null = null;
 
 /**
+ * CrazyGames deliberately disables the SDK on third-party production domains.
+ * Keep the game fully playable there, but do not call any SDK method.
+ */
+function isSupportedSdkEnvironment(): boolean {
+  const environment = window.CrazyGames?.SDK?.environment;
+  return environment === "local" || environment === "crazygames";
+}
+
+/**
  * Initializes the CrazyGames SDK if present on `window`.
  * Safe to call multiple times or when offline.
  */
@@ -42,7 +52,7 @@ export async function initCrazySDK(): Promise<boolean> {
 
   sdkPromise = (async () => {
     try {
-      if (window.CrazyGames?.SDK?.init) {
+      if (isSupportedSdkEnvironment() && window.CrazyGames?.SDK?.init) {
         await window.CrazyGames.SDK.init();
         return true;
       }
@@ -59,7 +69,7 @@ export async function initCrazySDK(): Promise<boolean> {
  * Checks whether CrazyGames requested the game to enter multiplayer mode instantly.
  */
 export function isInstantMultiplayer(): boolean {
-  if (typeof window === "undefined") return false;
+  if (typeof window === "undefined" || !isSupportedSdkEnvironment()) return false;
   return Boolean(window.CrazyGames?.SDK?.game?.isInstantMultiplayer);
 }
 
@@ -72,12 +82,14 @@ export function getInitialInviteRoom(): string | null {
 
   try {
     // 1. Check CrazyGames SDK invite parameters
-    const sdkParam = window.CrazyGames?.SDK?.game?.getInviteParam?.("roomId");
-    if (sdkParam) return sdkParam.trim().toUpperCase();
+    if (isSupportedSdkEnvironment()) {
+      const sdkParam = window.CrazyGames?.SDK?.game?.getInviteParam?.("roomId");
+      if (sdkParam) return sdkParam.trim().toUpperCase();
 
-    const inviteParams = window.CrazyGames?.SDK?.game?.inviteParams;
-    if (inviteParams && typeof inviteParams === "object" && inviteParams.roomId) {
-      return String(inviteParams.roomId).trim().toUpperCase();
+      const inviteParams = window.CrazyGames?.SDK?.game?.inviteParams;
+      if (inviteParams && typeof inviteParams === "object" && inviteParams.roomId) {
+        return String(inviteParams.roomId).trim().toUpperCase();
+      }
     }
 
     // 2. Check standard URL query parameters (?code=XYZ or ?room=XYZ)
@@ -101,7 +113,7 @@ export function generateInviteLink(roomId: string): string {
   const cleanId = roomId.trim().toUpperCase();
 
   try {
-    if (window.CrazyGames?.SDK?.game?.inviteLink) {
+    if (isSupportedSdkEnvironment() && window.CrazyGames?.SDK?.game?.inviteLink) {
       return window.CrazyGames.SDK.game.inviteLink({ roomId: cleanId });
     }
   } catch (e) {
@@ -120,6 +132,7 @@ export function generateInviteLink(roomId: string): string {
  */
 export function updateCrazyRoom(roomId: string, isJoinable: boolean) {
   try {
+    if (!isSupportedSdkEnvironment()) return;
     const cleanId = roomId.trim().toUpperCase();
     window.CrazyGames?.SDK?.game?.updateRoom?.({
       roomId: cleanId,
@@ -136,6 +149,7 @@ export function updateCrazyRoom(roomId: string, isJoinable: boolean) {
  */
 export function leaveCrazyRoom() {
   try {
+    if (!isSupportedSdkEnvironment()) return;
     window.CrazyGames?.SDK?.game?.leftRoom?.();
   } catch (e) {
     console.warn("Failed to notify CrazyGames leftRoom:", e);
@@ -149,6 +163,7 @@ export function addCrazyJoinListener(
   cb: (params: Record<string, string>) => void,
 ) {
   try {
+    if (!isSupportedSdkEnvironment()) return;
     window.CrazyGames?.SDK?.game?.addJoinRoomListener?.(cb);
   } catch {
     // SDK not active
@@ -162,6 +177,7 @@ export function removeCrazyJoinListener(
   cb: (params: Record<string, string>) => void,
 ) {
   try {
+    if (!isSupportedSdkEnvironment()) return;
     window.CrazyGames?.SDK?.game?.removeJoinRoomListener?.(cb);
   } catch {
     // SDK not active
