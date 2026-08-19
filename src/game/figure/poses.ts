@@ -53,8 +53,19 @@ export type Sides = { left: Joint; right: Joint };
 export type Pose = {
   key: string;
   label: string;
-  /** stand = full height · prone = rolled on its side · low = a crouch-sized cube */
-  shape: "stand" | "prone" | "low";
+  /**
+   * Collider half-extents, **as the box finally sits in the world** — `y` is
+   * always the vertical one, `roll` or no `roll`. See `poseExtents`.
+   */
+  half: [number, number, number];
+  /**
+   * Where that box sits relative to the body's origin. **Not `offsetY` /
+   * `offsetZ`**, which move the *figure*; this moves the *collider*, and it is
+   * what lets a pose whose mass is off to one side get a box that hugs it
+   * instead of one grown until a centred box reaches. `x` and `z` turn with the
+   * body's yaw, `y` does not.
+   */
+  centre: [number, number, number];
   roll: boolean;
   rootX: number;
   /** Shift the whole figure inside its collider — the body's own middle is not
@@ -79,7 +90,8 @@ export const POSES: Pose[] = [
   {
     key: "stand",
     label: "Stand",
-    shape: "stand",
+    half: [0.12, 1.0, 0.12],
+    centre: [0, 0, 0],
     roll: false,
     rootX: 0,
     offsetY: 0,
@@ -111,7 +123,11 @@ export const POSES: Pose[] = [
     // Fitted to `pose_7_arms_overhead`: straight up, forearms angled in so the
     // hands meet. The fit put the legs together, which on this rig means one
     // leg exactly inside the other, so they keep the standing stance instead.
-    shape: "stand",
+    // Taller than standing, and lifted to match: the hands reach 1.209 above
+    // the body's origin while the feet stay at -1.0, so a centred box would
+    // either clip the hands or hold the feet 0.1 off the floor.
+    half: [0.12, 1.1, 0.12],
+    centre: [0, 0.1, 0],
     roll: false,
     rootX: 0,
     offsetY: 0,
@@ -140,7 +156,10 @@ export const POSES: Pose[] = [
     label: "Star jump",
     // Arms and legs thrown wide — near the rig's own bind pose, which is why
     // this one needed no fitting.
-    shape: "stand",
+    // Shorter than standing: the legs are spread, so the feet come up to
+    // -0.917 and the head only reaches 0.972.
+    half: [0.12, 0.94, 0.12],
+    centre: [0, 0.025, 0],
     roll: false,
     rootX: 0,
     offsetY: -0.07,
@@ -170,7 +189,12 @@ export const POSES: Pose[] = [
     // Fitted to `pose_0_lie_flat`: straight out, arms reaching past the head.
     // The body is upright here and *rolled* onto its side by `roll`, which is
     // why the arms read as overhead rather than as lying beside the body.
-    shape: "prone",
+    // Long axis horizontal: this is the standing box already tipped over,
+    // stated as it lands rather than rolled at runtime — see poseExtents.
+    // 0.23 tall because that is the torso lying on its side; the arms
+    // reaching past the head sink through it, which is the point.
+    half: [0.96, 0.23, 0.12],
+    centre: [0, 0, 0],
     roll: true,
     rootX: 0,
     offsetY: 0,
@@ -197,7 +221,11 @@ export const POSES: Pose[] = [
   {
     key: "curl",
     label: "Curl up",
-    shape: "low",
+    // A crouch-sized block around the torso, which the curl carries forward
+    // and up — hence the centre. Knees, elbows and the back of the head are
+    // outside it on purpose; the silhouette is 1.26 x 0.57 x 1.00.
+    half: [0.24, 0.28, 0.24],
+    centre: [0, 0.075, 0.18],
     roll: false,
     rootX: 0,
     offsetY: 0.15,
@@ -237,18 +265,29 @@ export const safePose = (n: unknown) =>
   Number.isFinite(n) ? Math.min(POSE_COUNT - 1, Math.max(0, Math.trunc(n as number))) : 0;
 
 /**
- * A folded pose's collider. It is a *lying* box rather than a short upright one:
- * the curl measures 0.76 × 0.76 × 1.10 and a 0.24-wide post inside that is a
- * body with no collision at all, which is what it was. Still deliberately
- * smaller than the body it carries — that gap is the hiding mechanic, see
- * `players/CLAUDE.md`.
+ * Collider half-extents for a pose, in the frame the collider is finally in —
+ * so `[1]` is the vertical one for every pose, which is what lets `Player.tsx`
+ * keep the feet put across a change (its invariant 13).
+ *
+ * Only a chameleon can pose, so `stand` defers to the role's own box: a hunter
+ * is always standing and theirs is the bigger one. Every other row is a
+ * chameleon's, and is deliberately smaller than the body it carries — that gap
+ * is the hiding mechanic, see `players/CLAUDE.md`.
  */
-const LOW_HALF: [number, number, number] = [0.28, 0.38, 0.42];
-
-/** Collider half-extents for a pose. */
 export function poseExtents(
   pose: number,
-  [hx, hy, hz]: [number, number, number],
+  role: [hx: number, hy: number, hz: number],
 ): [number, number, number] {
-  return POSES[safePose(pose)].shape === "low" ? LOW_HALF : [hx, hy, hz];
+  const i = safePose(pose);
+  return i === 0 ? role : POSES[i].half;
 }
+
+/** Where that box sits, relative to the body's origin. `x` and `z` are in the
+ *  body's own frame and turn with its yaw; `y` is world-vertical either way,
+ *  which is what `Player.tsx` needs to keep the feet put (its invariant 13). */
+export function poseCentre(pose: number): readonly [number, number, number] {
+  const i = safePose(pose);
+  return i === 0 ? ORIGIN : POSES[i].centre;
+}
+
+const ORIGIN = [0, 0, 0] as const;

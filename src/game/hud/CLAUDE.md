@@ -29,7 +29,9 @@ you join.
 - `DebugPanel.tsx` — the developer-mode readout, bottom left: **drawn fps and
   frame-loop ticks, which are different numbers** (`MAX_FPS` throttles the draw
   only, so a 120 Hz display ticks 120 and draws 60), the local
-  player's position, camera, ground and cling state, and **every number of the
+  player's position, camera, ground and cling state, the pose's collider box and
+  centre, the **`buried` percentage** (what share of the body's skin is inside
+  geometry — lime, amber over half, red over 85%), and **every number of the
   pose they are holding**, joint by joint — the arms listed L and R separately,
   as the table states them. Its header chip is the **developer
   mode toggle** and stays on screen when the mode is off. Mounted only in a

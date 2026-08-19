@@ -16,6 +16,11 @@
 - `rig.ts` — writing a pose onto a skeleton. **The one file here with no React
   in it**, which is what lets the pose maths be run against the real `.glb`
   outside a browser.
+- `samples.ts` — points spread over the body's skin, for asking how much of a
+  player is buried in geometry. **Developer mode only**: nothing in the game
+  reads it, `players/Player.tsx` point-queries rapier with it, and every use is
+  behind `DEV`, so none of it reaches `dist/`. **It reads the live figure rather
+  than a table** — see invariant 6.
 - `poses.ts` — the five poses as joint angles, plus the collider extents each
   one needs. Three of them were **fitted** to the sculpts in the `reference`
   collection of `characters/figure-poses.blend`, which are hand-modelled and
@@ -118,28 +123,77 @@ the chameleons who survived a round. Three things about it are load-bearing:
    across itself, concentrated at the shoulders, hips and neck. The measurement
    that showed it — the ratio of a triangle's UV span to its 3D span — is the one
    to reach for if painting ever looks torn again.
-5. **`LOW_HALF` is a whole box, and none of it comes from the role.** A folded
-   pose is *lying down*: the curl measures 0.76 × 0.76 × 1.10, so its collider is
-   `[0.28, 0.38, 0.42]` rather than the chameleon's own 0.12-wide post cut short.
-   The post was a body with effectively no collision — you could stand a curled
-   player inside a table. Tying any of it to `hx` is the older mistake:
-   narrowing the chameleon so they could sink into walls also squashed their
-   crouch to nothing.
-6. **`safePose` guards everything off the wire.** A pose index arrives from the
+5. **Every pose states its own whole box, in the axes the box ends up in.**
+   `half` is a `Pose` field like any other, and none of it comes from the role —
+   a folded pose is *lying down*, so the curl is `[0.28, 0.38, 0.42]` rather than
+   the chameleon's own 0.12-wide post cut short. The post was a body with
+   effectively no collision: you could stand a curled player inside a table.
+   Tying any of it to `hx` is the older mistake — narrowing the chameleon so they
+   could sink into walls also squashed their crouch to nothing. `stand` is the
+   one row that defers to the role, because a hunter never poses and theirs is
+   the bigger box.
+
+   **The box is the body's core minus about a centimetre, and `centre` is what
+   makes that affordable.** Measured off the posed mesh: the torso is 0.129
+   half-deep and the standing box is 0.12, so a chameleon pressed to a wall puts
+   their back *into* it. Every pose now works that way, in every direction —
+   which is only possible because a box can be *offset* as well as sized. The
+   curl carries its torso forward and up, so a centred box had to be 0.42 deep to
+   reach it; offset to `[0, 0.075, 0.18]` it hugs the same body at 0.24. Limbs
+   are outside the box on purpose in every pose — arms, knees and the back of the
+   head sink into scenery, and that is the hiding mechanic, not a defect. It
+   costs nothing in fairness: a shot raycasts the visual mesh.
+
+   **The vertical is the exception and stays honest.** `[1]` and `centre[1]`
+   between them put the box's underside on the body's lowest point, because a
+   box shorter than the body does not read as hiding — it reads as sinking into
+   the floor. That is what `reach` was missing: its hands reach 1.209 while its
+   feet stay at -1.0, so it is 1.1 tall and lifted 0.1 rather than the plain 1.0
+   every upright pose used to share.
+
+   **World axes, not the figure's**, which is the half that had a bug in it.
+   `lie` is written `[1.0, 0.12, 0.12]` — the standing box already tipped over —
+   rather than `[0.12, 1.0, 0.12]` plus a roll applied to the collider at
+   runtime. The roll was real, so the box was genuinely 0.12 tall while
+   `poseExtents(...)[1]` reported 1.0, and `Player.tsx` believed the second
+   number. Going from `lie` to `curl` therefore "shrank" the body from 1.0 to
+   0.38 and dropped its centre 0.62 to keep feet that were never there — putting
+   a kinematic body under the floor, which cannot be pushed back out. `roll`
+   still exists and still lays the *figure* over inside `StickFigure`; the
+   collider no longer knows about it.
+6. **`samples.ts` reads the body that is standing there, and must never become
+   a table.** It was one for an afternoon: nineteen bone positions per pose,
+   measured off the `.glb` and pasted in. Three things were wrong with that and
+   they are all the same thing. It went stale the moment a joint angle moved,
+   with nothing to regenerate it. It had to repeat the pose-to-angles mapping
+   from `StickFigure`, and the copy got the left/right sign backwards —
+   invisible on a symmetric pose, wrong on the curl. And it described the pose
+   being eased *toward* rather than the one on screen, so a figure mid-transition
+   was measured as if it had already arrived. `SkinnedMesh.getVertexPosition`
+   skins a vertex against the live skeleton, which makes all three moot.
+
+   **Surface points, not bones**, for the same reason a shot raycasts the mesh:
+   the question is what share of the *body* is covered, and bone heads cluster in
+   the torso — a figure with both arms buried in a wall read as barely covered.
+   They are picked by triangle area, so a finely tessellated hand does not
+   outvote the chest, and picked by walking the running total in equal steps
+   rather than at random, so a player standing still gets a number that holds
+   steady instead of shimmering.
+7. **`safePose` guards everything off the wire.** A pose index arrives from the
    network on every patch; an out-of-range one must clamp, not index into
    `undefined`.
 
-7. **The body is one mesh and `userData.body` is how paint finds it.** There is
+8. **The body is one mesh and `userData.body` is how paint finds it.** There is
    nothing per-part to raycast or name.
-8. **The rig ends at the forearm.** There is no hand bone and no root bone —
+9. **The rig ends at the forearm.** There is no hand bone and no root bone —
    `Spine1` is the root, and the shotgun hangs off `LowerArmR`, pushed down that
    bone's own axis by `FOREARM_LENGTH`. If the rig ever gains a hand bone, the
    offset goes away and the grip parents to it instead.
-9. **A pose is composed onto a bone's rest rotation, never written over it.**
+10. **A pose is composed onto a bone's rest rotation, never written over it.**
    The rig is bound in the star pose, so a bone's rest rotation is most of where
    its limb already points. Overwriting it folds the body inside out — which is
    not a subtle failure, and is worth recognising on sight.
-10. **Six bones are leaned rather than aimed, and a lean's sign is the
+11. **Six bones are leaned rather than aimed, and a lean's sign is the
     opposite of a limb's.** `Spine1` runs *downward* from the waist, so aiming it
     at the sky folds the figure in half; the head already points where it should,
     and a collar bone points sideways. `Spine1`, `Spine1001`, `Neck`, `Head` and
@@ -158,7 +212,7 @@ the chameleons who survived a round. Three things about it are load-bearing:
     claimed to be, and which reads in game as a long noodle rather than as a
     mistake. Check a new lean against `torso: { x: 1.5 }`, which puts the head
     bone at z ≈ +0.63, i.e. behind the pelvis.
-11. **The arms ride the two spine leans and the legs do not.** That was structural
+12. **The arms ride the two spine leans and the legs do not.** That was structural
     in the old jointed rig — the legs hung outside the torso group. On a
     skeleton the legs hang off the very bone the lean is written onto, so it is
     kept deliberately: a limb's target is stated in the figure's frame and
@@ -169,18 +223,18 @@ the chameleons who survived a round. Three things about it are load-bearing:
     the arm still aims where the pose put it. It does change the arm's *roll*
     about its own axis, since a swing solved in a rolled parent frame arrives
     rolled; `shoulder.twist` is the knob for taking that back.
-12. **The skeleton sits inside a node the exporter rotated**, to stand a Z-up
+13. **The skeleton sits inside a node the exporter rotated**, to stand a Z-up
     model up in a Y-up world. The bone chain therefore starts from that node's
     rotation rather than from nothing. Miss it and every target is solved in a
     frame tipped on its side — the figure poses itself confidently into
     nonsense.
-13. **Nothing here suspends.** The model is fetched imperatively and a figure
+14. **Nothing here suspends.** The model is fetched imperatively and a figure
     renders nothing until it lands. `StickFigure` sits inside the player's
     collider, and a suspending component tears its whole subtree down — which is
     the same hazard `world/` documents as its invariant 8, with rapier panicking
     rather than recovering.
 
-14. **The angles are fitted to the sculpts, not eyeballed — and the first set
+15. **The angles are fitted to the sculpts, not eyeballed — and the first set
     was eyeballed, which is why they were wrong.** The original table was authored
     against the *old procedural capsule figure*, whose proportions and hip
     placement differ from the model: measuring this rig's own bind pose gives a
@@ -201,7 +255,7 @@ the chameleons who survived a round. Three things about it are load-bearing:
     target measured in Blender units against a model in game units is a 28×
     mismatch that still "converges", just to nonsense.
 
-15. **A folded pose is *solved* where it can be and eyeballed where it cannot,
+16. **A folded pose is *solved* where it can be and eyeballed where it cannot,
     and fitting it to the sculpt is neither.** Chamfer distance against
     `pose_6_curl_ball` scores a body sprawled open as well as it scores a ball —
     a big arched figure still has surface near a blob everywhere it matters to
@@ -219,7 +273,7 @@ the chameleons who survived a round. Three things about it are load-bearing:
     real `.glb` in Node through the real `rig.ts`, write the vertices out, and
     look at them in Blender beside the sculpt.
 
-16. **A pose that folds the body must be put back onto its collider.**
+17. **A pose that folds the body must be put back onto its collider.**
     The body's origin is the collider's centre, so the figure's feet land at the
     collider's bottom edge by construction — true for every pose that keeps the
     legs under it, and false the moment they come up. `curl` bottoms out 0.59
@@ -232,7 +286,7 @@ the chameleons who survived a round. Three things about it are load-bearing:
     folds. They are also what keeps the camera honest — `players/CLAUDE.md` aims
     at the origin precisely because every pose is centred on it.
 
-17. **`Spine1001` is not a second spine bend, and driving it is wasted work.**
+18. **`Spine1001` is not a second spine bend, and driving it is wasted work.**
     It sits at *exactly* the same origin as `Spine1` — both at (0, 0.03, −0.01),
     measured — so a rotation written onto it turns the upper body about the same
     pivot the torso lean already uses. It composes; it does not curve. The rig
@@ -242,7 +296,7 @@ the chameleons who survived a round. Three things about it are load-bearing:
     curl deliberately does not use it. **A genuine C-curve needs a bone between
     the two in Blender, not a number here.**
 
-18. **A twist is applied inside the rest rotation; an aim is applied outside
+19. **A twist is applied inside the rest rotation; an aim is applied outside
     it.** A limb's `twist` turns the bone about its own length — local +Y, which
     is where Blender points a bone and what `restDir` already reads — so it goes
     on as `swing * rest * twist`, leaving the limb pointing exactly where the aim
@@ -251,7 +305,7 @@ the chameleons who survived a round. Three things about it are load-bearing:
     that moves the hand and is not what the word means. A leaning bone has no
     `twist` of its own: yaw is already one of its three axes.
 
-19. **The `.glb` carries the rig's *object* transform, and getting it wrong
+20. **The `.glb` carries the rig's *object* transform, and getting it wrong
     makes the character invisible rather than wrong-looking.** glTF writes the
     armature object's location, rotation and scale as the root node — it does
     not bake them away — so whatever the rig is sitting on in Blender is where

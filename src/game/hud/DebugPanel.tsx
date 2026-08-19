@@ -155,6 +155,22 @@ export function DebugPanel({ map, phase }: { map: string; phase: string }) {
                 <span className="text-lime-300">{num(player.half[1])}</span>
                 <span className="text-sky-300">{num(player.half[2])}</span>
               </Row>
+              {/* Green in the open, amber once most of the body is in
+                  something, red when there is effectively none of it left
+                  showing — a spot no hunter could ever see into. */}
+              <Row label="buried">
+                <span
+                  className={
+                    player.buried > 0.85
+                      ? "text-red-400"
+                      : player.buried > 0.5
+                        ? "text-amber-300"
+                        : "text-lime-300"
+                  }
+                >
+                  {(player.buried * 100).toFixed(0).padStart(3)}%
+                </span>
+              </Row>
               <Row label="yaw / pitch">
                 <span className="text-amber-300">{num(player.yaw)}</span>
                 <span className="text-amber-300">{num(player.pitch)}</span>
@@ -190,8 +206,15 @@ export function DebugPanel({ map, phase }: { map: string; phase: string }) {
               <Head>
                 pose {player.pose} · <span className="text-fuchsia-300">{pose?.key}</span>
               </Head>
-              <Row label="shape">
-                <span className="text-cyan-300">{pose?.shape}</span>
+              <Row label="box">
+                <span className="text-cyan-300">
+                  {pose ? pose.half.map((n) => n.toFixed(2)).join(" ") : "—"}
+                </span>
+              </Row>
+              <Row label="centre">
+                <span className="text-cyan-300">
+                  {pose ? pose.centre.map((n) => n.toFixed(2)).join(" ") : "—"}
+                </span>
               </Row>
               <Row label="roll">
                 <span className={pose?.roll ? "text-lime-400" : "text-neutral-700"}>

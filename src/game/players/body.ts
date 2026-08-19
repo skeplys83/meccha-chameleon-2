@@ -16,13 +16,23 @@ import type { Role } from "@/game/shared/protocol";
  * deeper does not make anyone harder to hit — it only changes where they can
  * stand.
  *
- * The collider is square in plan and does **not** turn with the figure's yaw, so
- * one number has to serve both across and front-to-back. It is set by the
- * shallower of the two, the depth; the cost is that a shoulder clips further
- * than a back does, which flatters the silhouette rather than spoiling it.
+ * The collider *does* turn with the figure's yaw — `Player.tsx` hands it one
+ * every frame — but this box is square in plan, so one number serves both across
+ * and front-to-back. It is set by the shallower of the two, the depth; the cost
+ * is that a shoulder clips further than a back does, which flatters the
+ * silhouette rather than spoiling it. **Keep it square.** A standing box that is
+ * wider one way than the other changes how far you sit off a wall as you turn,
+ * and a chameleon on a wall turns freely with Q/E.
  *
  * A hunter is not hiding, so theirs stays honest — and wider, because they are
  * the bigger figure.
+ *
+ * This is only the *standing* box. A posed chameleon gets its own from
+ * `figure/poses.ts`, and `lie` and `curl` are legitimately oblong — they are
+ * lying down, so there is no facing left for a turn to spoil. The 0.01 is the
+ * whole rule there too: every pose's box is its own body's core less about a
+ * centimetre, so a chameleon sinks slightly into whatever they are against
+ * whichever way they are folded.
  */
 const CHAMELEON = 0.12;
 const HUNTER = 0.52;

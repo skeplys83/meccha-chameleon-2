@@ -337,7 +337,8 @@ grepping it. Two things are on it today:
   `world/GltfLevel.tsx` (the green `ROOM_SURFACE` wireframes). This replaced
   `SHOW_COLLISION`, a hand-flipped constant that shipped as `true`.
 - **`hud/DebugPanel`**, bottom left: fps, the local player's position, camera,
-  ground and cling state, and every number of the pose they are holding.
+  ground and cling state, the pose's collider box, the share of the body
+  currently buried in geometry, and every number of the pose they are holding.
 
 **`DEV` decides whether any of it exists; the toggle decides whether it is
 showing.** `dev.ts` holds a small subscribable flag beside the build one — on by

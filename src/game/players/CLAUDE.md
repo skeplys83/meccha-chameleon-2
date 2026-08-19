@@ -26,11 +26,31 @@ bugs have been fixed; the invariants below are all scars.
   0.13 half-deep and the collider is 0.12, so pressing your back to a wall puts
   the body *against* it rather than a body-depth short of it. That gap is the
   hiding mechanic, and it costs nothing in fairness because a shot raycasts the
-  visual mesh and never the collider. **A folded pose replaces the box outright**
+  visual mesh and never the collider. **Every pose replaces the box outright**
   rather than shortening this one — a curled body lies down, so it needs a lying
-  box; `figure/poses.ts`'s `poseExtents` owns that.
+  box; `figure/poses.ts`'s `poseExtents` owns that, and `BODY` is only what a
+  standing player of each role gets.
 - `pointerLock.ts` — the shared canvas handle, and the retry loop that actually
   gets the lock back.
+
+**`Player.tsx` also reports a `buried` fraction, in developer mode only.** It
+point-queries rapier with `figure/samples.ts` ten times a second and reports what
+share of the posed body's *skin* is inside solid geometry. **Nothing acts on
+it** — it is there to be watched while deciding what a fair depth is, because
+the collider being smaller than the body means some of it is always the hiding
+mechanic working.
+
+**The query must exclude the player's own rigid body**, and this is the one that
+will catch you. The sample points are on the body and the body is wearing a
+collider, so a chameleon alone in an empty hall reported **58%** — not a
+mismeasurement of the world but an exact count of their own skin inside their
+own box, and constant wherever they stood. `intersectionsWithPoint` takes a
+`filterExcludeRigidBody`; pass it.
+
+Two more things before trusting the number. A `coltri_*` is a trimesh and a
+trimesh has no interior, so points inside one read as outside. And movement is
+client-authoritative, so anything eventually built on this constrains honest
+players and not a patched bundle.
 - `RemotePlayers.tsx` — everyone else, plus `remoteFigures`, the map
   `combat/` raycasts to hit people.
 - `controls.ts` — the keyboard map and the `Control` union.
@@ -160,8 +180,14 @@ one role, and **adding a control means deciding whose it is.**
     Standing also needs `GROUND_STICK`, a small constant downward speed, because a
     character asking for exactly zero vertical movement drifts a hair off the
     surface and `computedGrounded` starts flickering.
-13. **Resizing the collider must move the body too.** A pose with a smaller
-    `shape` swaps the cuboid's half-extents, and resizing around a fixed centre
+13. **What has to stay put is the box's *underside*, not its half-height.** A
+    pose swaps the cuboid's half-extents *and* its offset, so the thing to track
+    is `centre[1] - half[1]` — the signed drop from the body's origin to the
+    bottom of the box. `footOffset` is that, and the frame loop folds any change
+    in it into `bodyPos` before anything reads it. Tracking the half-height alone
+    was right only while every box was centred; `reach` is 1.1 tall and lifted
+    0.1, and under the old rule pressing 2 would have raised the player 0.1 off
+    the floor. Getting it wrong in either direction
     buries the feet of a *growing* box in the floor. As a dynamic body that was
     fatal — rapier resolved the penetration by dropping the player out of the
     world, which looked like "pausing teleported me into the ground" and left a
@@ -170,6 +196,16 @@ one role, and **adding a control means deciding whose it is.**
     half-height into `bodyPos` before anything reads it, so the feet stay put. The
     `y < -3` catch is kept as insurance rather than as the load-bearing thing it
     used to be.
+
+    The second half of that is what `lie` got wrong. Its box used to be the
+    standing one with a `Math.PI / 2` roll applied to the collider, so the real
+    vertical half was 0.12 while `poseExtents(...)[1]` still said 1.0. Pressing 5
+    from it read the change as 1.0 → 0.38 and dropped the body 0.62 into the
+    floor, where a kinematic body stays. **A pose's box is now stated in the axes
+    it ends up in and the collider carries yaw only** — so `lie` is
+    `[1.0, 0.12, 0.12]`, the step out of it is +0.26, and the feet do not move.
+    The figure's roll is unaffected; it was always animated inside
+    `StickFigure`.
 14. **A body must not fall through a world that has not loaded.** A map built
     from files suspends and `Room` renders nothing while it does, so between one
     map unmounting and the next committing there are no colliders anywhere. The

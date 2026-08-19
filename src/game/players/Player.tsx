@@ -25,7 +25,8 @@ import {
 import { BODY, GRAVITY } from "./body";
 import { characterController } from "./controller";
 import { FIRE_INTERVAL_MS, type Role } from "@/game/shared/protocol";
-import { POSES, poseExtents } from "@/game/figure/poses";
+import { POSES, poseCentre, poseExtents } from "@/game/figure/poses";
+import { bodySamples, findBody, makeSampleBuffer } from "@/game/figure/samples";
 import { DEV, reportPlayer } from "@/game/dev";
 import { ROOM_SURFACE } from "@/game/world/Room";
 import { surfaceRevision } from "@/game/world/surface";
@@ -76,6 +77,56 @@ const wallUp = new THREE.Vector3();
 const wallRight = new THREE.Vector3();
 /** Where the body wants to go this frame, before the controller has its say. */
 const desired = new THREE.Vector3();
+/** The pose's collider offset, turned into the body's yaw. */
+const boxCentre = new THREE.Vector3();
+/** Scratch for the buried-fraction probe, which is developer mode only. */
+const probeBuffer = makeSampleBuffer();
+
+/**
+ * What share of the posed body is inside solid geometry — 0 for a player
+ * standing in the open, 1 for one entirely swallowed by a wall.
+ *
+ * **Developer mode only, and a readout rather than a rule.** Nothing acts on
+ * it; it is here to be watched while deciding what a fair depth is. The
+ * collider is deliberately smaller than the body (`body.ts`), so *some* of this
+ * is the hiding mechanic working — the question it exists to answer is how much
+ * is too much.
+ *
+ * **The player's own rigid body is excluded, and that is not optional.** The
+ * sample points are on the body, and the body wears a collider — so without the
+ * filter a chameleon standing alone in an empty hall reads 58%, which is simply
+ * the fraction of their own skin inside their own box.
+ *
+ * Rapier's point query, so it sees every `col_*` the map defines without a
+ * second list. **A `coltri_*` is hollow** — a trimesh has no interior — so
+ * points inside one read as outside and the number under-counts near those.
+ * The dungeon has 17 of them against ~540 solid ones.
+ */
+function buriedFraction(
+  world: ReturnType<typeof useRapier>["world"],
+  mesh: THREE.SkinnedMesh,
+  self: RapierRigidBody,
+) {
+  const count = bodySamples(mesh, probeBuffer);
+  if (count === 0) return 0;
+  let inside = 0;
+  for (let i = 0; i < count; i++) {
+    let hit = false;
+    world.intersectionsWithPoint(
+      probeBuffer[i],
+      () => {
+        hit = true;
+        return false; // stop at the first — we want whether, not which
+      },
+      undefined,
+      undefined,
+      undefined,
+      self,
+    );
+    if (hit) inside += 1;
+  }
+  return inside / count;
+}
 /** The fall-back drop-in point, used only if a map somehow has none. */
 const SPAWN: [number, number, number] = [0, 2, 0];
 /** Nothing under the floor can recover on its own, so anything below this is
@@ -186,12 +237,18 @@ export function Player({
   const { world } = useRapier();
 
   const [hx, hy, hz] = BODY[role];
-  /** Half-height of the collider as it currently stands, so a pose that
-   *  changes it can move the body by the difference. */
-  const halfHeight = useRef(hy);
+  /** How far the collider's underside sits below the body's origin, signed, as
+   *  it currently stands — so a pose that moves it can move the body by the
+   *  difference and leave the feet where they were. Not the half-height: a box
+   *  that is offset as well as resized changes this by neither on its own. */
+  const footOffset = useRef(-hy);
+  /** Developer mode only: the last buried fraction, and when it was taken.
+   *  Sampled ten times a second — nobody sinks into a wall inside 16 ms, and
+   *  the readout is only redrawn that often anyway. */
+  const buried = useRef(0);
+  const buriedAt = useRef(0);
   // In paint mode even a hunter steps out to third person to see their body.
   const firstPerson = role === "hunter" && !painting;
-  const rolled = POSES[pose].roll;
 
   // This component is keyed on the room, so mounting means a new map. The
   // follow camera's eased distance belongs to the old one and has to be
@@ -540,11 +597,16 @@ export function Player({
     const p = rb.translation();
     bodyPos.set(p.x, p.y, p.z);
 
-    /** A curled or seated figure gets a smaller collider (see poseExtents). */
-    const half = poseExtents(pose, [hx, hy, hz])[1];
-    if (half !== halfHeight.current) {
-      bodyPos.y += half - halfHeight.current;
-      halfHeight.current = half;
+    /** Each pose carries its own box (see poseExtents), stated in world axes —
+     *  so `[1]` is its vertical half-extent whatever the pose is doing, and the
+     *  whole triple is what cling has to probe with. */
+    const poseHalf = poseExtents(pose, [hx, hy, hz]);
+    const half = poseHalf[1];
+    const centre = poseCentre(pose);
+    const foot = centre[1] - half;
+    if (foot !== footOffset.current) {
+      bodyPos.y += footOffset.current - foot;
+      footOffset.current = foot;
     }
 
     // Nothing should reach this now that penetration cannot eject anybody, but a
@@ -602,13 +664,13 @@ export function Player({
         } else {
           // Wrap around an edge into whatever we are climbing toward: a wall
           // into the ceiling, an inside corner, a ceiling back onto a wall.
-          const wrapped = wrapCling(bodyPos, cling.current, alongSurface, [hx, half, hz], solids.current);
+          const wrapped = wrapCling(bodyPos, cling.current, alongSurface, poseHalf, solids.current);
           cling.current =
-            wrapped ?? holdsCling(bodyPos, cling.current, [hx, half, hz], solids.current);
+            wrapped ?? holdsCling(bodyPos, cling.current, poseHalf, solids.current);
         }
       } else if (reclingGrace.current <= 0) {
         // No grab key: walking squarely into a wall is what takes you onto it.
-        cling.current = findCling(bodyPos, move, [hx, half, hz], solids.current);
+        cling.current = findCling(bodyPos, move, poseHalf, solids.current);
       }
     } else {
       cling.current = null;
@@ -690,13 +752,18 @@ export function Player({
     if (grounded.current && vy.current < 0) vy.current = 0;
 
     // The body's rotation is frozen, so the figure is turned by rotating the
-    // visual group and the collider together. The roll of a lying pose is
-    // animated inside StickFigure; the collider only needs the end state.
-    euler.set(0, bodyYaw.current, rolled ? Math.PI / 2 : 0);
-    quat.setFromEuler(euler);
+    // visual group and the collider together. Only yaw: a lying pose's roll is
+    // animated inside StickFigure, and its box is already stated lying down.
     euler.set(0, bodyYaw.current, 0);
+    quat.setFromEuler(euler);
     visual.current?.quaternion.setFromEuler(euler);
     collider.current?.setRotationWrtParent(quat);
+    // Rapier holds the collider's offset and its rotation as siblings rather
+    // than composing one through the other, so an offset left alone points at
+    // world +Z however the body is facing. Turn it ourselves.
+    collider.current?.setTranslationWrtParent(
+      boxCentre.set(centre[0], centre[1], centre[2]).applyQuaternion(quat),
+    );
 
     const net = netState.current;
     net.x = p.x;
@@ -718,6 +785,16 @@ export function Player({
     // `src/game/dev.ts`. Reported from here because this is the only place that
     // knows any of it: none of `grounded`, `vy` or `cling` is on the wire.
     if (DEV) {
+      const now = state.clock.elapsedTime;
+      if (now - buriedAt.current > 0.1) {
+        buriedAt.current = now;
+        const mesh = findBody(visual.current);
+        // Skinning reads the bones' `matrixWorld`, and three only refreshes
+        // those at render — a whole frame after this loop moved the body. Ten
+        // times a second over a figure-sized subtree, doing it here is free.
+        visual.current?.updateWorldMatrix(true, true);
+        buried.current = mesh ? buriedFraction(world, mesh, rb) : 0;
+      }
       reportPlayer({
         role,
         x: bodyPos.x,
@@ -733,6 +810,7 @@ export function Player({
         firstPerson,
         pose,
         half: poseExtents(pose, [hx, hy, hz]),
+        buried: buried.current,
         surfaces: solids.current.length,
       });
     }
@@ -772,9 +850,14 @@ export function Player({
         canSleep={false}
       >
         <CuboidCollider
-          key={POSES[pose].shape}
+          // `args` is read once, at creation, so a pose with a different box
+          // needs a new collider — but only when the numbers actually differ,
+          // or standing still and pressing 1 then 3 would rebuild it for nothing.
+          key={poseExtents(pose, [hx, hy, hz]).join()}
           ref={collider}
           args={poseExtents(pose, [hx, hy, hz])}
+          // Only until the first frame loop turns it into the body's yaw.
+          position={[...poseCentre(pose)]}
         />
         <group ref={visual}>
           {/* In first person the camera sits inside the head, so the hunter's

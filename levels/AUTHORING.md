@@ -136,6 +136,13 @@ variants have different depths; if the collider follows them, a wall that reads
 as one flat face becomes a collider that steps in and out along its length, and
 anything climbing it snags on something invisible.
 
+**And do not band it vertically either.** The same temptation returns turned on
+its side: a plinth at the foot and a cornice at the head are deeper than the wall
+between them, so a collider traced onto them becomes a stack of boxes of
+different depths. A chameleon climbing that wall meets a ledge at every seam. One
+box, floor to ceiling, at the **main wall's** depth — the kit's wall body is
+0.5 deep, centred on the tile, and the plinth and cornice simply poke through it.
+
 **Overlap neighbouring slabs slightly** (a few centimetres) rather than abutting
 them exactly, so no ray threads the seam.
 
