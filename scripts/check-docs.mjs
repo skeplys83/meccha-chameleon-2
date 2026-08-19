@@ -49,6 +49,10 @@ const UNCLAIMED = [
   "tsconfig.json",
   "vite.config.ts",
   "vitest.config.ts",
+  // Bumped by `npm run release` on every deploy. Gating a mechanical tag stamp
+  // behind "go and re-read the root doc" would train you to pass SKIP_DOC_CHECK
+  // habitually, which is how the gate stops meaning anything.
+  "docker-compose.yml",
   "eslint.config.mjs",
 ];
 

@@ -14,7 +14,7 @@ services:
     # does hold that commit's code.
     build:
       context: .
-    image: superchameleon:d7c75b3
+    image: superchameleon:a1e4a14
     restart: unless-stopped
     ports:
       - "3000:3000"
