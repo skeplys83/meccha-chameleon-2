@@ -84,46 +84,38 @@ fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /
 
 ### Housekeeping
 
-Nothing to do — the stack cleans up after itself. The `prune` service in
-`docker-compose.yml` runs once per deploy and removes every `superchameleon`
-image no container is using, so only the running release is ever on disk.
+Every deploy rebuilds under the same tag, which leaves the previous image
+**untagged** rather than deleting it. Untagged images are invisible to a plain
+`docker images`, so they accumulate quietly — about 17 MB a deploy, since the
+base and `node_modules` layers are shared.
 
-Three things make that safe to leave unattended:
-
-- **It waits for `service_healthy`.** A build that comes up broken keeps the
-  previous image, so there is still something to roll back to.
-- **It only ever names images carrying `LABEL app=superchameleon`** (set in the
-  `Dockerfile`). It is not `docker image prune -a`, so nothing else on the host
-  — cloudflared included — can be caught by it.
-- **`docker image rm` refuses an image a container is using.** The live release
-  is protected by docker itself, not by the filter being right.
-
-There is no rollback image to keep, by design: every `up` rebuilds from the
-checkout, so **rolling back means reverting the commit** and letting the next
-deploy build it. That is a `git revert` and a minute of build. If you would
-rather keep images around anyway, delete the `prune` service and sweep by hand
-instead:
+Sweeping them is one safe command. It only removes untagged images, so nothing
+tagged and nothing running can be caught by it:
 
 ```bash
-docker image prune -a --filter "label=app=superchameleon" --filter "until=336h"
+docker image prune -f
 ```
 
-The **build cache** is separate and is not touched by any of this. It is
-usually the bigger consumer on a build host:
+If you would rather be explicit about which project you are clearing, the
+`Dockerfile` sets `LABEL app=superchameleon` for exactly that:
+
+```bash
+docker image prune -af --filter "label=app=superchameleon"
+```
+
+`-a` there also takes the *current* image if no container is using it, so run it
+while the stack is up. Neither command touches cloudflared or anything else on
+the host.
+
+The **build cache** is separate, untouched by both, and usually the bigger
+consumer on a machine that builds:
 
 ```bash
 docker builder prune --filter "until=336h"
 ```
 
-### If the build runs out of memory
-
-The VPS now does the vite build itself, which the old Docker Hub flow avoided.
-It needs roughly 1–2 GB. If a deploy dies with `Killed` or exit code 137, add
-swap rather than shrinking the build:
-
-```bash
-fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
-```
+There is no rollback image to preserve: every `up` rebuilds from the checkout,
+so **rolling back is a `git revert`** and a minute of build.
 
 ---
 

@@ -196,10 +196,9 @@ step. The line that makes it true is `pull_policy: build` in
 `docker-compose.yml`: without it Portainer's pre-`up` `docker compose pull`
 fails on an image that exists in no registry, and `up` reuses whatever it built
 first, which is how production once served a two-day-old map through several
-redeploys. **The stack also cleans up after itself** — a `prune` service drops
-every image labelled `app=superchameleon` that no container is using, gated on
-the app's healthcheck. Rolling back is therefore a `git revert`, not a retag.
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+redeploys. Each rebuild leaves the previous image untagged; `docker image prune
+-f` sweeps them. Rolling back is a `git revert` rather than a retag, since
+nothing keeps an old image. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## Not built yet
 

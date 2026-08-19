@@ -13,10 +13,8 @@ FROM node:22-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
-# What the cleanup service in docker-compose.yml prunes by. Without a label of
-# our own, the only way to drop old builds is `docker image prune -a`, which
-# would also take every unused image on the box that has nothing to do with
-# this game.
+# So a sweep can name our images and nothing else on the host — see
+# "Housekeeping" in docs/DEPLOYMENT.md.
 LABEL app=superchameleon
 
 COPY package.json package-lock.json ./
