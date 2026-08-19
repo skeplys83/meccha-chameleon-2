@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HostRule } from "./host.ts";
+import { HostRule } from "../host.ts";
 
 /** A seat, as `room.ts` builds them for `resolve`. */
 const seat = (sessionId: string, pid: string) => ({ sessionId, pid });

@@ -9,6 +9,9 @@ npm-debug.log*
 
 # Not part of the running game.
 scripts
+src/server/test
+vitest.config.ts
+tsconfig.server.json
 MEMORY.md
 README.md
 CLAUDE.md

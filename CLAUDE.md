@@ -135,7 +135,7 @@ commit`.
 | command             | what it proves                                                    |
 | ------------------- | ------------------------------------------------------------------- |
 | `npm run typecheck` | both projects compile, and neither half used the other's globals   |
-| `npm test`          | the server suite: 26 tests over the rooms, the draw, and the clock |
+| `npm test`          | the server suite in `src/server/test/`: 26 tests over the rooms, the draw, and the clock |
 | `npm run lint`      | the import boundaries, and the React rules                         |
 | `npm run build`     | the client bundles                                                  |
 

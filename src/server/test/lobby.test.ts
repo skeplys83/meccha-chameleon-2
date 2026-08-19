@@ -1,8 +1,8 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { ColyseusTestServer } from "@colyseus/testing";
-import { bootTestServer, connected, inner, roomOf, settle } from "./test/harness.ts";
-import { MIN_PLAYERS } from "../shared/protocol.ts";
-import { DEFAULT_MATCH_MAP, LOBBY_MAP } from "../shared/mapIds.ts";
+import { bootTestServer, connected, inner, roomOf, settle } from "./harness.ts";
+import { MIN_PLAYERS } from "../../shared/protocol.ts";
+import { DEFAULT_MATCH_MAP, LOBBY_MAP } from "../../shared/mapIds.ts";
 
 let colyseus: ColyseusTestServer;
 

@@ -24,7 +24,7 @@ which is why imports must name the real file (`./room.ts`).
 | `schema.ts`   | `Player` and `GameState` — the wire format, not an abstraction    |
 | `code.ts`     | the invite alphabet, and a code no live room is using             |
 | `monitor.ts`  | the admin panel, and when it is allowed to exist                  |
-| `*.test.ts`   | the suite — see **Testing** below                                 |
+| `test/`       | the suite and its harness — see **Testing** below                 |
 
 ## One class, two names
 
@@ -86,8 +86,13 @@ lobby, and `state.lobby` is the field that makes the return trip possible.
   `kill` refused during the reveal, and a `NaN` position clamped rather than
   encoded.
 
+They live in `test/` rather than beside the source, because none of them maps
+to one module — `lobby.test.ts` and `match.test.ts` both exercise `room.ts` — and
+because `.dockerignore` can then drop the whole folder from the production
+image in one line.
+
 Tests boot on a fixed port, so `vitest.config.ts` runs files one at a time. The
-countdown is ten real seconds, so anything past it calls `start()` directly —
+countdown is five real seconds, so anything past it calls `start()` directly —
 `test/harness.ts` names the private members a test may reach for, so renaming
 one fails to compile instead of silently asserting nothing.
 
