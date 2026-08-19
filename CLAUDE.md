@@ -10,27 +10,27 @@ holding websocket rooms, which is the opposite of what those platforms do.
 
 **One server runs many games at once.** A player opens a **lobby** — the arena,
 playable, with a four-letter invite code and a size between 2 and 12 chosen when
-it was created — and a round begins on a **ten-second countdown**, started either
+it was created — and a round begins on a **five-second countdown**, started either
 by the lobby filling up or by the host pressing Start.
 
 **A round has four phases and the map decides how long it is** (five minutes for
 the dungeon, hiding included):
 
-1. **countdown**, 10s, in the lobby. At zero the server draws one player at
+1. **countdown**, `COUNTDOWN_SECONDS` (5s), in the lobby. At zero the server draws one player at
    random to be the **hunter**; everyone else becomes a **chameleon**. **The
    lobby is closed for the duration** — a stranger with the code is turned away
    until the round is over, because the draw is over whoever is present at zero
    and because a latecomer has no time to load the map they are about to be
    moved to. Anyone this game already knows still gets in, so a blink inside the
    ten seconds is not an ejection.
-2. **hiding**, 20s. The chameleons are moved to the map. **The hunter is not** —
+2. **hiding**, `HIDE_SECONDS` (35s). The chameleons are moved to the map. **The hunter is not** —
    they stay in the lobby, playing the arena alone, so they cannot watch anybody
    choose a spot.
 3. **hunt**, the rest of the round. The bell rings, the hunter is brought in.
    **Being caught does not put you out**: you become a hunter yourself, at the
    spawn point, stripped back to white, and you join the hunt. So the hunt grows
    and the last chameleon is hardest to catch.
-4. **reveal**, 30s. The survivors pulse red through the walls, standing exactly
+4. **reveal**, `REVEAL_SECONDS` (20s). The survivors pulse red through the walls, standing exactly
    where they hid, and every grave marks where somebody was found. **The
    survivors are rooted** — they are the exhibit, and a spot they walk away from
    is not a spot — but they keep their camera, and everyone else walks over to
