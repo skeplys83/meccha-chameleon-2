@@ -197,7 +197,12 @@ there is no registry in the loop. **A fixed tag is a deploy that never happens**
 `docker compose up` builds a service only when no local image by that name
 exists, so without the bump the container keeps running whatever was built
 first. Portainer CE cannot force a rebuild — that switch is a paid feature.
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+**The stack cleans up after itself.** A `prune` service drops every image
+carrying `LABEL app=superchameleon` that no container is using, gated on the
+app's healthcheck so a broken build keeps its predecessor. The cost is that
+rollback is a rebuild rather than a retag. See
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## Not built yet
 

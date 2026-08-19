@@ -74,10 +74,34 @@ the stamping commit changes nothing the build can see, and the image tagged
 
 ### Housekeeping
 
-Every release leaves the previous image on the VPS. They are cheap but not free:
+Nothing to do — the stack cleans up after itself. The `prune` service in
+`docker-compose.yml` runs once per deploy and removes every `superchameleon`
+image no container is using, so only the running release is ever on disk.
+
+Three things make that safe to leave unattended:
+
+- **It waits for `service_healthy`.** A build that comes up broken keeps the
+  previous image, so there is still something to roll back to.
+- **It only ever names images carrying `LABEL app=superchameleon`** (set in the
+  `Dockerfile`). It is not `docker image prune -a`, so nothing else on the host
+  — cloudflared included — can be caught by it.
+- **`docker image rm` refuses an image a container is using.** The live release
+  is protected by docker itself, not by the filter being right.
+
+The cost is that **rollback becomes a rebuild**: pointing the tag at an older
+sha will build it again rather than reusing an image on disk. That is a minute
+or so, and it is the trade the cleanup exists to make. If you would rather keep
+a rollback window, delete the `prune` service and sweep by hand instead:
 
 ```bash
-docker image prune -a --filter "until=336h"   # drop unused images over 2 weeks old
+docker image prune -a --filter "label=app=superchameleon" --filter "until=336h"
+```
+
+The **build cache** is separate and is not touched by any of this. It is
+usually the bigger consumer on a build host:
+
+```bash
+docker builder prune --filter "until=336h"
 ```
 
 ### If the build runs out of memory

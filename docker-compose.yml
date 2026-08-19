@@ -14,7 +14,7 @@ services:
     # does hold that commit's code.
     build:
       context: .
-    image: superchameleon:a1e4a14
+    image: superchameleon:49731dd
     restart: unless-stopped
     ports:
       - "3000:3000"
@@ -24,8 +24,60 @@ services:
       # 443 — see the normalisation in net/client.ts. Behind the Cloudflare
       # tunnel that is what you want.
       PUBLIC_GAME_PORT: "${PUBLIC_GAME_PORT:-3000}"
+    # The prune below waits on this, so a build that comes up broken keeps the
+    # previous image on disk to fall back to. Node 22 has a global fetch, which
+    # is why this needs no curl in the image.
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3000/api/sessions').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
+
+  # Drops every superchameleon image no container is using, on every deploy.
+  #
+  # It runs once and exits. The image the new container is running is "in use"
+  # and is never a candidate; `service_healthy` means the *old* one survives
+  # until the new one is actually answering, so a failed build leaves you
+  # something to roll back to rather than nothing.
+  #
+  # The label is set in the Dockerfile. Without it this would be
+  # `docker image prune -a`, which would also bin every unused image on the
+  # host that has nothing to do with this game — cloudflared included, whenever
+  # it happens to be between containers.
+  #
+  # It mounts the docker socket, which is root on the host. That is the price
+  # of a container managing images, and the reason the command is fixed here
+  # rather than taken from an environment variable.
+  prune:
+    image: docker:cli
+    restart: "no"
+    depends_on:
+      meccha:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    # Deliberately *not* `docker image prune -a`. This only ever passes ids that
+    # already carry our label, so nothing else on the host can be caught by it
+    # even in an edge case. `image rm` refuses an image a container is using, so
+    # the one that just went healthy is protected by docker itself rather than
+    # by our filter being right — and the `|| true` keeps that refusal from
+    # failing the deploy.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        docker image ls --filter "label=app=superchameleon" --quiet
+        | sort -u
+        | xargs -r docker image rm 2>/dev/null;
+        true
