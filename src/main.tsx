@@ -1,5 +1,5 @@
 import { createRoot } from "react-dom/client";
-import { Game } from "@/game/Game";
+import { Game } from "@/client/app/Game";
 import "./index.css";
 
 /** The whole client entry point. */

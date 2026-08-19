@@ -1,6 +1,9 @@
 {
   "compilerOptions": {
     "target": "ES2017",
+    // The browser half. `src/server/` is checked by tsconfig.server.json, which
+    // drops "dom" — so a `window` reference on that side is a compile error
+    // rather than something you find in production.
     "lib": ["dom", "dom.iterable", "esnext"],
     "types": ["vite/client", "node"],
     "allowJs": true,
@@ -21,6 +24,14 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["**/*.ts", "**/*.tsx", "**/*.mts"],
+  "include": [
+    "src/client/**/*.ts",
+    "src/client/**/*.tsx",
+    "src/shared/**/*.ts",
+    "src/main.tsx",
+    "*.ts",
+    "*.mts",
+    "scripts/**/*.mjs"
+  ],
   "exclude": ["node_modules", "dist"]
 }

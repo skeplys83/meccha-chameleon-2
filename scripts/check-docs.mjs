@@ -31,8 +31,7 @@ const EXEMPT = new Set([
 
 /**
  * Paths the root CLAUDE.md does not claim. Everything else that is not inside a
- * documented folder falls through to it — chiefly Game.tsx and Scene.tsx, the
- * composition roots, which belong to no folder.
+ * documented folder falls through to it.
  *
  * `index.html`, `src/main.tsx` and `src/index.css` are *not* here on purpose:
  * they are the client entry point, the root doc describes them, and a change to
@@ -49,6 +48,7 @@ const UNCLAIMED = [
   "package-lock.json",
   "tsconfig.json",
   "vite.config.ts",
+  "vitest.config.ts",
   "eslint.config.mjs",
 ];
 

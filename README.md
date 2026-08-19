@@ -15,7 +15,7 @@ npm install
 npm run dev
 ```
 
-This starts a custom server (`src/game/server/index.ts`, TypeScript run
+This starts a custom server (`src/server/index.ts`, TypeScript run
 directly by Node — no build step): the page on `:3000`, served through Vite in
 middleware mode, and a Colyseus game server on `:2567`. It prints a local-network URL —
 other players on the same Wi-Fi open that.
@@ -59,7 +59,7 @@ Every 45 seconds you whistle, and anyone near enough hears roughly where you are
 ## Stack
 
 About ten thousand lines of TypeScript in one repo, running as **two runtimes
-that share exactly one file** — `src/game/shared/protocol.ts`, which holds the
+that share exactly one file** — `src/shared/protocol.ts`, which holds the
 roles, the phases and every constant both halves must agree on.
 
 ```
@@ -88,7 +88,7 @@ roles, the phases and every constant both halves must agree on.
 ### Node
 
 **The server is TypeScript that Node runs directly.** Node 22 strips the types
-at load, so `node src/game/server/index.ts` just runs and **there is no build
+at load, so `node src/server/index.ts` just runs and **there is no build
 step for the server at all** — `npm run build` produces only the client. That is
 why its schema uses `defineTypes()` rather than decorators, why fields are
 `declare x: T` and never `x!: T`, and why its imports name the real file
@@ -118,16 +118,19 @@ assets. Hosting is a Node 22 Docker image carrying `dist/` and `src/`, installed
 
 ## Layout
 
-The code is grouped by feature, and **each folder documents itself** in a
-`CLAUDE.md` beside the code: what it owns, its invariants and the bug each one
-prevents, and its contracts with the folders around it.
+The code splits three ways, and the split is enforced by ESLint and by two
+tsconfigs rather than by convention. **Each folder documents itself** in a short
+`CLAUDE.md` beside the code: what it owns, the three rules that will bite you,
+and its contracts with the folders around it. The long-form reasoning behind each
+lives in `docs/notes/`.
 
 ```
-src/game/
-  shared/   Role + the constants both halves must agree on
-  server/   Colyseus rooms, matchmaking, schema, UDP     <- runs in Node
-  net/ world/ figure/ paint/ players/ combat/          <- run in the browser
-  sound/ hud/
+src/
+  shared/   Role, the protocol constants, the map registry  <- both halves
+  server/   Colyseus rooms, matchmaking, schema, HTTP       <- runs in Node
+  client/
+    app/    Game.tsx, Scene.tsx, the session hooks
+    net/ world/ figure/ paint/ players/ combat/ sound/ hud/ <- the browser
 public/sounds/   nine .mp3 files, all peak-normalised to -1 dBFS
 ```
 

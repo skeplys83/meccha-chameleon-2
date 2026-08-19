@@ -17,8 +17,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
-const PROTOCOL = "src/game/shared/protocol.ts";
-const ROOT = "src/game";
+const PROTOCOL = "src/shared/protocol.ts";
+const ROOT = "src";
 const IGNORED = new Set(["node_modules", ".next", ".git"]);
 
 /** `export const NAME =` — a definition. Not `export { NAME }`, a re-export. */

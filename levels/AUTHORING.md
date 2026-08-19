@@ -4,7 +4,7 @@ This file sits beside the `.blend` files because it is about **authoring**, not
 about the game's code. It is the method: how a level is built, how its collision
 is made, and how to prove it is right before anyone plays it.
 
-`src/game/world/CLAUDE.md` is the other half — what the loader *reads*, and the
+`src/client/world/CLAUDE.md` is the other half — what the loader *reads*, and the
 invariants the runtime depends on. Where this file says "the loader does X", that
 doc is the authority.
 

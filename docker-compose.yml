@@ -1,11 +1,28 @@
 services:
   meccha:
-    build: .
+    # Built on the VPS, from this repo. There is no registry in the loop: the
+    # git checkout Portainer already has *is* the build context.
+    #
+    # The tag is what makes a deploy happen. `docker compose up` builds a
+    # service only when no local image by that name exists, so bumping this
+    # line is the whole mechanism — Portainer CE needs no "force rebuild"
+    # (a paid feature) and no `--build` flag of its own.
+    #
+    # `npm run release` stamps it with the current commit. Because
+    # docker-compose.yml is in .dockerignore, the stamping commit changes
+    # nothing inside the build context — so the image tagged with a sha really
+    # does hold that commit's code.
+    build:
+      context: .
+    image: superchameleon:d7c75b3
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
       SESSION_NAME: "Meccha Chameleon"
+      # 3000 is read by the client as "no explicit port" and it connects on
+      # 443 — see the normalisation in net/client.ts. Behind the Cloudflare
+      # tunnel that is what you want.
       PUBLIC_GAME_PORT: "${PUBLIC_GAME_PORT:-3000}"
     logging:
       driver: json-file

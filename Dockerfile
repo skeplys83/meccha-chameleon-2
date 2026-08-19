@@ -21,4 +21,4 @@ COPY --from=build --chown=node:node /app/src ./src
 
 USER node
 EXPOSE 3000
-CMD ["node", "src/game/server/index.ts"]
+CMD ["node", "src/server/index.ts"]

@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // No "dom": this half runs in Node and never sees a window, a document or
+    // a fetch-from-a-page. Leaving it in is how browser API calls get into
+    // server code and are only found at runtime.
+    "lib": ["esnext"],
+    "types": ["node"]
+  },
+  "include": ["src/server/**/*.ts", "src/shared/**/*.ts"]
+}

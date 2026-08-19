@@ -1,17 +1,20 @@
 # Deployment Pipeline
 
-A guide to building, pushing, and deploying Super Chameleon to a multi-tenant VPS using Docker Hub, Portainer, and Cloudflare Tunnel.
+A guide to deploying Super Chameleon to a VPS using Portainer and Cloudflare
+Tunnel. **There is no registry in the loop** — Portainer builds the image on the
+VPS from this repository, so GitHub is the only platform in the chain.
 
 ```
-┌──────────────┐         1. Push Image         ┌─────────────────────────┐
-│ Local Mac    │ ────────────────────────────▶ │ Docker Hub              │
-│ (Build Host) │                               │ skplys83/superchameleon │
-└──────────────┘                               └─────────────────────────┘
-                                                            │
-                                                     2. Pull│Image
-                                                            ▼
+┌──────────────┐    1. git push    ┌─────────────────────────┐
+│ Local Mac    │ ────────────────▶ │ GitHub                  │
+└──────────────┘                   │ skeplys83/superchameleon│
+                                   └─────────────────────────┘
+                                               │
+                                     2. Portainer polls (5m),
+                                        pulls, and *builds*
+                                               ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│ Friend's VPS                                                           │
+│ VPS                                                                    │
 │                                                                        │
 │   ┌───────────────────────────┐      HTTP / WS       ┌──────────────┐  │
 │   │ cloudflared (Tunnel)      │ ───────────────────▶ │ Game App     │  │
@@ -37,25 +40,54 @@ A guide to building, pushing, and deploying Super Chameleon to a multi-tenant VP
 
 ---
 
-## 1. Build & Push to Docker Hub (Mandatory Post-Push Step)
+## 1. Releasing (the mandatory post-push step)
 
-Because the build host is typically macOS and the target VPS is Linux `x86_64`, build for `linux/amd64` to prevent OOM on low-memory VPS instances.
-
-Every push to `main` must immediately be followed by building and pushing the Docker image (or automated via `.github/workflows/deploy.yml`):
+**Bumping the image tag in `docker-compose.yml` is the deploy.** Nothing else
+triggers one.
 
 ```bash
-# Automated via npm script:
-npm run docker:deploy
+npm run release                              # stamps image: superchameleon:<sha>
+git commit -am "Release $(git rev-parse --short HEAD)"
+git push
+```
 
-# Or manual steps:
-# 1. Login to Docker Hub
-docker login
+Portainer's git poll (5 minutes) sees the changed compose file, pulls it, finds
+it has no local image by that name, and **builds one**. Then it recreates the
+container. To skip the wait, press **Pull and redeploy** in the stack panel.
 
-# 2. Build multi-arch image
-docker build --platform linux/amd64 -t skplys83/superchameleon:latest .
+### Why a tag, and not just "redeploy"
 
-# 3. Push image
-docker push skplys83/superchameleon:latest
+`docker compose up` builds a service **only when no local image by that name
+exists**. A fixed tag — or no `image:` line at all — means the image is built
+once and reused for ever: git updates, the container restarts, and the code
+inside it never changes. That is exactly the failure this repo hit, where the
+production server served a two-day-old map after several redeploys.
+
+The switches that would force it anyway — Portainer's **Re-pull image** and
+**Force redeployment** — are Business Edition features. The tag bump costs
+nothing and needs no edition.
+
+The stamp lands one commit "behind" itself: you stamp at HEAD, then commit. That
+is correct rather than sloppy — `docker-compose.yml` is in `.dockerignore`, so
+the stamping commit changes nothing the build can see, and the image tagged
+`<sha>` really does hold that commit's code.
+
+### Housekeeping
+
+Every release leaves the previous image on the VPS. They are cheap but not free:
+
+```bash
+docker image prune -a --filter "until=336h"   # drop unused images over 2 weeks old
+```
+
+### If the build runs out of memory
+
+The VPS now does the vite build itself, which the old Docker Hub flow avoided.
+It needs roughly 1–2 GB. If a deploy dies with `Killed` or exit code 137, add
+swap rather than shrinking the build:
+
+```bash
+fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
 ```
 
 ---
@@ -82,25 +114,33 @@ docker push skplys83/superchameleon:latest
 
 In Portainer ➔ **Stacks** ➔ **Add stack**:
 
-```yaml
-version: "3.8"
+This stack is deployed **from the git repository**, not pasted in: point
+Portainer at `https://github.com/skeplys83/superchameleon`, compose path
+`docker-compose.yml`, and turn GitOps polling on. The file it uses is the one in
+this repo:
 
+```yaml
 services:
   meccha:
-    image: skplys83/superchameleon:latest
-    container_name: SuperChameleon
+    build:
+      context: .
+    image: superchameleon:<sha>      # bumped by `npm run release`
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
-      SESSION_NAME: "Super Chameleon"
-      PUBLIC_GAME_PORT: "443" # Directs clients to secure wss:// on 443
+      SESSION_NAME: "Meccha Chameleon"
+      PUBLIC_GAME_PORT: "${PUBLIC_GAME_PORT:-3000}"
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
 ```
+
+`PUBLIC_GAME_PORT` stays at 3000: the client reads that value as "no explicit
+port" and connects on 443, which is what the tunnel serves. See the
+normalisation in `client/net/client.ts`.
 
 ### Stack B: Cloudflare Tunnel (`cloudflared`)
 
