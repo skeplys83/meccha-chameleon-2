@@ -40,37 +40,47 @@ VPS from this repository, so GitHub is the only platform in the chain.
 
 ---
 
-## 1. Releasing (the mandatory post-push step)
+## 1. Deploying
 
-**Bumping the image tag in `docker-compose.yml` is the deploy.** Nothing else
-triggers one.
+**A push to `main` is the deploy.** There is no second step.
 
 ```bash
-npm run release                              # stamps image: superchameleon:<sha>
-git commit -am "Release $(git rev-parse --short HEAD)"
 git push
 ```
 
-Portainer's git poll (5 minutes) sees the changed compose file, pulls it, finds
-it has no local image by that name, and **builds one**. Then it recreates the
-container. To skip the wait, press **Pull and redeploy** in the stack panel.
+Portainer's git poll (5 minutes) notices the new commit, pulls it, and runs
+`docker compose pull` then `docker compose up -d`. To skip the wait, press
+**Pull and redeploy** in the stack panel.
 
-### Why a tag, and not just "redeploy"
+### What makes that work: `pull_policy: build`
 
-`docker compose up` builds a service **only when no local image by that name
-exists**. A fixed tag — or no `image:` line at all — means the image is built
-once and reused for ever: git updates, the container restarts, and the code
-inside it never changes. That is exactly the failure this repo hit, where the
-production server served a two-day-old map after several redeploys.
+Two problems, one line.
 
-The switches that would force it anyway — Portainer's **Re-pull image** and
-**Force redeployment** — are Business Edition features. The tag bump costs
-nothing and needs no edition.
+**`docker compose pull` runs first, and Portainer treats its failure as fatal.**
+`superchameleon:app` exists in no registry, so the pull ends with *"pull access
+denied for superchameleon, repository does not exist or may require 'docker
+login'"* and the deploy stops before `up` is ever reached. Compose alone only
+warns about this; Portainer escalates it. `pull_policy: build` tells compose the
+image is never pulled, only built, so the pull step reports `Skipped`.
 
-The stamp lands one commit "behind" itself: you stamp at HEAD, then commit. That
-is correct rather than sloppy — `docker-compose.yml` is in `.dockerignore`, so
-the stamping commit changes nothing the build can see, and the image tagged
-`<sha>` really does hold that commit's code.
+**`up` reuses an image it already has.** Compose builds a service only when no
+local image by that name exists — so with a fixed tag it builds once and runs
+that code for ever while git dutifully updates the checkout underneath. This is
+how production came to serve a two-day-old map through several redeploys. The
+paid escape hatches (**Re-pull image**, **Force redeployment**) just pass
+`--build`. `pull_policy: build` does the same thing for free: every `up`
+rebuilds, and BuildKit's layer cache keeps that honest — `npm ci` only reruns
+when `package-lock.json` changes.
+
+### If the build runs out of memory
+
+The VPS now does the vite build itself, which the old Docker Hub flow avoided.
+It needs roughly 1–2 GB. If a deploy dies with `Killed` or exit code 137, add
+swap rather than shrinking the build:
+
+```bash
+fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+```
 
 ### Housekeeping
 
@@ -88,10 +98,11 @@ Three things make that safe to leave unattended:
 - **`docker image rm` refuses an image a container is using.** The live release
   is protected by docker itself, not by the filter being right.
 
-The cost is that **rollback becomes a rebuild**: pointing the tag at an older
-sha will build it again rather than reusing an image on disk. That is a minute
-or so, and it is the trade the cleanup exists to make. If you would rather keep
-a rollback window, delete the `prune` service and sweep by hand instead:
+There is no rollback image to keep, by design: every `up` rebuilds from the
+checkout, so **rolling back means reverting the commit** and letting the next
+deploy build it. That is a `git revert` and a minute of build. If you would
+rather keep images around anyway, delete the `prune` service and sweep by hand
+instead:
 
 ```bash
 docker image prune -a --filter "label=app=superchameleon" --filter "until=336h"

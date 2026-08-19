@@ -190,19 +190,16 @@ attaches directly to the HTTP server on `PORT` (default 3000) unless `GAME_PORT`
 says otherwise. Behind a TLS reverse proxy, `PUBLIC_GAME_PORT` is what clients
 are told to connect on.
 
-**Deploying is a mandatory step after every push to `main`, and it is a tag
-bump.** `npm run release` stamps `docker-compose.yml` with the current commit;
-commit and push it, and Portainer builds the image on the VPS from the repo —
-there is no registry in the loop. **A fixed tag is a deploy that never happens**:
-`docker compose up` builds a service only when no local image by that name
-exists, so without the bump the container keeps running whatever was built
-first. Portainer CE cannot force a rebuild — that switch is a paid feature.
-
-**The stack cleans up after itself.** A `prune` service drops every image
-carrying `LABEL app=superchameleon` that no container is using, gated on the
-app's healthcheck so a broken build keeps its predecessor. The cost is that
-rollback is a rebuild rather than a retag. See
-[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+**A push to `main` is the deploy.** Portainer polls this repo, pulls, and
+rebuilds the image on the VPS — there is no registry in the loop and no second
+step. The line that makes it true is `pull_policy: build` in
+`docker-compose.yml`: without it Portainer's pre-`up` `docker compose pull`
+fails on an image that exists in no registry, and `up` reuses whatever it built
+first, which is how production once served a two-day-old map through several
+redeploys. **The stack also cleans up after itself** — a `prune` service drops
+every image labelled `app=superchameleon` that no container is using, gated on
+the app's healthcheck. Rolling back is therefore a `git revert`, not a retag.
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## Not built yet
 

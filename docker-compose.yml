@@ -2,19 +2,21 @@ services:
   meccha:
     # Built on the VPS, from this repo. There is no registry in the loop: the
     # git checkout Portainer already has *is* the build context.
-    #
-    # The tag is what makes a deploy happen. `docker compose up` builds a
-    # service only when no local image by that name exists, so bumping this
-    # line is the whole mechanism — Portainer CE needs no "force rebuild"
-    # (a paid feature) and no `--build` flag of its own.
-    #
-    # `npm run release` stamps it with the current commit. Because
-    # docker-compose.yml is in .dockerignore, the stamping commit changes
-    # nothing inside the build context — so the image tagged with a sha really
-    # does hold that commit's code.
     build:
       context: .
-    image: superchameleon:49731dd
+    image: superchameleon:app
+    # Two jobs, and both are load-bearing.
+    #
+    # Portainer runs `docker compose pull` before `up`, and a name that exists
+    # in no registry makes that step fail hard — "pull access denied for
+    # superchameleon". `build` tells compose this image is never pulled, only
+    # built, so the pull skips it.
+    #
+    # It also makes `up` rebuild every time rather than reusing whatever is on
+    # disk under this name. That is what makes a git push a deploy: without it,
+    # compose finds the tag already present and runs the old code for ever,
+    # which is exactly the bug that had production serving a two-day-old map.
+    pull_policy: build
     restart: unless-stopped
     ports:
       - "3000:3000"
@@ -68,6 +70,10 @@ services:
         condition: service_healthy
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    # `-a` so the previous build is caught: rebuilding under the same tag leaves
+    # the old image untagged rather than deleting it, and an untagged image is
+    # hidden from a plain `image ls`.
+    #
     # Deliberately *not* `docker image prune -a`. This only ever passes ids that
     # already carry our label, so nothing else on the host can be caught by it
     # even in an edge case. `image rm` refuses an image a container is using, so
@@ -77,7 +83,7 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >
-        docker image ls --filter "label=app=superchameleon" --quiet
+        docker image ls -a --filter "label=app=superchameleon" --quiet
         | sort -u
         | xargs -r docker image rm 2>/dev/null;
         true

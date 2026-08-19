@@ -13,8 +13,7 @@
     "test:watch": "vitest",
     "check:docs": "node scripts/check-docs.mjs",
     "check:constants": "node scripts/check-constants.mjs",
-    "favicon": "node scripts/make-favicon.mjs",
-    "release": "node scripts/stamp-image.mjs"
+    "favicon": "node scripts/make-favicon.mjs"
   },
   "dependencies": {
     "@colyseus/monitor": "^0.16.7",
