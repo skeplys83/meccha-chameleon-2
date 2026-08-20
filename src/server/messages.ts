@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Client } from "colyseus";
 import type { GameRoom } from "./room.ts";
 import { ChatLine } from "./schema.ts";
+import { cleanChat } from "./clean.ts";
 import {
   CHAT_HISTORY,
   CHAT_INTERVAL_MS,
@@ -223,13 +224,18 @@ export function registerMessages(room: GameRoom) {
       .slice(0, MAX_CHAT_LENGTH);
     if (!text) return;
 
+    // After the trim, so the filter reads the same string everyone else will —
+    // and masking never lengthens it past the cap, because a grawlix is one
+    // character per character.
+    const clean = cleanChat(text);
+
     const now = Date.now();
     if (now - (lastChat.get(client.sessionId) ?? 0) < CHAT_INTERVAL_MS) return;
     lastChat.set(client.sessionId, now);
 
     const line = new ChatLine();
     line.name = player.name;
-    line.text = text;
+    line.text = clean;
     room.state.chat.push(line);
     const overflow = room.state.chat.length - CHAT_HISTORY;
     if (overflow > 0) room.state.chat.splice(0, overflow);

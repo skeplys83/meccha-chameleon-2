@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { matchMaker, Room, type Client } from "colyseus";
 import { GameState, Player } from "./schema.ts";
+import { cleanName } from "./clean.ts";
 import {
   DEFAULT_MATCH_MAP,
   LOBBY_MAP,
@@ -506,7 +507,9 @@ export class GameRoom extends Room<GameState> {
     this.hosts.seat(client.sessionId, pid);
 
     const player = new Player();
-    player.name = String(options?.name ?? "player").slice(0, 16);
+    // Trimmed to length first, so a name cannot smuggle something past the
+    // filter in characters that were going to be cut off anyway.
+    player.name = cleanName(String(options?.name ?? "player").slice(0, 16));
     /** Nobody picks a side. */
     const vouched = this.pass !== "" && options?.pass === this.pass;
     player.role = this.isLobby || (vouched && options?.role === "hunter") ? "hunter" : "chameleon";

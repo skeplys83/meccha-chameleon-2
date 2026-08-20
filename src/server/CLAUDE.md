@@ -23,6 +23,7 @@ which is why imports must name the real file (`./room.ts`).
 | `host.ts`     | `HostRule`: who holds the Start button                            |
 | `schema.ts`   | `Player` and `GameState` — the wire format, not an abstraction    |
 | `code.ts`     | the invite alphabet, and a code no live room is using             |
+| `clean.ts`    | what a player may make everybody else read: names and chat        |
 | `monitor.ts`  | the admin panel, and when it is allowed to exist                  |
 | `test/`       | the suite and its harness — see **Testing** below                 |
 
@@ -83,6 +84,17 @@ lobby, and `state.lobby` is the field that makes the return trip possible.
   `GameState`, so a live line and the backlog handed to a latecomer are one
   mechanism. A `ChatLine` is a Schema class rather than a joined string,
   unlike `graves`, because a message may contain any delimiter you pick.
+- **Names and chat are filtered here, and only here.** A name is a join option
+  and a message is a websocket frame, so a filter on the client is decoration —
+  same trust model as movement and kills. The two choke points are `onJoin` and
+  the `chat` handler. **Their behaviours differ on purpose**: a foul chat line
+  is *masked* (a message that silently vanishes reads as a broken server and
+  gets retyped), while a foul name is *replaced* with a fallback (`Ge****42` is
+  worse than either alternative, and refusing the join leaves a player at an
+  error screen with nothing to fix). **A name is also read more strictly** — it
+  is checked again with every separator removed, which `obscenity` will not do
+  itself because collapsing gaps in a sentence invents words across them.
+  `clean.ts` has the measured list of what is and is not caught.
 - **`/api/sessions`** is served here because Colyseus 0.16 has no room-list
   route. A game's player count spans both of its rooms.
 - **Do not bump Colyseus casually.** Four packages move together and
@@ -106,6 +118,11 @@ lobby, and `state.lobby` is the field that makes the return trip possible.
   directions, a catch converting rather than removing, both ways a round ends,
   `kill` refused during the reveal, and a `NaN` position clamped rather than
   encoded.
+
+`clean.test.ts` pins the three decisions on top of the word list — mask chat,
+replace a name, read a name more strictly — and that every fallback name
+survives the filter, which is the false positive that would otherwise have the
+server renaming people to something it then rejects.
 
 `lobby.test.ts` also covers chat: the log every client reads, the backlog a
 latecomer is handed, the trim to `CHAT_HISTORY`, the rate limit, and the two

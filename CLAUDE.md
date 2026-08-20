@@ -141,7 +141,7 @@ commit`.
 | command             | what it proves                                                    |
 | ------------------- | ------------------------------------------------------------------- |
 | `npm run typecheck` | both projects compile, and neither half used the other's globals   |
-| `npm test`          | the server suite in `src/server/test/`: 39 tests over the rooms, the draw, the clock, and the lobby's chat |
+| `npm test`          | the server suite in `src/server/test/`: 39 tests over the rooms, the draw, the clock, the lobby's chat, and the filter |
 | `npm run lint`      | the import boundaries, and the React rules                         |
 | `npm run build`     | the client bundles                                                  |
 
@@ -156,6 +156,7 @@ change there is checked by running it. See [docs/VERIFYING.md](docs/VERIFYING.md
 - **Colyseus 0.16** server + `colyseus.js` 0.16 client, `@colyseus/schema` v3
 - `@colyseus/monitor` 0.16 + `express`, for the admin panel at `/monitor`
 - vitest + `@colyseus/testing` 0.16 for the server suite
+- `obscenity` for the name and chat filter — server-side only, zero dependencies
 
 ### Version constraint — do not "upgrade" Colyseus casually
 

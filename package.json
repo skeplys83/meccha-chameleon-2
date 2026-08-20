@@ -24,6 +24,7 @@
     "colyseus": "^0.16.5",
     "colyseus.js": "^0.16.22",
     "express": "^5.2.1",
+    "obscenity": "^0.4.6",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "three": "^0.185.1"

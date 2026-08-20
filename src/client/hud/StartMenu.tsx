@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchSessions, type Game } from "@/client/net";
-import { randomName } from "./names";
+import { randomName } from "@/shared/names";
 import { mapName, type MapId } from "@/shared/maps";
 import { CreateGamePanel } from "./CreateGamePanel";
 import { LegalPage } from "./LegalPage";

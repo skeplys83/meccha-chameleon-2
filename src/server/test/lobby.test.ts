@@ -9,6 +9,7 @@ import {
 } from "../../shared/protocol.ts";
 import { DEFAULT_MATCH_MAP, LOBBY_MAP } from "../../shared/mapIds.ts";
 import { ChatLine } from "../schema.ts";
+import { NAMES } from "../../shared/names.ts";
 
 let colyseus: ColyseusTestServer;
 
@@ -293,5 +294,32 @@ describe("lobby chat", () => {
     await settle();
 
     expect(room.state.chat.length).toBe(0);
+  });
+});
+
+describe("what a player may make everyone else read", () => {
+  it("hands a foul name back as one of the fallbacks", async () => {
+    const host = await openLobby({ name: "fuckface" });
+
+    const seated = host.state.players.get(host.sessionId)!.name;
+    expect(seated).not.toBe("fuckface");
+    expect(NAMES.some((n) => seated.startsWith(n))).toBe(true);
+  });
+
+  it("leaves an ordinary name exactly as it was typed", async () => {
+    const host = await openLobby({ name: "Martin" });
+    expect(host.state.players.get(host.sessionId)!.name).toBe("Martin");
+  });
+
+  it("masks a chat line rather than dropping it", async () => {
+    const host = await openLobby();
+    host.send("chat", { text: "what the fuck are you doing" });
+    await settle();
+
+    // The line still lands — a message that silently vanishes reads as the
+    // server being broken, and gets typed again.
+    expect(host.state.chat.length).toBe(1);
+    expect(host.state.chat[0].text).not.toContain("fuck");
+    expect(host.state.chat[0].text).toContain("are you doing");
   });
 });

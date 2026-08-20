@@ -65,6 +65,9 @@ mechanism and the prose that explains it; the component is now composition.
   button is deliberately not a placement** — it begins a countdown everyone else
   is watching on a server clock, so an ad there is a player who misses the start
   of hiding.
+- **`randomName` comes from `shared/`, not from `hud/`.** Both halves need it
+  now: the menu offers one, and the server hands one out when `clean.ts`
+  refuses a name. `useCrazyGames` names its auto-joining player from there.
 - **The `?code=` auto-join must never show one.** It is a page load, not a
   click, which is why `createFromMenu` / `joinFromMenu` wrap the plain
   `create` / `joinCode` rather than the ad call living inside them —

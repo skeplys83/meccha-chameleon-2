@@ -14,6 +14,7 @@ and no DOM, so nothing here may touch `window`, React or three.js.
 | `protocol.ts`| `Role`, `Phase`, phase durations, fire, whistle and chat rates, bounds |
 | `mapIds.ts`  | the map ids, the lobby map, and which ones a match may use       |
 | `maps.ts`    | the registry: name, file, spawn, bound, `roundSeconds`, lighting |
+| `names.ts`   | the fallback player names, and `randomName()`                    |
 
 The phase durations (`COUNTDOWN_SECONDS`, `HIDE_SECONDS`, `REVEAL_SECONDS`) are
 tuning, and get retuned. Nothing may hard-code them — including prose: the root
@@ -43,6 +44,10 @@ doc names the constant beside the number for exactly this reason.
   still means "is clinging"**, which is all `sound/` ever asks. It was a boolean
   until the figure needed three answers: a pose that lies flat lies flat on a
   floor *and* a ceiling, and stands up to climb a wall.
+- **`names.ts` is here because both halves read it**, which is the rule for
+  this folder. The client offers one in the name box; the server hands one out
+  when `clean.ts` takes a name away. It moved from `client/hud/` the day the
+  server needed it — copying it would have failed `check-constants`.
 - **Leave codes (`LEAVE_IN_PROGRESS`, `LEAVE_STARTING`) are here** rather than as
   a bare `4001` written twice.
 - **The chat limits are here because both halves enforce them.**

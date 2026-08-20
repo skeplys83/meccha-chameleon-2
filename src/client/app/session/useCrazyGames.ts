@@ -9,7 +9,7 @@ import {
   updateCrazyRoom,
 } from "@/client/app/crazygames";
 import { fetchSessions } from "@/client/net/sessions";
-import { randomName } from "@/client/hud/names";
+import { randomName } from "@/shared/names";
 import { DEFAULT_MAP } from "@/shared/mapIds";
 import type { RoomInfo } from "@/client/net";
 

@@ -9,6 +9,11 @@ phase banner, the pause and dropped panels, the round-over panel, the controls
 legend, the loading screen, the mobile gate, the legal page, and the developer
 readout.
 
+**The fallback player names are no longer here.** They moved to
+`shared/names.ts` when the server started handing them out too — it replaces a
+name its filter refuses, and it cannot import from this folder. `StartMenu`
+reads them from there now.
+
 ## The three rules that will bite you
 
 1. **This folder never imports from `world/`, `figure/`, `players/` or
