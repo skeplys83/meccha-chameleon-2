@@ -3,6 +3,7 @@
 export { createLobby, disconnect, joinLobby, rejoin } from "./client";
 export { selfId } from "./connection";
 export {
+  onChat,
   onDropped,
   onMark,
   onGrave,
@@ -13,6 +14,7 @@ export {
   onRoom,
   onShot,
   onWhistle,
+  type ChatMessage,
   type Grave,
   type NetMark,
   type RoomInfo,
@@ -25,6 +27,7 @@ export {
 } from "./remotes";
 export { fetchSessions, type Game } from "./sessions";
 export {
+  sendChat,
   sendClearSkin,
   sendKill,
   sendMap,

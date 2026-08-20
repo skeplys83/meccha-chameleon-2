@@ -11,7 +11,7 @@ and no DOM, so nothing here may touch `window`, React or three.js.
 
 | file         | what                                                            |
 | ------------ | ----------------------------------------------------------------- |
-| `protocol.ts`| `Role`, `Phase`, phase durations, fire and whistle rates, bounds  |
+| `protocol.ts`| `Role`, `Phase`, phase durations, fire, whistle and chat rates, bounds |
 | `mapIds.ts`  | the map ids, the lobby map, and which ones a match may use       |
 | `maps.ts`    | the registry: name, file, spawn, bound, `roundSeconds`, lighting |
 
@@ -45,6 +45,11 @@ doc names the constant beside the number for exactly this reason.
   floor *and* a ceiling, and stands up to climb a wall.
 - **Leave codes (`LEAVE_IN_PROGRESS`, `LEAVE_STARTING`) are here** rather than as
   a bare `4001` written twice.
+- **The chat limits are here because both halves enforce them.**
+  `MAX_CHAT_LENGTH` caps the server's truncation *and* the input's `maxLength`,
+  and `CHAT_HISTORY` is both the server's trim and the length of the log the
+  client keeps. `CHAT_INTERVAL_MS` is the server's alone today, and sits beside
+  them rather than being the one chat number somewhere else.
 
 ---
 

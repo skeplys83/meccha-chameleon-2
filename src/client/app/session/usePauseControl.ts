@@ -14,10 +14,10 @@ type Options = {
  * The pause menu, the palette and the pointer lock — one hook, because they are
  * one mechanism.
  *
- * **`paused` and `painting` are mutually exclusive, and every path has to keep
- * them that way.** Opening the palette clears the pause; Esc closes the palette
- * before it will pause; the hunter's lock handler refuses to pause while it is
- * open. Losing the window was once the exception — it set `paused` and left
+ * **`paused`, `painting` and `chatting` are mutually exclusive, and every path
+ * has to keep them that way.** Opening the palette clears the pause; Esc closes
+ * the palette before it will pause; the hunter's lock handler refuses to pause
+ * while it is open. Losing the window was once the exception — it set `paused` and left
  * `painting` alone, which hid the pause menu *and* the palette while the keys
  * stayed dead, so a chameleon came back to a game that ignored them until they
  * pressed Esc to shut an invisible palette and only then found something to
@@ -29,11 +29,17 @@ export function usePauseControl({ joined, role, dropped }: Options) {
   // from then on it stays open until it is minimised — a palette that closed
   // itself while you were mixing a colour would be maddening.
   const [painting, setPainting] = useState(false);
+  // `chatting` means the lobby chat box has the keyboard. It is the third
+  // overlay and it behaves like the palette: the cursor comes back, the lock
+  // goes, and `Game.tsx` feeds it into `Scene`'s `paused` so the movement keys
+  // stop while you are typing into them.
+  const [chatting, setChatting] = useState(false);
 
   // Paint mode deliberately gives the cursor back, so the lock handler below
   // must not read that as "the player wants the pause menu".
   const paintingRef = useLatestRef(painting);
   const pausedRef = useLatestRef(paused);
+  const chattingRef = useLatestRef(chatting);
 
   /** Opening the panel hands the cursor back so you can draw. Closing it takes
    *  nothing back here — clearing `painting` is enough, because the lock effect
@@ -42,6 +48,18 @@ export function usePauseControl({ joined, role, dropped }: Options) {
     setPainting(open);
     if (!open) return;
     setPaused(false);
+    setChatting(false);
+    cancelLock();
+    document.exitPointerLock();
+  }, []);
+
+  /** The chat box, on the same terms as the palette: it wants the cursor and
+   *  the keyboard, so it takes the lock away and shuts the other two overlays. */
+  const setChatOpen = useCallback((open: boolean) => {
+    setChatting(open);
+    if (!open) return;
+    setPaused(false);
+    setPainting(false);
     cancelLock();
     document.exitPointerLock();
   }, []);
@@ -55,6 +73,7 @@ export function usePauseControl({ joined, role, dropped }: Options) {
   const closeOverlays = useCallback(() => {
     setPaused(false);
     setPainting(false);
+    setChatting(false);
   }, []);
 
   /** Losing the window pauses the game, whoever you are. */
@@ -63,6 +82,10 @@ export function usePauseControl({ joined, role, dropped }: Options) {
     const away = () => {
       setPaused(true);
       setPainting(false);
+      // Cleared for the same reason as the palette: coming back to a paused
+      // game that is also still holding the keyboard for a box you cannot see
+      // is the bug this hook exists to prevent.
+      setChatting(false);
     };
     const onVisibility = () => {
       if (document.visibilityState === "hidden") away();
@@ -103,9 +126,9 @@ export function usePauseControl({ joined, role, dropped }: Options) {
       return;
     }
 
-    if (paused || painting || dropped) return;
+    if (paused || painting || chatting || dropped) return;
     requestLock();
-  }, [joined, role, paused, painting, dropped]);
+  }, [joined, role, paused, painting, chatting, dropped]);
 
   /**
    * Esc opens the pause menu, and closes it again — but only for a chameleon,
@@ -127,6 +150,13 @@ export function usePauseControl({ joined, role, dropped }: Options) {
     if (!joined) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== "Escape" || e.repeat || dropped) return;
+      // Before the palette, and before the role check below: while the box is
+      // open the lock is already released, so Esc reaches the app even for the
+      // hunters everybody in a lobby nominally is.
+      if (chattingRef.current) {
+        setChatOpen(false);
+        return;
+      }
       if (paintingRef.current) {
         setPaintOpen(false);
         return;
@@ -137,7 +167,7 @@ export function usePauseControl({ joined, role, dropped }: Options) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [joined, role, dropped, setPaintOpen, paintingRef, pausedRef]);
+  }, [joined, role, dropped, setPaintOpen, setChatOpen, paintingRef, pausedRef, chattingRef]);
 
   // For a hunter, Esc releases the pointer lock rather than reaching the app,
   // so losing the lock is what actually means "the player wants out".
@@ -151,20 +181,23 @@ export function usePauseControl({ joined, role, dropped }: Options) {
         setPaused(false);
         return;
       }
-      if (held && !paintingRef.current) setPaused(true);
+      if (held && !paintingRef.current && !chattingRef.current) setPaused(true);
       held = false;
     };
     document.addEventListener("pointerlockchange", onLockChange);
     return () => document.removeEventListener("pointerlockchange", onLockChange);
-  }, [joined, role, dropped, paintingRef]);
+  }, [joined, role, dropped, paintingRef, chattingRef]);
 
   return {
     paused,
     painting,
+    chatting,
     pausedRef,
     paintingRef,
+    chattingRef,
     resume,
     setPaintOpen,
+    setChatOpen,
     closeOverlays,
   };
 }

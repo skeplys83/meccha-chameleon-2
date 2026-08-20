@@ -1,8 +1,14 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { ColyseusTestServer } from "@colyseus/testing";
 import { bootTestServer, connected, inner, roomOf, settle } from "./harness.ts";
-import { MIN_PLAYERS } from "../../shared/protocol.ts";
+import {
+  CHAT_HISTORY,
+  CHAT_INTERVAL_MS,
+  MAX_CHAT_LENGTH,
+  MIN_PLAYERS,
+} from "../../shared/protocol.ts";
 import { DEFAULT_MATCH_MAP, LOBBY_MAP } from "../../shared/mapIds.ts";
+import { ChatLine } from "../schema.ts";
 
 let colyseus: ColyseusTestServer;
 
@@ -187,5 +193,105 @@ describe("a lobby", () => {
 
     // The invite code has to survive the whole match its players are away in.
     expect(colyseus.getRoomById(code)).toBeDefined();
+  });
+});
+
+describe("lobby chat", () => {
+  it("puts a line in state for everybody, attributed to whoever typed it", async () => {
+    const host = await openLobby();
+    const guest = await joinLobby(host.roomId, "guest");
+
+    guest.send("chat", { text: "one more coming" });
+    await settle();
+
+    // State, not a broadcast: the host reads it out of the same log the guest
+    // wrote into.
+    expect(host.state.chat.length).toBe(1);
+    expect(host.state.chat[0].name).toBe("guest");
+    expect(host.state.chat[0].text).toBe("one more coming");
+    expect(guest.state.chat[0].text).toBe("one more coming");
+  });
+
+  it("hands the conversation so far to whoever arrives next", async () => {
+    const host = await openLobby();
+    host.send("chat", { text: "said before you got here" });
+    await settle();
+
+    const latecomer = await joinLobby(host.roomId, "latecomer");
+
+    expect(latecomer.state.chat.length).toBe(1);
+    expect(latecomer.state.chat[0].text).toBe("said before you got here");
+  });
+
+  it("trims a message and drops one that is only whitespace or control codes", async () => {
+    const host = await openLobby();
+
+    host.send("chat", { text: "   \n\t  " });
+    await settle();
+    expect(host.state.chat.length).toBe(0);
+
+    host.send("chat", { text: "  spaced out  " });
+    await settle();
+    expect(host.state.chat[0].text).toBe("spaced out");
+  });
+
+  it("keeps one message to one line, and to MAX_CHAT_LENGTH", async () => {
+    const host = await openLobby();
+
+    host.send("chat", { text: "first\nsecond" });
+    await settle();
+    expect(host.state.chat[0].text).toBe("first second");
+
+    await settle(CHAT_INTERVAL_MS);
+    host.send("chat", { text: "x".repeat(MAX_CHAT_LENGTH + 50) });
+    await settle();
+    expect(host.state.chat[1].text.length).toBe(MAX_CHAT_LENGTH);
+  });
+
+  it("takes one message per CHAT_INTERVAL_MS from a client", async () => {
+    const host = await openLobby();
+
+    host.send("chat", { text: "first" });
+    host.send("chat", { text: "hot on its heels" });
+    await settle();
+
+    expect(host.state.chat.length).toBe(1);
+    expect(host.state.chat[0].text).toBe("first");
+  });
+
+  it("keeps only the last CHAT_HISTORY lines", async () => {
+    const host = await openLobby();
+    const room = roomOf(colyseus, host.roomId);
+
+    // Pre-filled rather than typed: the rate limit exists precisely to stop a
+    // client sending this many, and it is the handler's trim that is under test.
+    for (let i = 0; i < CHAT_HISTORY + 4; i++) {
+      const line = new ChatLine();
+      line.name = "someone";
+      line.text = `line ${i}`;
+      room.state.chat.push(line);
+    }
+
+    host.send("chat", { text: "the one over the top" });
+    await settle();
+
+    expect(room.state.chat.length).toBe(CHAT_HISTORY);
+    // The five oldest went: the four of overflow plus the one this push added.
+    expect(room.state.chat[0].text).toBe("line 5");
+    expect(room.state.chat[CHAT_HISTORY - 1].text).toBe("the one over the top");
+  });
+
+  it("goes quiet once the lobby is no longer a waiting room", async () => {
+    const host = await openLobby();
+    const room = roomOf(colyseus, host.roomId);
+
+    // The lobby during `hiding` holds the drawn hunter alone, and a line
+    // written now would be waiting for everyone when they come back.
+    room.state.phase = "hiding";
+    await settle();
+    host.send("chat", { text: "they went left" });
+    await settle();
+
+    expect(room.state.chat.length).toBe(0);
   });
 });

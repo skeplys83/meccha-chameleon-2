@@ -53,6 +53,15 @@ let go, because a reservation is held for only fifteen seconds.
   `sound/` still reads it as truthy-means-climbing; `figure/` reads *which*
   surface, to decide which way up to draw a pose that lies flat. It rides in the
   same `state` message as everything else, twenty times a second.
+- **Chat arrives as state, not as a message, and `onChat` carries the whole
+  log.** `sendChat` goes out; nothing comes back on `onMessage`. `client.ts`
+  subscribes to the `chat` array and emits every line each time it changes,
+  including once on join — which is what a latecomer sees the conversation
+  through. **Not one line at a time**: the server trims the oldest away when
+  the log is full, which shifts every index under it, and a listener stitching
+  single lines together cannot tell a trim from a new message. The emit is
+  guarded on a content key, like `publish`, because a trim re-announces lines
+  that have not changed.
 - **The browser-facing socket port is normalized before a join**, because behind
   a TLS proxy the port we bind is not the port a browser can reach.
 

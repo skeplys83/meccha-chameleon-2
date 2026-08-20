@@ -11,6 +11,7 @@ import { playerId } from "./identity";
 import { clearRemotes, emitRoster, remotes } from "./remotes";
 import {
   emitCaught,
+  emitChat,
   emitGrave,
   emitLeftRoom,
   emitMark,
@@ -20,6 +21,7 @@ import {
   emitRoom,
   emitShot,
   emitWhistle,
+  type ChatMessage,
   type NetMark,
   type RoomInfo,
 } from "./events";
@@ -51,6 +53,7 @@ type StateSchema = {
   winner?: string;
   maxPlayers?: number;
   players?: { get(id: string): PlayerSchema | undefined; size?: number };
+  chat?: { forEach(cb: (line: { name: string; text: string }) => void): void };
 };
 
 type Callbacks = {
@@ -60,6 +63,9 @@ type Callbacks = {
   };
   graves: {
     onAdd(cb: (raw: string, index: number) => void): void;
+  };
+  chat: {
+    onAdd(cb: () => void): void;
   };
   onChange(cb: () => void): void;
 };
@@ -233,6 +239,34 @@ async function attach(joined: Room): Promise<RoomInfo> {
       name: rest.join(",") || "someone",
     });
   });
+
+  // Chat is state, not a broadcast, so this fires for the lines already in the
+  // log when you join as well as for each new one — which is the whole reason a
+  // latecomer sees the conversation.
+  //
+  // The *whole* log goes out each time rather than the one line that arrived.
+  // The server trims the oldest away once it is full, and a trim shifts every
+  // index under it; a listener stitching single lines together cannot tell that
+  // from a new message, and would either swallow one or show an old one twice.
+  let lastChat = "";
+  const publishChat = () => {
+    const lines: ChatMessage[] = [];
+    (joined.state as StateSchema).chat?.forEach((line) => {
+      if (typeof line?.text !== "string" || !line.text) return;
+      lines.push({
+        id: String(lines.length),
+        name: typeof line.name === "string" && line.name ? line.name : "someone",
+        text: line.text,
+      });
+    });
+    // Guarded like `publish` below: a trim re-announces lines that have not
+    // changed, and every emit costs a React render.
+    const key = lines.map((l) => `${l.name}\u0000${l.text}`).join("\u0001");
+    if (key === lastChat) return;
+    lastChat = key;
+    emitChat(lines);
+  };
+  $(joined.state).chat.onAdd(publishChat);
 
   joined.onMessage("shot", (msg: { id: string }) => {
     if (msg?.id) emitShot(msg.id);

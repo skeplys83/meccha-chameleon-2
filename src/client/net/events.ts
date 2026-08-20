@@ -11,6 +11,10 @@ export type NetMark = {
 /** Where a chameleon was found, in world space, and who it was. */
 export type Grave = { id: string; position: [number, number, number]; name: string };
 
+/** One line of lobby chat. `id` is its position in the log, which is only ever
+ *  read as a React key — the log arrives whole, so nothing tracks a line. */
+export type ChatMessage = { id: string; name: string; text: string };
+
 /** Which room you are in and what it is doing. */
 export type RoomInfo = {
   mode: "lobby" | "match";
@@ -48,6 +52,12 @@ const shotListeners = new Set<(shooterId: string) => void>();
 const whistleListeners = new Set<(whistlerId: string) => void>();
 const markListeners = new Set<(mark: NetMark) => void>();
 const graveListeners = new Set<(grave: Grave) => void>();
+/** The lobby's whole chat log, re-sent whenever it changes — including once on
+ *  join, because the log is state rather than a broadcast. Whole rather than
+ *  per-line because the server trims the oldest away, which shifts every index
+ *  under it; a listener accumulating single lines cannot tell a trim from a new
+ *  message. */
+const chatListeners = new Set<(messages: ChatMessage[]) => void>();
 /** Somebody was caught and is now a hunter. */
 const caughtListeners = new Set<
   (victimId: string, by: string, position?: [number, number, number]) => void
@@ -109,6 +119,13 @@ export function onCaught(
   };
 }
 
+export function onChat(fn: (messages: ChatMessage[]) => void) {
+  chatListeners.add(fn);
+  return () => {
+    chatListeners.delete(fn);
+  };
+}
+
 export function onRoom(fn: (info: RoomInfo) => void) {
   roomListeners.add(fn);
   return () => {
@@ -167,6 +184,10 @@ export function emitMark(mark: NetMark) {
 
 export function emitGrave(grave: Grave) {
   graveListeners.forEach((fn) => fn(grave));
+}
+
+export function emitChat(messages: ChatMessage[]) {
+  chatListeners.forEach((fn) => fn(messages));
 }
 
 export function emitCaught(

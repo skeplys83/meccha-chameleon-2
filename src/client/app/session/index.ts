@@ -8,5 +8,6 @@ export { useNetEvents } from "./useNetEvents";
 export { usePauseControl } from "./usePauseControl";
 export { useAudioUnlockOnGesture, useRoundAssets } from "./useRoundAssets";
 export { useRoundAudio } from "./useRoundAudio";
+export { useRoomChat } from "./useRoomChat";
 export { useRoomGraves } from "./useRoomGraves";
 export { useWhistle } from "./useWhistle";

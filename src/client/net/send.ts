@@ -52,3 +52,9 @@ export function sendShoot(
 ) {
   getRoom()?.send("shoot", { position, rotation, origin });
 }
+
+/** Say something in the lobby. Refused anywhere else, and outside the two
+ *  phases where nobody has a side yet — see `server/messages.ts`. */
+export function sendChat(text: string) {
+  getRoom()?.send("chat", { text });
+}

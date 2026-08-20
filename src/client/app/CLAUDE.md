@@ -21,11 +21,12 @@ mechanism and the prose that explains it; the component is now composition.
 
 | hook                    | owns                                                  |
 | ----------------------- | ------------------------------------------------------- |
-| `usePauseControl`       | pause, palette, pointer lock — and their exclusion      |
+| `usePauseControl`       | pause, palette, chat, pointer lock — and their exclusion |
 | `useNetEvents`          | every `net/` subscription, including the room reset     |
 | `useRoundAudio`         | the tick, the bell, the gong, and the hunt's music       |
 | `useRoundAssets`        | the map and music preloads                              |
 | `useRoomGraves`         | graves, de-duplicated, dropped on `onLeftRoom`          |
+| `useRoomChat`           | the lobby's chat log — subscribed *before* the join      |
 | `useCaughtNotice`       | the three-and-a-half seconds after you are caught       |
 | `useCrazyGames`         | invites, instant multiplayer, room reporting            |
 | `useWhistle`            | a chameleon's periodic tell                             |
@@ -39,10 +40,13 @@ mechanism and the prose that explains it; the component is now composition.
    for that window and spawned you into the lobby as a small third-person figure
    before snapping to the hunter's camera. `<Player>` is keyed on the room's
    code, which is what rebuilds the body at each map's spawn point.
-2. **`paused` and `painting` are mutually exclusive, and `usePauseControl` owns
-   both** so no future path can forget. Losing the window was the exception that
-   proved it: it set `paused` and left `painting` alone, hiding both the menu
-   *and* the palette while the keys stayed dead.
+2. **`paused`, `painting` and `chatting` are mutually exclusive, and
+   `usePauseControl` owns all three** so no future path can forget. Losing the
+   window was the exception that proved it: it set `paused` and left `painting`
+   alone, hiding both the menu *and* the palette while the keys stayed dead.
+   `chatting` is the newest and behaves like the palette — it hands the cursor
+   back, drops the pointer lock, and `Game.tsx` folds it into `Scene`'s
+   `paused` so the movement keys stop while you type into them.
 3. **Nothing heavy is fetched on page load.** The Canvas is mounted behind the
    start menu, so anything on a mount effect is paid for by everyone who merely
    opens the game. There are four triggers and no others: the map and music on
@@ -53,6 +57,13 @@ mechanism and the prose that explains it; the component is now composition.
 
 - **A change of room is a clean slate**, and `net/`'s `onLeftRoom` is the one
   place that says so. Anything added later that belongs to a room resets there.
+- **Anything replayed on join subscribes from `Game.tsx`, never from the panel
+  that draws it.** `net/client.ts` replays graves and the chat log during
+  `attach`, before the join promise resolves — so a listener owned by a
+  component that mounts on `room` arriving has already missed the backlog.
+  `ChatPanel` renders only in a waiting lobby and lost every existing line to
+  exactly this; `useRoomChat` holds the subscription and hands the panel an
+  array.
 - **`Scene.tsx` owns the frame priorities**, the game's one ordering guarantee:
   `0` decides where things are, `1` copies a result of that (the viewmodel, the
   audio listener), `2` draws, `3` reads the drawn frame back. Mount order is not

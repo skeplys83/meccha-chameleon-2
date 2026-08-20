@@ -14,6 +14,7 @@ import {
 } from "@/client/hud/MobileUnsupported";
 import { beginLoading, useLoading } from "@/client/app/loading";
 import { LobbyPanel } from "@/client/hud/LobbyPanel";
+import { ChatPanel } from "@/client/hud/ChatPanel";
 import { HunterWait } from "@/client/hud/HunterWait";
 import { DroppedPanel } from "@/client/hud/DroppedPanel";
 import { PhaseBanner } from "@/client/hud/PhaseBanner";
@@ -39,6 +40,7 @@ import {
   useDevHotkey,
   useNetEvents,
   usePauseControl,
+  useRoomChat,
   useRoomGraves,
   useRoundAssets,
   useRoundAudio,
@@ -71,14 +73,27 @@ export function Game() {
   const {
     paused,
     painting,
+    chatting,
     pausedRef,
     paintingRef,
     resume,
     setPaintOpen,
+    setChatOpen,
     closeOverlays,
   } = usePauseControl({ joined, role, dropped });
 
+  /** Chat is a waiting-room thing, in the two phases where nobody has a side
+   *  yet — the same window the server accepts a `chat` message in. During
+   *  `hiding` the lobby holds the drawn hunter alone, with nobody to talk to. */
+  const canChat =
+    room?.mode === "lobby" &&
+    !dropped &&
+    (room.phase === "waiting" || room.phase === "countdown");
+
   const graves = useRoomGraves();
+  // Subscribed here rather than in the panel: the backlog is replayed during
+  // the join, long before anything conditional on `room` has mounted.
+  const messages = useRoomChat();
   const { caughtBy } = useCaughtNotice(joined, () => setPaintOpen(false));
 
   useNetEvents({ setRoom, setDropped, setError, closeOverlays });
@@ -146,6 +161,32 @@ export function Game() {
 
   useCrazyGames({ joined, room, name, create, joinCode });
 
+  // T opens the chat box. `preventDefault` because otherwise the same keypress
+  // types its own "t" into the input it just opened; `KeyT` is free in
+  // `players/controls.ts`, where turning is Q and E.
+  //
+  // Deliberately *not* gated on `paused` or `painting`: the prompt under the
+  // log is on screen for as long as the lobby is, so the key it names has to
+  // work whenever it is legible. `setChatOpen` already shuts both of them, and
+  // neither has a text field to steal the keystroke from — the palette's two
+  // inputs are sliders.
+  useEffect(() => {
+    if (!canChat || chatting) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== "KeyT" || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+      e.preventDefault();
+      setChatOpen(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canChat, chatting, setChatOpen]);
+
+  // The box cannot outlive the window it belongs to: the countdown ending is
+  // what closes it for everybody, rather than each client noticing separately.
+  useEffect(() => {
+    if (!canChat && chatting) setChatOpen(false);
+  }, [canChat, chatting, setChatOpen]);
+
   // Opening the palette clears `paused`, so a hover arriving while the menu is
   // up would dismiss it. Player already stops reporting hovers when paused;
   // this is the second lock on the same door.
@@ -207,7 +248,7 @@ export function Game() {
         // A dropped player's input goes nowhere. The reveal is *not* in here:
         // the round is decided but everyone keeps walking, which is how you go
         // and look at the spot that beat you.
-        paused={paused || dropped}
+        paused={paused || dropped || chatting}
         brush={brush}
         onBrush={setBrush}
         picking={picking}
@@ -288,6 +329,13 @@ export function Game() {
               sessionName={room?.code ? `Game ${room.code}` : "Super Chameleon"}
               onResume={resume}
               onLeave={leave}
+            />
+          )}
+          {canChat && (
+            <ChatPanel
+              open={chatting}
+              onOpenChange={setChatOpen}
+              messages={messages}
             />
           )}
           {dropped && <DroppedPanel onReconnect={reconnect} onExit={leave} />}

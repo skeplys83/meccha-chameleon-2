@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { Client } from "colyseus";
 import type { GameRoom } from "./room.ts";
+import { ChatLine } from "./schema.ts";
 import {
+  CHAT_HISTORY,
+  CHAT_INTERVAL_MS,
+  MAX_CHAT_LENGTH,
   FIRE_INTERVAL_MS,
   FIRE_INTERVAL_TOLERANCE,
   MAX_STROKE_BATCH,
@@ -25,6 +29,7 @@ const MIN_WHISTLE_GAP_MS = WHISTLE_INTERVAL_MS * WHISTLE_TOLERANCE;
 /** Server-only: the client just renders the graves it is sent. */
 const MAX_GRAVES = 200;
 
+type ChatMsg = { text?: unknown };
 type StateMsg = { p?: unknown; yaw?: unknown; pitch?: unknown; pose?: unknown; cling?: unknown };
 type PaintMsg = { strokes?: unknown };
 type KillMsg = { id?: unknown; position?: unknown };
@@ -38,6 +43,7 @@ type ShootMsg = {
 export function registerMessages(room: GameRoom) {
   const lastShot = new Map<string, number>();
   const lastWhistle = new Map<string, number>();
+  const lastChat = new Map<string, number>();
 
   /** True at most once per FIRE_INTERVAL_MS per client, and records the shot. */
   const canFire = (sessionId: string) => {
@@ -51,6 +57,7 @@ export function registerMessages(room: GameRoom) {
   const forget = (sessionId: string) => {
     lastShot.delete(sessionId);
     lastWhistle.delete(sessionId);
+    lastChat.delete(sessionId);
   };
 
   room.onMessage("state", (client: Client, msg: StateMsg) => {
@@ -185,6 +192,47 @@ export function registerMessages(room: GameRoom) {
     if (now - (lastWhistle.get(client.sessionId) ?? 0) < MIN_WHISTLE_GAP_MS) return;
     lastWhistle.set(client.sessionId, now);
     room.broadcast("whistle", { id: client.sessionId });
+  });
+
+  /**
+   * Chat is a waiting-room thing, and only a waiting-room thing.
+   *
+   * A match never carries it: during the hunt everyone who could type is out on
+   * the map, and a channel between them is coordination against the one player
+   * looking for them. The two lobby phases it *is* allowed in are the two where
+   * nobody has a side yet — during `hiding` the lobby holds the drawn hunter
+   * alone, and there is nobody to talk to and a log everyone will come back to.
+   *
+   * Not broadcast: the state patch is the delivery, which is what makes a live
+   * message and the history handed to a latecomer the same mechanism.
+   */
+  room.onMessage("chat", (client: Client, msg: ChatMsg) => {
+    if (!room.isLobby) return;
+    if (room.state.phase !== "waiting" && room.state.phase !== "countdown") return;
+
+    const player = room.state.players.get(client.sessionId);
+    if (!player || typeof msg?.text !== "string") return;
+
+    // Control characters out before the length is measured, so padding a
+    // message with them cannot push real text past the cap. Newlines are in
+    // there too: one message is one line.
+    const text = msg.text
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000-\u001f\u007f]/g, " ")
+      .trim()
+      .slice(0, MAX_CHAT_LENGTH);
+    if (!text) return;
+
+    const now = Date.now();
+    if (now - (lastChat.get(client.sessionId) ?? 0) < CHAT_INTERVAL_MS) return;
+    lastChat.set(client.sessionId, now);
+
+    const line = new ChatLine();
+    line.name = player.name;
+    line.text = text;
+    room.state.chat.push(line);
+    const overflow = room.state.chat.length - CHAT_HISTORY;
+    if (overflow > 0) room.state.chat.splice(0, overflow);
   });
 
   return { forget };

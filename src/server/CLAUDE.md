@@ -70,10 +70,19 @@ lobby, and `state.lobby` is the field that makes the return trip possible.
   `CLING_CEILING` from `shared/`. Clamped like every other number off the wire
   and forced to `CLING_NONE` for a hunter, because clinging silences footsteps.
 - **Messages in** (← `client/net/send.ts`): `state`, `paint`, `clearSkin`,
-  `shoot`, `kill`, `whistle`, plus `start` and `setMap` from a lobby's host.
+  `shoot`, `kill`, `whistle`, `chat`, plus `start` and `setMap` from a lobby's
+  host.
 - **Messages out** (→ `client/net/client.ts`): `shot`, `whistle`, `mark`,
   `caught`, `clearSkin`, `paint`, `moveTo`, `moveFailed`. **There is no
   "match over" message** — `moveTo` is the news.
+- **`chat` is a waiting-room message**, refused in a match and refused in a
+  lobby outside `waiting` and `countdown`. A match never carries it because a
+  channel between the people being hunted is coordination against the one
+  player looking for them; the two lobby phases it *is* allowed in are the two
+  where nobody has a side yet. It is **not broadcast** — the `chat` log lives in
+  `GameState`, so a live line and the backlog handed to a latecomer are one
+  mechanism. A `ChatLine` is a Schema class rather than a joined string,
+  unlike `graves`, because a message may contain any delimiter you pick.
 - **`/api/sessions`** is served here because Colyseus 0.16 has no room-list
   route. A game's player count spans both of its rooms.
 - **Do not bump Colyseus casually.** Four packages move together and
@@ -97,6 +106,10 @@ lobby, and `state.lobby` is the field that makes the return trip possible.
   directions, a catch converting rather than removing, both ways a round ends,
   `kill` refused during the reveal, and a `NaN` position clamped rather than
   encoded.
+
+`lobby.test.ts` also covers chat: the log every client reads, the backlog a
+latecomer is handed, the trim to `CHAT_HISTORY`, the rate limit, and the two
+phases it goes quiet in. `match.test.ts` covers the refusal.
 
 They live in `test/` rather than beside the source, because none of them maps
 to one module — `lobby.test.ts` and `match.test.ts` both exercise `room.ts` — and

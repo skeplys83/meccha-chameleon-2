@@ -84,3 +84,12 @@ export const LEAVE_IN_PROGRESS = 4001;
 
 /** This lobby is already counting down. */
 export const LEAVE_STARTING = 4002;
+
+/** How many lines of lobby chat are kept for whoever arrives next. */
+export const CHAT_HISTORY = 30;
+
+/** Longest message the server will take. */
+export const MAX_CHAT_LENGTH = 140;
+
+/** Minimum gap between two messages from one client, in milliseconds. */
+export const CHAT_INTERVAL_MS = 700;
