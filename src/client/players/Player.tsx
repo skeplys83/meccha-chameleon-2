@@ -27,15 +27,13 @@ import {
 import { BODY, GRAVITY } from "./body";
 import { characterController } from "./controller";
 import { newMotion } from "./look";
-import { keepInside } from "./inside";
+import { keepInside, pushInside } from "./inside";
 import { addWalked } from "./gait";
-import { buriedFraction } from "./buried";
 import { usePointerControls } from "./usePointerControls";
 import { useEyedropperReadback } from "./useEyedropperReadback";
 import { useStateBroadcast } from "./useStateBroadcast";
 import { CLING_NONE, type Role } from "@/shared/protocol";
 import { POSES, poseCentre, poseExtents } from "@/client/figure/poses";
-import { findBody } from "@/client/figure/samples";
 import { DEV, reportPlayer } from "@/client/app/dev";
 import { ROOM_SURFACE } from "@/client/world/Room";
 import { surfaceRevision } from "@/client/world/surface";
@@ -175,12 +173,6 @@ export function Player({
    *  yours lives here because this is the only place that knows you are on the
    *  ground — nobody else's `grounded` is on the wire. */
   const stepper = useRef(new Stepper(strideFor(role)));
-
-  /** Developer mode only: the last buried fraction, and when it was taken.
-   *  Sampled ten times a second — nobody sinks into a wall inside 16 ms, and
-   *  the readout is only redrawn that often anyway. */
-  const buried = useRef(0);
-  const buriedAt = useRef(0);
 
   const [, getKeys] = useKeyboardControls<Control>();
   const { scene } = useThree();
@@ -444,6 +436,10 @@ export function Player({
     // a surface. See `inside.ts`.
     safe.set(p.x, p.y, p.z);
     keepInside(safe, bodyPos, solids.current);
+    // And the box around that centre, out of the room's own shell. Second, and
+    // never instead: it measures outward from the centre, so it needs the
+    // centre already in the room. See `inside.ts`.
+    pushInside(bodyPos, poseHalf, centre, m.bodyYaw, m.cling, shell.current);
 
     rb.setNextKinematicTranslation({ x: bodyPos.x, y: bodyPos.y, z: bodyPos.z });
     // Published for the viewmodel's walk bob, under the same condition that
@@ -505,16 +501,6 @@ export function Player({
     // `app/dev.ts`. Reported from here because this is the only place that
     // knows any of it: none of `grounded`, `vy` or `cling` is on the wire.
     if (DEV) {
-      const now = state.clock.elapsedTime;
-      if (now - buriedAt.current > 0.1) {
-        buriedAt.current = now;
-        const mesh = findBody(visual.current);
-        // Skinning reads the bones' `matrixWorld`, and three only refreshes
-        // those at render — a whole frame after this loop moved the body. Ten
-        // times a second over a figure-sized subtree, doing it here is free.
-        visual.current?.updateWorldMatrix(true, true);
-        buried.current = mesh ? buriedFraction(world, mesh, rb) : 0;
-      }
       reportPlayer({
         role,
         x: bodyPos.x,
@@ -530,7 +516,6 @@ export function Player({
         firstPerson,
         pose,
         half: poseExtents(pose, [hx, hy, hz], surfaceKind),
-        buried: buried.current,
         surfaces: solids.current.length,
       });
     }

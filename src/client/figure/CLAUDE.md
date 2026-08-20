@@ -12,7 +12,6 @@ is, for the brush).
 | `flat.ts`          | how a pose that lies flat is oriented, per surface        |
 | `rig.ts`           | bone names, rest rotations, and how an angle is applied  |
 | `model.ts`         | fetching `player.glb`, imperatively                      |
-| `samples.ts`       | points on the body, for the buried-fraction probe        |
 
 ## The three rules that will bite you
 

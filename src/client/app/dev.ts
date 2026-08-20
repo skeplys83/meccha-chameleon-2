@@ -81,17 +81,6 @@ export type PlayerDebug = {
   pose: number;
   /** The collider's half extents, which a folded pose changes. */
   half: [number, number, number];
-  /**
-   * What fraction of the posed *body* is inside solid geometry, 0 to 1 —
-   * sampled ten times a second from `players/Player.tsx`.
-   *
-   * It is never zero for a chameleon against a wall, and is not meant to be:
-   * the collider is smaller than the body on purpose, so sinking in is the
-   * hiding mechanic. What it is here to show is the other end — a spot where
-   * the whole body has disappeared inside geometry and no hunter can ever see
-   * it. Nothing acts on it yet.
-   */
-  buried: number;
   /** How many `ROOM_SURFACE` meshes the raycasts walk — see `world/`, inv. 25. */
   surfaces: number;
 };

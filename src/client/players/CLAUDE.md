@@ -12,7 +12,6 @@ climbing, and `BODY` (the collider size for each role).
 | `usePointerControls.ts`   | every meaning of the mouse, and the strokes it produces   |
 | `useStateBroadcast.ts`    | your transform, on a timer                                |
 | `useEyedropperReadback.ts`| the framebuffer read, at frame priority 3                 |
-| `buried.ts`               | how much of you is inside a wall — developer mode only    |
 | `RemotePlayers.tsx`       | everybody else, damped toward their last packet           |
 | `controls.ts` `controller.ts` `camera.ts` `cling.ts` `body.ts` `pointerLock.ts` | the pieces each of those uses |
 
@@ -150,13 +149,28 @@ It raycasts `shell` only — floor, walls, ceiling — never the furniture. See
   it into existence already overlapping. A sweep from last frame's position to
   this one catches all three.
 
-  It is a backstop, not the collision system, and it is only half the answer:
-  it cannot help when the *box changes shape* around a centre that never moved,
-  which is what `figure/`'s footprint rule is for. **It does not stop the body
+  It is a backstop, not the collision system. **It does not stop the body
   overlapping** — the collider is deliberately narrower than the figure and that
   gap is the hiding mechanic. What it guarantees is that the centre stays on the
   room's side of every wall, so a chameleon can sink into scenery and never end
   up behind it.
+- **And the box around that centre is pushed out of the shell** (`pushInside`,
+  same file), which is the other half: a centre in the room says nothing about a
+  collider that has just been *rebuilt bigger* around it. It runs second and
+  never instead, because it measures outward from the centre and a ray starting
+  inside geometry leaves through a back face and reports nothing.
+
+  Three things it is careful about, each of them a way to break something that
+  works. It corrects along the **box's own axes**, which turn with the body's
+  yaw. It only pushes on a real overlap, past a tolerance — a box resting
+  exactly on the floor is measured at exactly its half-extent every frame, and a
+  skin on top of that floats the player. And it **never pushes along the surface
+  a body is clinging to**: `seatOn` owns that distance, and shoving a climber
+  off their wall drops them out of reach of their own cling probe. The other two
+  axes still apply, so a climber who meets the ceiling is still let out of it.
+
+  **Shell only** — floor, walls and ceiling. Sinking into the furniture is the
+  hiding mechanic working.
 - **`clingKind` turns a cling normal into the wire value.** The normal points
   back at the player, so a ceiling's points down. It decides which way up
   `figure/` draws a pose that lies flat, and which way round its box sits — so
@@ -164,7 +178,6 @@ It raycasts `shell` only — floor, walls, ceiling — never the furniture. See
   on that box.
 - **A hunter broadcasts camera yaw, not body yaw**, so chameleons can read where
   the gun hunting them is pointed.
-
 ---
 
 Thirty-five invariants, the camera tuning, the autostep number and the climbing

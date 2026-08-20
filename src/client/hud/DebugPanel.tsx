@@ -126,7 +126,10 @@ export function DebugPanel({ map, phase }: { map: string; phase: string }) {
   const pose: Pose | null = player ? POSES[player.pose] : null;
 
   return (
-    <div className="pointer-events-none absolute bottom-4 left-4 z-30 flex w-60 select-none flex-col items-start gap-1.5 font-mono text-[10px] leading-[1.4] tabular-nums text-neutral-300 antialiased">
+    // Clear of `hud/ChatPanel`, which owns bottom-left at `w-80`. Offset
+    // always rather than only in a lobby: a dev chip that moves about between
+    // rooms is harder to find than one that does not.
+    <div className="pointer-events-none absolute bottom-4 left-[22rem] z-30 flex w-60 select-none flex-col items-start gap-1.5 font-mono text-[10px] leading-[1.4] tabular-nums text-neutral-300 antialiased">
       {on && (
         <div className="max-h-[calc(100dvh-5rem)] w-full overflow-y-auto rounded border border-lime-400/25 bg-black/95 px-3 py-2">
           <Head>room</Head>
@@ -154,22 +157,6 @@ export function DebugPanel({ map, phase }: { map: string; phase: string }) {
                 <span className="text-rose-300">{num(player.half[0])}</span>
                 <span className="text-lime-300">{num(player.half[1])}</span>
                 <span className="text-sky-300">{num(player.half[2])}</span>
-              </Row>
-              {/* Green in the open, amber once most of the body is in
-                  something, red when there is effectively none of it left
-                  showing — a spot no hunter could ever see into. */}
-              <Row label="buried">
-                <span
-                  className={
-                    player.buried > 0.85
-                      ? "text-red-400"
-                      : player.buried > 0.5
-                        ? "text-amber-300"
-                        : "text-lime-300"
-                  }
-                >
-                  {(player.buried * 100).toFixed(0).padStart(3)}%
-                </span>
               </Row>
               <Row label="yaw / pitch">
                 <span className="text-amber-300">{num(player.yaw)}</span>
@@ -202,7 +189,6 @@ export function DebugPanel({ map, phase }: { map: string; phase: string }) {
                   {player.surfaces}
                 </span>
               </Row>
-
               <Head>
                 pose {player.pose} · <span className="text-fuchsia-300">{pose?.key}</span>
               </Head>
