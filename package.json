@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node src/server/index.ts",
+    "dev": "node --watch-path=./src/server --watch-path=./src/shared src/server/index.ts",
     "build": "vite build",
     "start": "NODE_ENV=production node src/server/index.ts",
     "lint": "eslint",

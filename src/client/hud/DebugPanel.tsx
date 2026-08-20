@@ -216,9 +216,13 @@ export function DebugPanel({ map, phase }: { map: string; phase: string }) {
                   {pose ? pose.centre.map((n) => n.toFixed(2)).join(" ") : "—"}
                 </span>
               </Row>
-              <Row label="roll">
-                <span className={pose?.roll ? "text-lime-400" : "text-neutral-700"}>
-                  {pose?.roll ? "yes" : "no"}
+              <Row label="flat">
+                <span
+                  className={
+                    pose && pose.flat !== "none" ? "text-lime-400" : "text-neutral-700"
+                  }
+                >
+                  {pose?.flat ?? "none"}
                 </span>
               </Row>
               <Row label="rootX">

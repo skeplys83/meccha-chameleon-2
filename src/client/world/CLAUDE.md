@@ -48,7 +48,21 @@ collision, everything else decoration — and the full Blender workflow are in
   of having no build step.
 - **Nothing drawn is collided with and nothing collided with is drawn.**
 - **`ROOM_SURFACE` is the collision layer's name** and goes on nothing else —
-  `players/`, `combat/` and `paint/` all raycast by it.
+  `players/`, `combat/` and `paint/` all raycast by it. Each proxy also carries
+  `userData.shell`.
+- **`shell` is floor, walls and ceiling, matched on the collision object's own
+  name** (`/floor|wall|ceiling/i`, in `levelScene.ts`). Shots and the ground
+  test use the whole layer; **only the follow camera reads `shell`**, because a
+  camera that backed away from every barrel and table spent a hunt lurching in
+  and out, and in a furnished map that is most of what is behind you. The
+  dungeon has 345 collision objects and 104 of them are shell.
+
+  The rule is a regex over names a `.blend` chooses, so nothing in the build can
+  catch it drifting — a re-export that renames `col_ceiling` breaks the camera
+  silently, in one map only. `world/test/shell.test.ts` pins it against names
+  sampled from both files. **The judgement call is `col_ring_deck`**: it is
+  walkable but not named like shell, so a player standing on it can drop the
+  lens through it. Add `deck` to the pattern if that reads worse.
 - **Developer mode draws it green** (`DEV` in `app/dev.ts`, plus `<Physics
   debug>` in `Scene.tsx`), which is exactly what you want while hunting for a
   hole in a map and exactly what you do not want the rest of the time.

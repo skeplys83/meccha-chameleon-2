@@ -35,7 +35,7 @@ type PlayerSchema = {
   yaw: number;
   pitch: number;
   pose: number;
-  cling: boolean;
+  cling: number;
   strokes: { forEach(cb: (raw: string) => void): void };
 };
 

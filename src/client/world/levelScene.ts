@@ -41,7 +41,12 @@ export type ColliderKind = "cuboid" | "hull" | "trimesh" | "ball";
  * their *vertices*, so for those this is the raycast proxy's transform only and
  * the collider itself stays at the origin.
  */
-type Placed = { position: THREE.Vector3; quaternion: THREE.Quaternion };
+type Placed = {
+  position: THREE.Vector3;
+  quaternion: THREE.Quaternion;
+  /** Part of the room's shell — the only thing the follow camera stops on. */
+  shell: boolean;
+};
 
 export type LevelCollider =
   | (Placed & { kind: "cuboid"; half: [number, number, number] })
@@ -67,6 +72,22 @@ const PREFIXES: [string, ColliderKind][] = [
   ["coltri_", "trimesh"],
   ["colball_", "ball"],
 ];
+
+/**
+ * The room's shell: the floor you stand on, the walls that hold the room in,
+ * and the ceiling over it. Matched on the collision object's own name, after
+ * its `col*_` prefix.
+ *
+ * **Only these stop the follow camera.** Everything else a map is furnished
+ * with — barrels, tables, crates, the arena's cover — is passed straight
+ * through, because a camera that backs away from every barrel spends a hunt
+ * lurching in and out. `world/CLAUDE.md` has the rule and the one judgement
+ * call in it.
+ */
+const SHELL = /floor|wall|ceiling/i;
+
+/** Whether a collision object is part of the shell rather than the furniture. */
+export const isShellName = (name: string) => SHELL.test(name);
 
 /** Which collider a name asks for, or null if it is not a collision object. */
 export function colliderKindOf(name: string): ColliderKind | null {
@@ -220,6 +241,7 @@ function colliderFrom(mesh: THREE.Mesh, kind: ColliderKind): LevelCollider | nul
   const placed: Placed = {
     position: bounds.getCenter(new THREE.Vector3()).applyMatrix4(mesh.matrixWorld),
     quaternion: SPARE_Q.clone(),
+    shell: isShellName(mesh.name),
   };
 
   if (kind === "hull") return { ...placed, kind, ...bake(mesh) };

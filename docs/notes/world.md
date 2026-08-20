@@ -274,7 +274,7 @@ downloading in the background cannot raise it.
    dome is a box; a cuboid around a rotated ramp is right only because the
    rotation is kept on the collider. None of these fail loudly — they just make a
    shape behave like a different shape.
-7. **Everything tall has a way up.** Jump apex is `JUMP_SPEED²/2g` ≈ 3 units, so
+7. **Everything tall has a way up.** Jump apex is `JUMP_SPEED²/2g` ≈ 4.1 units (10²/24), so
    no step in the arena is more than ~2: the ziggurat is three 1-unit tiers, the
    divider is a lip then a wall, the stairs rise 0.9 each onto a catwalk that
    dead-ends at the slab, and the big drum has a smaller drum beside it as its

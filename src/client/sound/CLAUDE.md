@@ -22,7 +22,15 @@
    mute. The music is fetched on arriving in a lobby, not on opening the page.
 3. **Whoever starts a loop must stop it.** Nothing else will. Loops are keyed by
    name, at most one runs per name, and `app/Game.tsx` stops them all on
-   `onLeftRoom`, on a drop and on unmount.
+   `onLeftRoom`, on a drop and on unmount. `ambient` is the one with a phase
+   attached: `useRoundAudio` starts it on the hunt and stops it on *any* phase
+   that is not the hunt, so it cannot play under the gong.
+
+   **`ambient` loops, and its file is not cut for looping.** 76.6s long, with a
+   half-second fade-in from silence (−68 dB mean) against a tail that is still
+   sounding (−19.8 dB peak) — so the seam is a short hole rather than a click.
+   Closing it means trimming the head and crossfading the file into itself; see
+   invariant 6 in the archive for the same problem on `brush`.
 
 ## Contracts
 

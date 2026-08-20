@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { POSES, safePose, type Joint } from "./poses";
+import { CLING_NONE } from "@/shared/protocol";
+import { flatFor } from "./flat";
 import { getSkin } from "@/client/paint/skin";
 import { makeCharacter, preloadCharacter, type Character } from "./model";
 import { applyPose, buildChain, makeAngles } from "./rig";
@@ -44,10 +46,15 @@ type Rig = {
   chain: ReturnType<typeof buildChain>;
 };
 
+/** Scratch for composing the crumple tip under the flat orientation. */
+const crumple = new THREE.Quaternion();
+const CRUMPLE_AXIS = new THREE.Vector3(1, 0, 0);
+
 export function StickFigure({
   scale = 1,
   pose = 0,
   skinId,
+  surface = CLING_NONE,
   aim = null,
   holding,
   highlight = false,
@@ -58,6 +65,9 @@ export function StickFigure({
   pose?: number | (() => number);
   /** Which body's paint to wear — SELF for the local player, session id otherwise. */
   skinId: string;
+  /** What the body is stuck to (`CLING_*`), which decides which way up a pose
+   *  that lies flat is drawn. A getter for the same reason `pose` is one. */
+  surface?: number | (() => number);
   /** Aim pitch in radians. */
   aim?: (() => number) | null;
   /** Rendered in the right hand, barrel already aligned down the arm. */
@@ -66,6 +76,8 @@ export function StickFigure({
   highlight?: boolean;
 }) {
   const root = useRef<THREE.Group>(null);
+  /** How the body is lying right now, eased toward `FLAT_FOR`. */
+  const flat = useRef(new THREE.Quaternion());
   const angles = useRef(makeAngles());
   const skin = getSkin(skinId);
 
@@ -140,6 +152,7 @@ export function StickFigure({
     const { chain } = rig;
 
     const p = POSES[safePose(typeof pose === "function" ? pose() : pose)];
+    const on = typeof surface === "function" ? surface() : surface;
     const a = angles.current;
     const to = (from: number, target: number) =>
       THREE.MathUtils.damp(from, target, POSE_DAMP, delta);
@@ -156,7 +169,11 @@ export function StickFigure({
     lean(p.neck, "neck");
     lean(p.head, "head");
     a.rootX = to(a.rootX, p.rootX);
-    a.roll = to(a.roll, p.roll ? Math.PI / 2 : 0);
+    // Flat on the floor, flat the other way up against a ceiling, upright to
+    // climb a wall. Damped exactly as the joints are — `MathUtils.damp` is a
+    // lerp with this same factor — so a chameleon that grabs a wall stands up
+    // over a few frames instead of snapping vertical.
+    flat.current.slerp(flatFor(p.flat, on), 1 - Math.exp(-POSE_DAMP * delta));
     a.offsetY = to(a.offsetY, p.offsetY);
     a.offsetZ = to(a.offsetZ, p.offsetZ);
 
@@ -193,11 +210,10 @@ export function StickFigure({
     if (g) {
       g.position.y = a.offsetY;
       g.position.z = a.offsetZ;
-      // Lying down is a roll of the whole body and crumpling is a tip forward,
-      // both damped like every other joint so the figure keels over instead of
-      // snapping into place.
-      g.rotation.z = a.roll;
-      g.rotation.x = a.rootX;
+      // The crumple is a tip in the body's *own* frame, so it goes underneath
+      // the flat orientation rather than beside it.
+      crumple.setFromAxisAngle(CRUMPLE_AXIS, a.rootX);
+      g.quaternion.copy(flat.current).multiply(crumple);
     }
 
     applyPose(chain, a);

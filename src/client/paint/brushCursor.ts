@@ -1,11 +1,36 @@
 import * as THREE from "three";
-import { encodeStroke, paint, SELF } from "./skin";
+import { decodeStroke, encodeStroke, paint, SELF } from "./skin";
 import { pickBody, type BodyHit } from "./pick";
 import type { Brush } from "./brush";
 
-/** Minimum UV travel before a drag lays down another dot — a smear at 60 fps
- *  would otherwise be hundreds of near-identical strokes. */
-const PAINT_STEP = 0.012;
+/**
+ * How far a drag travels between dabs, as a fraction of the brush's radius.
+ *
+ * **It has to scale with the brush, and it used to be a flat 0.012 in UV.** The
+ * body's unwrap puts roughly two figure units in one UV unit, so a dab's radius
+ * in UV is about half the brush size — and at `MIN_SIZE` that is 0.0075, well
+ * under the old fixed step. The smallest brush therefore laid down dabs that
+ * did not touch each other even at a crawl.
+ */
+const STEP_PER_SIZE = 0.2;
+/** A floor for it, so a tiny brush cannot ask for a dab every texel. */
+const MIN_STEP = 0.0025;
+/**
+ * Most gap-filling dabs one mouse move may insert.
+ *
+ * A move event is one dab, so a fast flick with a small brush left a dotted
+ * line with clear air between the dots — the pointer simply was not sampled
+ * often enough. The gap is filled by **re-casting the ray at points along the
+ * segment the cursor skipped**, rather than by interpolating UV: the unwrap has
+ * seams, and a straight line across one runs through unrelated parts of the
+ * atlas. Every filled dab is a real hit with its own UV, so it sits on the
+ * surface exactly as a slower drag would have put it.
+ *
+ * The cap bounds the cost of a mouse that jumped half the screen. Each fill is
+ * one ray over the cached posed triangles — the same rays `EDGE_RINGS` already
+ * spends up to 25 of on a miss.
+ */
+const MAX_FILL = 16;
 /** Lift the ring off the skin so it does not z-fight with the body. */
 const RING_OFFSET = 0.02;
 /**
@@ -54,7 +79,9 @@ export function createBrushCursor({
   onDrawingChange?: (drawing: boolean) => void;
 }) {
   let drawing = false;
-  let last: { u: number; v: number } | null = null;
+  /** The last dab: where it landed on the unwrap, and where the cursor was on
+   *  screen — the second is what the gap-filling re-casts through. */
+  let last: { u: number; v: number; x: number; y: number } | null = null;
 
   const setDrawing = (next: boolean) => {
     if (drawing === next) return;
@@ -64,7 +91,7 @@ export function createBrushCursor({
 
   /** Whatever part of your own body is under the cursor.
    *  `tolerant` widens the target — see `EDGE_RINGS`. */
-  function hit(e: MouseEvent, tolerant = false): BodyHit | null {
+  function hitAt(x: number, y: number, tolerant = false): BodyHit | null {
     const group = figure();
     if (!group) return null;
 
@@ -77,8 +104,8 @@ export function createBrushCursor({
     });
     if (!body) return null;
 
-    const rect = canvas.getBoundingClientRect();
     const cast = (px: number, py: number) => {
+      const rect = canvas.getBoundingClientRect();
       pointerNdc.set((px / rect.width) * 2 - 1, -(py / rect.height) * 2 + 1);
       raycaster.setFromCamera(pointerNdc, camera);
       // Not `raycaster.intersectObject`: three re-skins the whole body for
@@ -86,8 +113,6 @@ export function createBrushCursor({
       return pickBody(body!, raycaster.ray);
     };
 
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
     const direct = cast(x, y);
     if (direct || !tolerant) return direct;
 
@@ -99,6 +124,17 @@ export function createBrushCursor({
       }
     }
     return null;
+  }
+
+  /** Canvas-relative coordinates of a mouse event. */
+  function where(e: MouseEvent) {
+    const rect = canvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  function hit(e: MouseEvent, tolerant = false): BodyHit | null {
+    const { x, y } = where(e);
+    return hitAt(x, y, tolerant);
   }
 
   /** Sit the ring on the body under the cursor, so you see the dot before you
@@ -118,21 +154,54 @@ export function createBrushCursor({
     mesh.lookAt(facing.copy(mesh.position).add(found.normal));
   }
 
+  /**
+   * One dab, applied here and sent to everyone else. The body is one mesh
+   * wearing one continuous unwrap, so a hit's own UV is the coordinate the
+   * canvas is drawn in — nothing to look up.
+   *
+   * **Painted from the decoded wire form, not from the numbers we measured.**
+   * `encodeStroke` rounds to three decimals — half a texel on a 1024² canvas —
+   * so painting the raw hit locally made your own body the one copy nobody
+   * else was looking at. Round-tripping first costs a string and guarantees
+   * every canvas is fed byte-identical input.
+   */
+  function dab(u: number, v: number, size: number, color: string) {
+    const encoded = encodeStroke({ u, v, size, color });
+    const stroke = decodeStroke(encoded);
+    if (!stroke) return;
+    paint(SELF, stroke);
+    onStroke(encoded);
+  }
+
   function drawAt(e: MouseEvent) {
-    const found = hit(e, true);
+    const { x, y } = where(e);
+    const found = hitAt(x, y, true);
     showRing(found);
     if (!found) return;
 
-    // The body is one mesh wearing one continuous unwrap, so the hit's own UV
-    // is the coordinate the canvas is drawn in — nothing to look up.
-    const { u, v } = found;
-    if (last && Math.hypot(last.u - u, last.v - v) < PAINT_STEP) return;
-    last = { u, v };
-
     const { size, color } = brush();
-    const stroke = { u, v, size, color };
-    paint(SELF, stroke);
-    onStroke(encodeStroke(stroke));
+    const step = Math.max(MIN_STEP, size * STEP_PER_SIZE);
+
+    if (last) {
+      const gap = Math.hypot(last.u - found.u, last.v - found.v);
+      if (gap < step) return;
+
+      // Walk the segment the cursor skipped and lay a dab at each step. `ceil`
+      // rather than `floor`, so the spacing comes out at or under `step`
+      // instead of just over it.
+      const fills = Math.min(MAX_FILL, Math.ceil(gap / step));
+      for (let i = 1; i < fills; i++) {
+        const t = i / fills;
+        // Not tolerant: a fill that misses the body is a fill that should not
+        // be there, and paying the ring search for each of them would cost far
+        // more than the dab is worth.
+        const between = hitAt(last.x + (x - last.x) * t, last.y + (y - last.y) * t);
+        if (between) dab(between.u, between.v, size, color);
+      }
+    }
+
+    dab(found.u, found.v, size, color);
+    last = { u: found.u, v: found.v, x, y };
   }
 
   return {

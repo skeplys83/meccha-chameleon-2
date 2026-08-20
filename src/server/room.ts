@@ -19,6 +19,7 @@ import {
   MAX_PLAYERS,
   MIN_PLAYERS,
   REVEAL_SECONDS,
+  CLING_NONE,
 } from "../shared/protocol.ts";
 
 // ROOM_LIMIT, POSE_COUNT, MAX_STROKES and MAX_STROKE_LENGTH are imported above:
@@ -54,8 +55,9 @@ export class GameRoom extends Room<GameState> {
   private forgetFire: (sessionId: string) => void = () => {};
   /** The lobby's countdown, while one is running. */
   private counting: ReturnType<GameRoom["clock"]["setInterval"]> | null = null;
-  /** The lobby's display mirror of the hiding countdown, and the hunter it is waiting to send. See invariant 17. */
-  private hiding: ReturnType<GameRoom["clock"]["setInterval"]> | null = null;
+  /** The lobby's own clock: the hiding mirror while its match runs, and the
+   *  round-over card if that match ends before the hunter was ever sent in. */
+  private lobbyClock: ReturnType<GameRoom["clock"]["setInterval"]> | null = null;
   private hunterId = "";
   /** The pass minted for this round, kept so the hunter's later seat carries it. */
   private roundPass = "";
@@ -296,7 +298,7 @@ export class GameRoom extends Room<GameState> {
       // in it. Display only — see the note on `hiding`.
       this.state.phase = "hiding";
       this.state.timeLeft = HIDE_SECONDS;
-      this.hiding = this.clock.setInterval(() => {
+      this.lobbyClock = this.clock.setInterval(() => {
         if (this.state.timeLeft > 0) this.state.timeLeft -= 1;
       }, 1000);
       this.publish();
@@ -312,8 +314,8 @@ export class GameRoom extends Room<GameState> {
   /** The match ringing the bell: send the hunter in. */
   async sendHunter(id: string) {
     if (!this.isLobby || this.matchId !== id) return;
-    this.hiding?.clear();
-    this.hiding = null;
+    this.lobbyClock?.clear();
+    this.lobbyClock = null;
 
     const [match] = await matchMaker.query({ roomId: id });
     const hunter = this.clients.find((c) => c.sessionId === this.hunterId);
@@ -341,6 +343,40 @@ export class GameRoom extends Room<GameState> {
     this.publish();
   }
 
+  /**
+   * Our match ended before the hunter was ever sent in, because everybody who
+   * was hiding left. Public for the same reason `matchEnded` is:
+   * `matchMaker.remoteRoomCall` reaches it by name.
+   *
+   * The news has to arrive here rather than being shown in the match, because
+   * the hunter never went to the match — they are standing in this arena
+   * watching a countdown that is now counting towards nothing.
+   */
+  async roundAborted(id: string) {
+    if (!this.isLobby || this.matchId !== id) return;
+    this.lobbyClock?.clear();
+    this.lobbyClock = null;
+    this.hunterId = "";
+    this.matchId = null;
+    this.hosts.beginGrace();
+
+    // They won it: there was nobody left to find. The same reveal the client
+    // already knows how to draw, in the room they never left.
+    this.state.winner = "hunters";
+    this.state.phase = "reveal";
+    this.state.timeLeft = REVEAL_SECONDS;
+    this.lobbyClock = this.clock.setInterval(() => {
+      if (this.state.timeLeft > 0) this.state.timeLeft -= 1;
+      if (this.state.timeLeft > 0) return;
+      this.lobbyClock?.clear();
+      this.lobbyClock = null;
+      this.state.winner = "";
+      this.state.phase = "waiting";
+      this.publish();
+    }, 1000);
+    this.publish();
+  }
+
   /** Reach the lobby that owns this match, by name. */
   private async callLobby(method: string, ...args: unknown[]) {
     if (this.isLobby) return;
@@ -357,6 +393,15 @@ export class GameRoom extends Room<GameState> {
     let n = 0;
     this.state.players.forEach((p) => {
       if (p.role === "chameleon") n += 1;
+    });
+    return n;
+  }
+
+  /** How many are still hunting. Zero of them ends the round the other way. */
+  private get huntersLeft() {
+    let n = 0;
+    this.state.players.forEach((p) => {
+      if (p.role === "hunter") n += 1;
     });
     return n;
   }
@@ -471,7 +516,7 @@ export class GameRoom extends Room<GameState> {
     player.yaw = 0;
     player.pitch = 0;
     player.pose = 0;
-    player.cling = false;
+    player.cling = CLING_NONE;
     this.state.players.set(client.sessionId, player);
 
     // Never "claim the button if it looks vacant" — that is what handed it to
@@ -521,9 +566,27 @@ export class GameRoom extends Room<GameState> {
     // later.
     if (this.counting && this.state.players.size < MIN_PLAYERS) this.cancelCountdown();
 
-    /** The last chameleon quitting ends the round exactly as the last one caught does. */
-    if (!this.isLobby && this.state.phase === "hunt" && this.chameleonsLeft === 0) {
+    /**
+     * A quit can end a round, and which side it ends for depends on the phase.
+     *
+     * **During the hunt** the last chameleon leaving is the same as the last
+     * one caught, and the last *hunter* leaving is its mirror: nobody is
+     * looking any more, so the survivors have won it rather than the clock
+     * running down over an empty search.
+     *
+     * **During hiding** there is no hunter in this room at all — theirs is
+     * still in the lobby — so only one side can empty out. When it does the
+     * round is over before it began, and the news has to be carried to the
+     * lobby: this room is about to dispose with nobody left in it to see a
+     * reveal, and the hunter would otherwise watch a mirror countdown run down
+     * to a bell that never rings.
+     */
+    if (!this.isLobby && this.state.phase === "hiding" && this.chameleonsLeft === 0) {
       this.finish("hunters");
+      void this.callLobby("roundAborted", this.roomId);
+    } else if (!this.isLobby && this.state.phase === "hunt") {
+      if (this.chameleonsLeft === 0) this.finish("hunters");
+      else if (this.huntersLeft === 0) this.finish("chameleons");
     }
 
     this.reassignHost();

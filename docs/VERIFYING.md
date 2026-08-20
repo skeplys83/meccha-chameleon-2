@@ -29,18 +29,23 @@ things that break are visual. What you can still do on your own:
 - **Pure logic, headlessly.** Modules with no React or WebGL — the footstep
   stepper, stroke encoding, pose extents — import straight into Node, since it
   strips types. Add them to the vitest suite if they are worth keeping.
-- **Boot it and look at it.** Chrome automation is genuinely useful for one
-  question: *does it still mount, load a map, and run without console errors?*
-  Start the server on a spare port (`PORT=3100 GAME_PORT=2600 HMR_PORT=24700 npm
-  run dev`) so you do not fight the one the user is already running, open it,
-  create a game, and screenshot. That catches a broken import, a crashed effect
-  or a map that no longer loads — which is most of what a refactor breaks.
-- **Know what it cannot tell you.** The automated tab reports
+- **Do not drive the game in a browser. Ever.** Chrome automation is not part of
+  this project's workflow — **the user runs the game and reports what they see
+  and hear.** This is a standing instruction, not a default to weigh up: do not
+  screenshot the game, do not click through menus, do not start a server on a
+  spare port to "just check it renders".
+
+  It also cannot do the job. The automated tab reports
   `visibilityState: "hidden"`, so Chrome refuses `requestPointerLock()` — a
-  hunter's aim and trigger are out of reach — and withholds the user activation
-  an `AudioContext` needs, so nothing is ever audible. The blur also raises the
-  pause menu on its own. Do not read any of that as a bug, and do not try to
-  work around it.
+  hunter's aim and trigger are out of reach — withholds the user activation an
+  `AudioContext` needs, so nothing is ever audible, and the blur raises the
+  pause menu over whatever you were trying to look at. What is left is a
+  screenshot of a paused game with no sound, which tells you less than the
+  build does and costs far more.
+
+  A change to a panel, a layout, a colour or a phase transition ships to the
+  user for checking, described plainly: what changed, where to look, and what
+  you did **not** verify.
 - **Audio levels, with ffmpeg.** `ffmpeg -i f.wav -af volumedetect -f null
   /dev/null` reports peak and mean. A sound nobody can hear is usually 20 dB
   down, not unwired.

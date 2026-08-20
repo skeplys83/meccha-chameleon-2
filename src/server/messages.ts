@@ -10,6 +10,8 @@ import {
   POSE_COUNT,
   WHISTLE_INTERVAL_MS,
   WHISTLE_TOLERANCE,
+  CLING_CEILING,
+  CLING_NONE,
 } from "../shared/protocol.ts";
 import { mapLimit } from "../shared/maps.ts";
 
@@ -64,11 +66,14 @@ export function registerMessages(room: GameRoom) {
     player.yaw = Number.isFinite(msg.yaw) ? (msg.yaw as number) : 0;
     player.pitch = Number.isFinite(msg.pitch) ? (msg.pitch as number) : 0;
     player.pose = clamp(Math.trunc(msg.pose as number), 0, POSE_COUNT - 1);
-    // Coerced, never stored raw: schema "boolean" will happily encode whatever
-    // truthy junk arrives and hand it to every client. Chameleons only, because
-    // clinging is what silences your footsteps for everyone else — a hunter
-    // who could set it would simply hunt without making a sound.
-    player.cling = player.role === "chameleon" && msg.cling === true;
+    // Clamped, never stored raw: an out-of-range value would be handed to every
+    // client, which reads it as a surface to lie against. Chameleons only,
+    // because clinging is what silences your footsteps for everyone else — a
+    // hunter who could set it would simply hunt without making a sound.
+    player.cling =
+      player.role === "chameleon"
+        ? clamp(Math.trunc(msg.cling as number), CLING_NONE, CLING_CEILING)
+        : CLING_NONE;
   });
 
   // Paint is cosmetic and self-applied: it is stored on the painter and
@@ -135,7 +140,7 @@ export function registerMessages(room: GameRoom) {
 
     // The conversion itself.
     victim.role = "hunter";
-    victim.cling = false;
+    victim.cling = CLING_NONE;
     victim.pose = 0;
     victim.strokes.clear();
     room.broadcast("clearSkin", { id: victimId });

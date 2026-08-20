@@ -53,6 +53,16 @@ export type Motion = {
   cling: THREE.Vector3 | null;
   /** Seconds left before a surface can be grabbed again after letting go. */
   reclingGrace: number;
+  /** What the body was stuck to when its current box was chosen. A box that
+   *  turned because the *surface* changed must not be compensated for. */
+  surface: number;
+  /** Seconds of ground credit left after walking off an edge — coyote time. */
+  coyote: number;
+  /** Seconds a jump press stays queued while airborne — the landing buffer. */
+  buffered: number;
+  /** Whether the jump key has been held since take-off. Releasing it early cuts
+   *  the rise short, which is what makes a short hop possible. */
+  rising: boolean;
   /** How far the collider's underside sits below the body's origin, signed, as
    *  it currently stands — so a pose that moves it can move the body by the
    *  difference and leave the feet where they were. */
@@ -66,5 +76,9 @@ export const newMotion = (footOffset: number): Motion => ({
   jumpHeld: false,
   cling: null,
   reclingGrace: 0,
+  surface: 0,
+  coyote: 0,
+  buffered: 0,
+  rising: false,
   footOffset,
 });

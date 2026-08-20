@@ -31,6 +31,22 @@ readout.
   top of a server check, never instead of one.
 - **The lobby panel stays up while paused** — everyone in a lobby holds the
   pointer lock, so pausing is the only moment Start is clickable at all.
+- **A lobby has four phases, and `LobbyPanel` only draws two of them.**
+  `waiting` and `countdown` are its own; during `hiding` it is replaced outright
+  by `HunterWait`, because the invite code, the roster and the map picker all
+  answer questions the round has already settled — it read as a game still
+  waiting to start. `reveal` only happens when a match ended before its hunter
+  was sent in, and the panel suppresses Start and its player count for it.
+- **Nothing in the top-centre column positions itself.** `Game.tsx` stacks the
+  lobby card and `PhaseBanner` in one flex column, so the gap is laid out rather
+  than guessed at. Both used to be pinned `absolute top-4` and the clock
+  rendered *behind* the panel; the first fix was an offset prop, which was worse
+  — it had to be recalculated whenever the panel's height changed, and it was
+  silently wrong the whole time because nothing passed it.
+- **The pause menu has one way out, and it leaves the game.** It used to offer a
+  match player "return to the waiting room", which dropped them into a lobby
+  whose clock was still running — indistinguishable from still being in the
+  round. Either you are playing it or you are out.
 - **The map picker lists `MATCH_MAP_LIST`, never `MAP_LIST`**: the arena is
   where you already are.
 - **A listed game shows the players in the whole game**, across both its rooms.

@@ -1,10 +1,21 @@
 # Running it, and what it serves
 
 ```bash
-npm run dev     # node src/server/index.ts — page on :3000, Colyseus on :2567
+npm run dev     # node --watch-path=./src/server … — page on :3000, Colyseus on :2567
 npm run build   # vite build -> dist/
 npm start       # same server, NODE_ENV=production, serving dist/
 ```
+
+**Client changes hot-reload; server changes restart the process.** Vite's HMR
+only ever covered `src/client/`, so until this was added, editing `room.ts` and
+reloading the page showed you new UI running against the *old* game logic —
+which reads as the change not working. `--watch-path` is scoped to
+`src/server/` and `src/shared/` deliberately: a bare `node --watch` follows
+everything the process loads, picks up what Vite writes under `node_modules`,
+and restarts about fifty times a minute.
+
+A restart drops every live lobby and match, which is the right trade in
+development and the reason `npm start` does not do it.
 
 **The server is TypeScript with no build step.** Node 22.18+ / 23.6+ strips the
 types itself, so `node src/server/index.ts` just runs. `"type": "module"` in

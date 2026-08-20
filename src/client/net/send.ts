@@ -8,7 +8,7 @@ export function sendState(
   yaw: number,
   pitch: number,
   pose: number,
-  cling: boolean,
+  cling: number,
 ) {
   getRoom()?.send("state", { p, yaw, pitch, pose, cling });
 }

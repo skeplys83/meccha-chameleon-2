@@ -62,17 +62,20 @@ export function GltfLevel({ level }: { level: GameMap }) {
 function Proxy({
   children,
   show,
+  shell = false,
   ...placement
 }: {
   children?: ReactNode;
   /** Drawn only in developer mode, and only while its toggle is on. */
   show: boolean;
+  /** Floor, wall or ceiling. The follow camera raycasts only these. */
+  shell?: boolean;
   geometry?: THREE.BufferGeometry;
   position?: THREE.Vector3;
   quaternion?: THREE.Quaternion;
 }) {
   return (
-    <mesh name={ROOM_SURFACE} {...placement}>
+    <mesh name={ROOM_SURFACE} userData={SHELL_FLAG(shell)} {...placement}>
       {children}
       {/* `visible` sits on the *material*, because three's raycaster skips an
           object whose own `visible` is false and this one has to stay findable.
@@ -94,6 +97,11 @@ function Proxy({
  * Hulls and trimeshes carry their world transform in their vertices, so those
  * colliders stay at the origin and only the proxy is placed.
  */
+/** One object, so every non-shell proxy shares it rather than allocating. */
+const NOT_SHELL = { shell: false };
+const IS_SHELL = { shell: true };
+const SHELL_FLAG = (shell: boolean) => (shell ? IS_SHELL : NOT_SHELL);
+
 function Collider({ collider, show }: { collider: LevelCollider; show: boolean }) {
   switch (collider.kind) {
     case "cuboid": {
@@ -101,7 +109,7 @@ function Collider({ collider, show }: { collider: LevelCollider; show: boolean }
       return (
         <>
           <CuboidCollider args={half} position={position} quaternion={quaternion} />
-          <Proxy show={show} position={position} quaternion={quaternion}>
+          <Proxy show={show} shell={collider.shell} position={position} quaternion={quaternion}>
             <boxGeometry args={[half[0] * 2, half[1] * 2, half[2] * 2]} />
           </Proxy>
         </>
@@ -112,7 +120,7 @@ function Collider({ collider, show }: { collider: LevelCollider; show: boolean }
       return (
         <>
           <BallCollider args={[radius]} position={position} quaternion={quaternion} />
-          <Proxy show={show} position={position} quaternion={quaternion}>
+          <Proxy show={show} shell={collider.shell} position={position} quaternion={quaternion}>
             <sphereGeometry args={[radius, 16, 12]} />
           </Proxy>
         </>
@@ -122,14 +130,14 @@ function Collider({ collider, show }: { collider: LevelCollider; show: boolean }
       return (
         <>
           <ConvexHullCollider args={[collider.vertices]} />
-          <Proxy show={show} geometry={collider.geometry} />
+          <Proxy show={show} shell={collider.shell} geometry={collider.geometry} />
         </>
       );
     case "trimesh":
       return (
         <>
           <TrimeshCollider args={[collider.vertices, collider.indices]} />
-          <Proxy show={show} geometry={collider.geometry} />
+          <Proxy show={show} shell={collider.shell} geometry={collider.geometry} />
         </>
       );
   }

@@ -36,35 +36,58 @@ export function useRoundAudio(phase: Phase | undefined, secondsLeft: number) {
   useEffect(() => {
     const before = lastPhase.current;
     lastPhase.current = phase;
-    if (!phase || !before || before === phase) return;
+
+    // **The music belongs to the hunt and to nothing else**, so this is a fact
+    // about the phase rather than about the transition into it. It stops the
+    // moment the round is decided rather than playing under the gong and the
+    // reveal, and it starts below for somebody who arrives mid-hunt and never
+    // heard the bell — a reconnection, or a caught player coming back in.
+    if (phase !== "hunt") stopLoop("ambient");
+
+    if (!phase || before === phase) return;
 
     const timers: ReturnType<typeof setTimeout>[] = [];
 
-    if (phase === "hunt" && before === "hiding") {
-      // Hiding is over and the hunter is on their way in.
-      playSound("bell");
-      /** Anything already playing is stopped before the wait, not after it. */
-      stopLoop("ambient");
+    if (phase === "hunt") {
+      /** Straight out of the hiding phase, rather than arriving part-way in. */
+      const fromTheBell = before === "hiding";
+      if (fromTheBell) {
+        // Hiding is over and the hunter is on their way in.
+        playSound("bell");
+        /** Anything already playing is stopped before the wait, not after it. */
+        stopLoop("ambient");
+      }
       timers.push(
-        setTimeout(() => {
-          // Checked at fire time, not at schedule time. The cleanup below covers
-          // the ordinary case; this covers a call that outlived the code that
-          // scheduled it, which is what a hot reload produces.
-          if (phaseRef.current !== "hunt") return;
-          startLoop("ambient", { once: true });
-        }, MUSIC_DELAY_MS),
+        setTimeout(
+          () => {
+            // Checked at fire time, not at schedule time. The cleanup below
+            // covers the ordinary case; this covers a call that outlived the
+            // code that scheduled it, which is what a hot reload produces.
+            if (phaseRef.current !== "hunt") return;
+            // Looping, so it runs for the whole hunt. `startLoop` is a no-op
+            // when that name is already going, so arriving twice is harmless.
+            startLoop("ambient");
+          },
+          // The delay is there to let the bell ring alone. Nobody arriving
+          // late heard the bell, so there is nothing to wait for.
+          fromTheBell ? MUSIC_DELAY_MS : 0,
+        ),
       );
     }
 
     // The round is decided, either way: three strikes, overlapping into one
-    // long fall rather than three separate noises.
-    if (phase === "reveal") {
+    // long fall rather than three separate noises. Only on the transition —
+    // somebody who loads straight into a reveal did not watch it end.
+    if (phase === "reveal" && before) {
       for (let i = 0; i < GONG_STRIKES; i++) {
         // Tapered: the strikes overlap and add, so a flat gain would make the
         // last one the loudest moment of the round rather than the first.
         const gain = GONG_FALLOFF ** i;
         if (i === 0) playSound("gong", { gain });
-        else timers.push(setTimeout(() => playSound("gong", { gain }), i * GONG_GAP_MS));
+        else
+          timers.push(
+            setTimeout(() => playSound("gong", { gain }), i * GONG_GAP_MS),
+          );
       }
     }
 

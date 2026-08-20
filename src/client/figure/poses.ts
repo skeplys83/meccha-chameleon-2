@@ -1,6 +1,7 @@
 // The poses, in the order of the number keys that select them.
 
-import { POSE_COUNT } from "@/shared/protocol";
+import { CLING_NONE, POSE_COUNT } from "@/shared/protocol";
+import { flatFor, turnCentre, turnHalf, type FlatMode } from "./flat";
 
 /**
  * One joint's three angles, in radians. **All three are required**, so every
@@ -54,8 +55,8 @@ export type Pose = {
   key: string;
   label: string;
   /**
-   * Collider half-extents, **as the box finally sits in the world** — `y` is
-   * always the vertical one, `roll` or no `roll`. See `poseExtents`.
+   * Collider half-extents, **as the box sits with the body standing up** — `y`
+   * is the vertical one. `poseExtents` turns it for a pose that lies flat.
    */
   half: [number, number, number];
   /**
@@ -66,7 +67,15 @@ export type Pose = {
    * body's yaw, `y` does not.
    */
   centre: [number, number, number];
-  roll: boolean;
+  /**
+   * How this pose lies when it is on a flat surface — see `FlatMode`.
+   *
+   * Flagging a pose is the whole change: **the box below is stated standing up**
+   * and `poseExtents` turns it to match, so nothing has to be re-measured by
+   * hand. Getting that backwards is what left `reach` lying down inside its own
+   * standing collider, hanging 1.1 units above the floor.
+   */
+  flat: FlatMode;
   rootX: number;
   /** Shift the whole figure inside its collider — the body's own middle is not
    *  its origin once a pose reaches out. `z` is forward-negative, as ever. */
@@ -92,7 +101,7 @@ export const POSES: Pose[] = [
     label: "Stand",
     half: [0.12, 1.0, 0.12],
     centre: [0, 0, 0],
-    roll: false,
+    flat: "none",
     rootX: 0,
     offsetY: 0,
     offsetZ: 0,
@@ -128,7 +137,7 @@ export const POSES: Pose[] = [
     // either clip the hands or hold the feet 0.1 off the floor.
     half: [0.12, 1.1, 0.12],
     centre: [0, 0.1, 0],
-    roll: false,
+    flat: "back",
     rootX: 0,
     offsetY: 0,
     offsetZ: 0,
@@ -160,7 +169,7 @@ export const POSES: Pose[] = [
     // -0.917 and the head only reaches 0.972.
     half: [0.12, 0.94, 0.12],
     centre: [0, 0.025, 0],
-    roll: false,
+    flat: "back",
     rootX: 0,
     offsetY: -0.07,
     offsetZ: 0,
@@ -193,9 +202,11 @@ export const POSES: Pose[] = [
     // stated as it lands rather than rolled at runtime — see poseExtents.
     // 0.23 tall because that is the torso lying on its side; the arms
     // reaching past the head sink through it, which is the point.
-    half: [0.96, 0.23, 0.12],
+    // Standing, like every other pose's. On its side this turns into
+    // [0.96, 0.23, 0.12], which is the box this pose has always used.
+    half: [0.23, 0.96, 0.12],
     centre: [0, 0, 0],
-    roll: true,
+    flat: "side",
     rootX: 0,
     offsetY: 0,
     offsetZ: 0,
@@ -226,7 +237,7 @@ export const POSES: Pose[] = [
     // outside it on purpose; the silhouette is 1.26 x 0.57 x 1.00.
     half: [0.24, 0.28, 0.24],
     centre: [0, 0.075, 0.18],
-    roll: false,
+    flat: "none",
     rootX: 0,
     offsetY: 0.15,
     offsetZ: 0.3,
@@ -274,20 +285,76 @@ export const safePose = (n: unknown) =>
  * chameleon's, and is deliberately smaller than the body it carries — that gap
  * is the hiding mechanic, see `players/CLAUDE.md`.
  */
+/**
+ * The half-height every box and centre below was fitted at — the chameleon's
+ * own, before `BODY_SCALE`. Read off the table rather than written down, so the
+ * two cannot drift: pose 0 *is* the standing body.
+ *
+ * The boxes are a fitted table, not something derived from `BODY`, so scaling
+ * the body does not scale them. Without this the figure shrank and its lying
+ * and curled colliders stayed the size they were — a chameleon lying down
+ * inside a box a head taller than it.
+ */
+const FITTED_HY = POSES[0].half[1];
+
+/** Scaled copies, one set per body scale. Built once: `Player.tsx` asks four
+ *  times a frame and the identity is used as a React key. */
+type Box = [number, number, number];
+const scaledPoses = new Map<number, { half: Box; centre: Box }[]>();
+
+function atScale(scale: number) {
+  let table = scaledPoses.get(scale);
+  if (table) return table;
+  table = POSES.map((p) => ({
+    half: [p.half[0] * scale, p.half[1] * scale, p.half[2] * scale] as Box,
+    centre: [p.centre[0] * scale, p.centre[1] * scale, p.centre[2] * scale] as Box,
+  }));
+  scaledPoses.set(scale, table);
+  return table;
+}
+
 export function poseExtents(
   pose: number,
   role: [hx: number, hy: number, hz: number],
+  /** What the body is clinging to, from `shared/protocol`. */
+  cling: number = CLING_NONE,
 ): [number, number, number] {
   const i = safePose(pose);
-  return i === 0 ? role : POSES[i].half;
+  // Pose 0 is the standing body, which `BODY` already states at its own scale.
+  if (i === 0) return role;
+  const half = atScale(role[1] / FITTED_HY)[i].half;
+  const turned = turnHalf(half, flatFor(POSES[i].flat, cling));
+  // **Only the vertical extent is taken from the turned box.** Horizontally it
+  // stays the standing footprint, which is the one shape already known to fit
+  // everywhere the body can be.
+  //
+  // Lying down otherwise swings a body-length of collider out sideways, and it
+  // goes wherever the body happens to be facing — which, next to a wall, is
+  // into the wall. A kinematic collider that starts a frame penetrating gets no
+  // movement back at all, so the player simply stops: stuck in the wall/ceiling
+  // corner, stuck on letting go of a wall, stuck lying down beside one. Three
+  // separate reports, one cause.
+  //
+  // The body still *draws* full length and hangs well outside this box. That is
+  // the hiding mechanic doing its job — `body.ts` makes the collider smaller
+  // than the figure on purpose — and `players/inside.ts` is what stops the
+  // overlap ever becoming a way through a wall.
+  return [half[0], turned[1], half[2]];
 }
 
 /** Where that box sits, relative to the body's origin. `x` and `z` are in the
  *  body's own frame and turn with its yaw; `y` is world-vertical either way,
  *  which is what `Player.tsx` needs to keep the feet put (its invariant 13). */
-export function poseCentre(pose: number): readonly [number, number, number] {
+export function poseCentre(
+  pose: number,
+  /** The body's half-height, so the offset scales with it. */
+  hy: number = FITTED_HY,
+  cling: number = CLING_NONE,
+): readonly [number, number, number] {
   const i = safePose(pose);
-  return i === 0 ? ORIGIN : POSES[i].centre;
+  if (i === 0) return ORIGIN;
+  const centre = atScale(hy / FITTED_HY)[i].centre;
+  return turnCentre(centre, flatFor(POSES[i].flat, cling));
 }
 
 const ORIGIN = [0, 0, 0] as const;

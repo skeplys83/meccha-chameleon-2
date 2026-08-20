@@ -3,10 +3,12 @@ import { useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import type { Role } from "@/shared/protocol";
 import { resolveShot } from "@/client/combat/shoot";
+import { kickViewmodel } from "@/client/combat/recoil";
 import { sendKill, sendPaint, sendShoot } from "@/client/net";
 import { setLockTarget } from "@/client/players/pointerLock";
 import { createBrushCursor, type BrushCursor } from "@/client/paint/brushCursor";
 import { cancelPick, requestPick } from "@/client/paint/eyedropper";
+import { albedoAt } from "@/client/paint/albedo";
 import { MAX_SIZE, MIN_SIZE, type Brush } from "@/client/paint/brush";
 import { startLoop, stopLoop } from "@/client/sound/engine";
 import { FIRE_INTERVAL_MS } from "@/shared/protocol";
@@ -197,9 +199,27 @@ export function usePointerControls({
       // happens after the next draw — see `paint/eyedropper.ts`.
       if (pickingRef.current) {
         const rect = canvas.getBoundingClientRect();
-        requestPick(e.clientX - rect.left, e.clientY - rect.top, (hex) =>
-          onPickedRef.current?.(hex),
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        // The surface's own colour, not the lit pixel — paint is albedo, and
+        // handing back a lit pixel gets it lit twice. See `paint/albedo.ts`.
+        // It needs no frame: the ray can be cast on the click itself.
+        const albedo = albedoAt(
+          scene,
+          camera,
+          (x / rect.width) * 2 - 1,
+          -(y / rect.height) * 2 + 1,
         );
+        if (albedo) {
+          onPickedRef.current?.(albedo);
+          return;
+        }
+
+        // Nothing solid under the cursor — the sky, or the background. There is
+        // no albedo to read, and what is drawn there is close enough to unlit
+        // that the pixel itself is the right answer.
+        requestPick(x, y, (hex) => onPickedRef.current?.(hex));
         return;
       }
 
@@ -226,6 +246,9 @@ export function usePointerControls({
 
       const shot = resolveShot(raycaster, camera, solids.current);
       if (!shot) return;
+      // After the hit test, so it fires exactly when the bang does — a shot
+      // that resolved to nothing makes no noise and should kick nothing.
+      kickViewmodel();
       if (shot.kind === "player") sendKill(shot.id, shot.point);
       // The server relays the mark back to everyone, this client included, so
       // every player sees the same patch appear.

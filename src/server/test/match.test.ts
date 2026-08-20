@@ -120,6 +120,52 @@ describe("a match", () => {
     expect(client.state.winner).toBe("chameleons");
   });
 
+  it("gives the round to the chameleons when the last hunter walks out", async () => {
+    const chameleon = await openMatch();
+    const hunter = await joinMatch(chameleon.roomId, "hunter", { role: "hunter", pass: PASS });
+    await beginHunt(chameleon.roomId);
+
+    await hunter.leave(true);
+    await settle();
+
+    // Nobody is looking any more, so the clock must not run down over an empty
+    // search — which reads as the game having hung.
+    expect(chameleon.state.phase).toBe("reveal");
+    expect(chameleon.state.winner).toBe("chameleons");
+  });
+
+  it("keeps hiding while anyone is still hiding, hunter or no hunter", async () => {
+    const chameleon = await openMatch();
+    const second = await joinMatch(chameleon.roomId, "second");
+    await settle();
+    expect(chameleon.state.phase).toBe("hiding");
+
+    // No hunter is in this room during hiding — theirs is in the lobby — so
+    // `huntersLeft` is legitimately zero and must not read as everyone giving
+    // up. One chameleon leaving is not the last one, either.
+    await second.leave(true);
+    await settle();
+
+    expect(chameleon.state.phase).toBe("hiding");
+    // Falsy rather than "": an unset schema field is absent from the encoded
+    // state and arrives as undefined, which is why `timeLeft` is written
+    // explicitly and this one is not.
+    expect(chameleon.state.winner).toBeFalsy();
+  });
+
+  it("ends the round the moment the last hider leaves during hiding", async () => {
+    const chameleon = await openMatch();
+    const room = roomOf(colyseus, chameleon.roomId);
+
+    await chameleon.leave(true);
+    await settle();
+
+    // Nobody left to find, so the clock must not run on towards a bell that
+    // would ring into an empty map.
+    expect(room.state.phase).toBe("reveal");
+    expect(room.state.winner).toBe("hunters");
+  });
+
   it("refuses a kill during the reveal, so it cannot be played through", async () => {
     const victim = await openMatch();
     const survivor = await joinMatch(victim.roomId, "survivor");
@@ -149,6 +195,22 @@ describe("a match", () => {
     hunter.send("kill", { id: hunter.sessionId });
     await settle();
     expect(chameleon.state.graves.length).toBe(0);
+  });
+
+  it("clamps the cling surface, and refuses one from a hunter", async () => {
+    const chameleon = await openMatch();
+    const hunter = await joinMatch(chameleon.roomId, "hunter", { role: "hunter", pass: PASS });
+
+    // It is a small enum now, not a flag: every client reads it as which way up
+    // to draw a body, so a junk value is a body lying against nothing.
+    chameleon.send("state", { p: [0, 1, 0], yaw: 0, pitch: 0, pose: 0, cling: 99 });
+    // Clinging is what silences footsteps, so a hunter who could set it would
+    // hunt without making a sound.
+    hunter.send("state", { p: [0, 1, 0], yaw: 0, pitch: 0, pose: 0, cling: 2 });
+    await settle();
+
+    expect(chameleon.state.players.get(chameleon.sessionId)!.cling).toBe(2);
+    expect(chameleon.state.players.get(hunter.sessionId)!.cling).toBe(0);
   });
 
   it("clamps a reported position to the map rather than trusting it", async () => {

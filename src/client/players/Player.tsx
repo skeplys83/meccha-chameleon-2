@@ -17,7 +17,9 @@ import {
   RECLING_GRACE,
   RELEASE_PUSH,
   STICK_SPEED,
+  clingKind,
   findCling,
+  seatOn,
   holdsCling,
   wallTangents,
   wrapCling,
@@ -25,11 +27,13 @@ import {
 import { BODY, GRAVITY } from "./body";
 import { characterController } from "./controller";
 import { newMotion } from "./look";
+import { keepInside } from "./inside";
+import { addWalked } from "./gait";
 import { buriedFraction } from "./buried";
 import { usePointerControls } from "./usePointerControls";
 import { useEyedropperReadback } from "./useEyedropperReadback";
 import { useStateBroadcast } from "./useStateBroadcast";
-import type { Role } from "@/shared/protocol";
+import { CLING_NONE, type Role } from "@/shared/protocol";
 import { POSES, poseCentre, poseExtents } from "@/client/figure/poses";
 import { findBody } from "@/client/figure/samples";
 import { DEV, reportPlayer } from "@/client/app/dev";
@@ -42,10 +46,31 @@ import { playSound } from "@/client/sound/engine";
 import { Stepper, jitteredStepRate, strideFor } from "@/client/sound/footsteps";
 
 const SPEED = 6;
-/** A velocity, not an impulse. */
-const JUMP_SPEED = 11;
+/** A velocity, not an impulse. Read with `GRAVITY`, which is what decides how
+ *  long the arc lasts and therefore how far it carries. */
+const JUMP_SPEED = 10;
 /** Downward speed held while grounded, so the controller keeps finding the floor. */
 const GROUND_STICK = 1;
+
+/**
+ * The four numbers that make a jump feel like a jump rather than like a physics
+ * demo. All of them are forgiveness rather than power: none makes you jump
+ * higher than `JUMP_SPEED` allows.
+ */
+/** Ground credit after walking off an edge. A jump pressed inside this window
+ *  still fires — the input was right, the frame was late. */
+const COYOTE_TIME = 0.15;
+/** How long a press made just before landing stays queued. Hammering jump on
+ *  the way down should land and go, not be eaten by a frame. */
+const JUMP_BUFFER = 0.16;
+/** Extra gravity once the rise is over. A symmetric arc hangs; falling faster
+ *  than you rose is what reads as weight. */
+const FALL_GRAVITY = 1.25;
+/** Gravity while rising with the key already released — the short hop. */
+const CUT_GRAVITY = 2.2;
+/** Below this, an upward frame that went nowhere is a ceiling rather than a
+ *  slope being climbed. A share of what was asked for. */
+const HEAD_BUMP = 0.4;
 const TURN_SPEED = 2.6; // rad/s for Q/E
 
 /** Thickness of the hover ring in world units — constant, so the outline does
@@ -67,6 +92,8 @@ const wallRight = new THREE.Vector3();
 const desired = new THREE.Vector3();
 /** The pose's collider offset, turned into the body's yaw. */
 const boxCentre = new THREE.Vector3();
+/** Where the body's centre provably was, for the sweep in `inside.ts`. */
+const safe = new THREE.Vector3();
 
 /** The fall-back drop-in point, used only if a map somehow has none. */
 const SPAWN: [number, number, number] = [0, 2, 0];
@@ -128,14 +155,21 @@ export function Player({
     yaw: 0,
     pitch: 0,
     pose: 0,
-    cling: false,
+    cling: CLING_NONE,
   });
 
   const solids = useRef<THREE.Object3D[]>([]);
+  /** The subset of `solids` that is floor, wall or ceiling. The follow camera
+   *  stops on these and passes through everything else. */
+  const shell = useRef<THREE.Object3D[]>([]);
   /** Which version of the world `solids` was collected from. -1 forces a first
    *  pass on the very first frame. */
   const solidsRevision = useRef(-1);
   const [pose, setPose] = useState(0);
+  /** What the body is stuck to. React state rather than a frame-loop local
+   *  because the collider is keyed on the pose's box, and a pose that lies flat
+   *  gets a different box standing up — so a cling has to re-render. */
+  const [surfaceKind, setSurfaceKind] = useState<number>(CLING_NONE);
 
   /** Your own footsteps. Remote figures get one of these each in SoundStage;
    *  yours lives here because this is the only place that knows you are on the
@@ -197,10 +231,14 @@ export function Player({
     if (solidsRevision.current !== surfaceRevision()) {
       solidsRevision.current = surfaceRevision();
       const list: THREE.Object3D[] = [];
+      const shellList: THREE.Object3D[] = [];
       scene.traverse((o) => {
-        if (o.name === ROOM_SURFACE) list.push(o);
+        if (o.name !== ROOM_SURFACE) return;
+        list.push(o);
+        if (o.userData.shell) shellList.push(o);
       });
       solids.current = list;
+      shell.current = shellList;
     }
 
     /** Do not fall through a world that has not arrived yet. */
@@ -215,12 +253,28 @@ export function Player({
     /** Each pose carries its own box (see poseExtents), stated in world axes —
      *  so `[1]` is its vertical half-extent whatever the pose is doing, and the
      *  whole triple is what cling has to probe with. */
-    const poseHalf = poseExtents(pose, [hx, hy, hz]);
+    const poseHalf = poseExtents(pose, [hx, hy, hz], surfaceKind);
     const half = poseHalf[1];
-    const centre = poseCentre(pose);
+    const centre = poseCentre(pose, hy, surfaceKind);
     const foot = centre[1] - half;
-    if (foot !== m.footOffset) {
-      bodyPos.y += m.footOffset - foot;
+    if (surfaceKind !== m.surface) {
+      // **The box turned because the surface changed, not because the pose
+      // did.** The cling logic is already placing the body against the new
+      // surface, so nothing here may move it — and the alternative is worse
+      // than a no-op. Suppressing only the shift and still recording the offset
+      // meant grabbing a wall was fine and *letting go* dropped the body
+      // 0.73 units, straight through the floor.
+      m.surface = surfaceKind;
+      m.footOffset = foot;
+      // But the body *does* have to be put back against what it is now holding:
+      // the box it was placed for has just been replaced. See `seatOn`.
+      if (m.cling) seatOn(bodyPos, m.cling, poseHalf, solids.current);
+    } else if (foot !== m.footOffset) {
+      // A pose change under an unchanged surface: keep the *feet* put, or a
+      // chameleon lying down sinks into the floor or hops off it. Clinging,
+      // `STICK_SPEED` pulls the body back onto the surface within a frame or
+      // two, so the same correction is not needed along a wall or a ceiling.
+      if (!m.cling) bodyPos.y += m.footOffset - foot;
       m.footOffset = foot;
     }
 
@@ -271,7 +325,13 @@ export function Player({
     if (move.lengthSq() > 0) move.normalize().multiplyScalar(SPEED);
 
     if (m.reclingGrace > 0) m.reclingGrace -= delta;
+    if (m.coyote > 0) m.coyote -= delta;
+    if (m.buffered > 0) m.buffered -= delta;
     const spacePressed = keys.jump && !m.jumpHeld;
+    // Queued on the press, spent on the landing. Not while clinging: there the
+    // same key means "let go", and buffering it would fire a jump the moment
+    // the released chameleon touched the floor.
+    if (spacePressed && !m.cling) m.buffered = JUMP_BUFFER;
     let releasing = false;
 
     if (role === "chameleon") {
@@ -319,9 +379,27 @@ export function Player({
     }
 
     const clinging = m.cling !== null;
+    /** What we are stuck to, which decides which way up the figure is drawn and
+     *  which way round its collider sits. Sent to everyone else as-is; the
+     *  render reads the state copy, which is a frame behind and does not need
+     *  to be anything else. */
+    const surface = clingKind(m.cling);
+    if (surface !== surfaceKind) setSurfaceKind(surface);
 
-    const jumping = !clinging && !releasing && keys.jump && !m.jumpHeld && m.grounded;
+    // **Not `grounded` and not the raw press.** Coyote time answers "were you
+    // on the ground recently enough", the buffer answers "did you ask recently
+    // enough" — a jump you pressed one frame early off a ledge you left one
+    // frame ago is the one players insist they made, and they are right.
+    const jumping = !clinging && !releasing && m.buffered > 0 && (m.grounded || m.coyote > 0);
+    if (jumping) {
+      m.buffered = 0;
+      m.coyote = 0;
+      m.rising = true;
+    }
     m.jumpHeld = keys.jump;
+    // Let go on the way up and the rise is cut short. Holding it does not add
+    // height — it only declines to take any away.
+    if (m.rising && (!keys.jump || m.vy <= 0)) m.rising = false;
 
     // Footsteps are for walking. Sliding up a wall or hanging off the roof is
     // silent — which is most of the point of being up there.
@@ -342,7 +420,10 @@ export function Player({
     } else if (!releasing) {
       if (jumping) m.vy = JUMP_SPEED;
       else if (m.grounded && m.vy <= 0) m.vy = -GROUND_STICK;
-      else m.vy -= GRAVITY * delta;
+      // Three gravities, one arc: light on the way up while the key is held,
+      // heavy the moment it is let go, heavy again on the way down.
+      else if (m.vy > 0) m.vy -= GRAVITY * (m.rising ? 1 : CUT_GRAVITY) * delta;
+      else m.vy -= GRAVITY * FALL_GRAVITY * delta;
       desired.set(move.x * delta, m.vy * delta, move.z * delta);
     }
 
@@ -350,18 +431,44 @@ export function Player({
     controller.computeColliderMovement(col, desired);
     const allowed = controller.computedMovement();
     m.grounded = controller.computedGrounded();
-    rb.setNextKinematicTranslation({
-      x: bodyPos.x + allowed.x,
-      y: bodyPos.y + allowed.y,
-      z: bodyPos.z + allowed.z,
-    });
+
     // Catch `bodyPos` up to where the body is *going*, not where it was when the
     // frame started. The camera below reads it, and a frame of lag against a
     // world that has already moved is seen as the view lagging the body.
     bodyPos.set(bodyPos.x + allowed.x, bodyPos.y + allowed.y, bodyPos.z + allowed.z);
+
+    // The controller only ever checked the *movement*. Between `p` and here the
+    // body may also have been shifted outright — by the foot compensation or by
+    // `seatOn` — and its collider may have been rebuilt a different size. This
+    // is the one guarantee that survives all of that: the centre never crosses
+    // a surface. See `inside.ts`.
+    safe.set(p.x, p.y, p.z);
+    keepInside(safe, bodyPos, solids.current);
+
+    rb.setNextKinematicTranslation({ x: bodyPos.x, y: bodyPos.y, z: bodyPos.z });
+    // Published for the viewmodel's walk bob, under the same condition that
+    // plays a footstep above — so the gun moves with the steps you can hear and
+    // holds still in the air. Horizontal only, for the same reason the stepper
+    // is: falling is not walking.
+    if (!clinging && m.grounded) addWalked(Math.hypot(allowed.x, allowed.z));
+
     // Stop accumulating downward speed the moment the floor is under us, or a
     // long fall leaves `vy` at -40 and the first step off a kerb is a plummet.
     if (m.grounded && m.vy < 0) m.vy = 0;
+
+    // **A head on a ceiling ends the jump.** Asking to go up and being allowed
+    // almost none of it is a bump; without this `vy` stays positive and the
+    // player grinds along the underside of the roof until gravity finally eats
+    // it, which is the "pressing against the ceiling" you can feel through the
+    // camera. Cutting to zero drops them away cleanly.
+    if (m.vy > 0 && allowed.y < desired.y * HEAD_BUMP) {
+      m.vy = 0;
+      m.rising = false;
+    }
+
+    // Ground credit is refilled by *being* on the ground, so walking off an
+    // edge starts it running down rather than ending the jump outright.
+    m.coyote = m.grounded ? COYOTE_TIME : m.coyote;
 
     // The body's rotation is frozen, so the figure is turned by rotating the
     // visual group and the collider together. Only yaw: a lying pose's roll is
@@ -386,9 +493,10 @@ export function Player({
     net.yaw = m.bodyYaw;
     net.pitch = role === "hunter" ? view.pitch : 0;
     net.pose = pose;
-    // Sent so other clients can keep a climber's footsteps quiet — their stepper
-    // only sees a position, and sliding along a wall looks like walking.
-    net.cling = clinging;
+    // Sent so other clients can keep a climber's footsteps quiet — their
+    // stepper only sees a position, and sliding along a wall looks like
+    // walking — and so they know which way up to draw a pose that lies flat.
+    net.cling = surface;
 
     const cp = Math.cos(view.pitch);
     lookDir.set(-Math.sin(y) * cp, Math.sin(view.pitch), -Math.cos(y) * cp);
@@ -421,7 +529,7 @@ export function Player({
         zoom: view.zoom,
         firstPerson,
         pose,
-        half: poseExtents(pose, [hx, hy, hz]),
+        half: poseExtents(pose, [hx, hy, hz], surfaceKind),
         buried: buried.current,
         surfaces: solids.current.length,
       });
@@ -434,7 +542,7 @@ export function Player({
       euler.set(view.pitch, y, 0);
       state.camera.quaternion.setFromEuler(euler);
     } else {
-      followThirdPerson(state.camera, bodyPos, lookDir, view.zoom, solids.current, delta);
+      followThirdPerson(state.camera, bodyPos, lookDir, view.zoom, shell.current, delta);
     }
   });
 
@@ -465,16 +573,18 @@ export function Player({
           // `args` is read once, at creation, so a pose with a different box
           // needs a new collider — but only when the numbers actually differ,
           // or standing still and pressing 1 then 3 would rebuild it for nothing.
-          key={poseExtents(pose, [hx, hy, hz]).join()}
+          key={poseExtents(pose, [hx, hy, hz], surfaceKind).join()}
           ref={collider}
-          args={poseExtents(pose, [hx, hy, hz])}
+          args={poseExtents(pose, [hx, hy, hz], surfaceKind)}
           // Only until the first frame loop turns it into the body's yaw.
-          position={[...poseCentre(pose)]}
+          position={[...poseCentre(pose, hy, surfaceKind)]}
         />
         <group ref={visual}>
           {/* In first person the camera sits inside the head, so the hunter's
               own figure is hidden and the viewmodel stands in for it. */}
-          {!firstPerson && <StickFigure scale={hy} pose={pose} skinId={SELF} />}
+          {!firstPerson && (
+            <StickFigure scale={hy} pose={pose} surface={surfaceKind} skinId={SELF} />
+          )}
         </group>
       </RigidBody>
     </>

@@ -49,6 +49,10 @@ let go, because a reservation is held for only fifteen seconds.
   machine is how this game gets tested; shared storage makes both the same
   player and both the host.
 - **A move drops every skin, yours included** — session ids are per room.
+- **`cling` on the wire is a surface, not a flag** (`CLING_*` in `shared/`).
+  `sound/` still reads it as truthy-means-climbing; `figure/` reads *which*
+  surface, to decide which way up to draw a pose that lies flat. It rides in the
+  same `state` message as everything else, twenty times a second.
 - **The browser-facing socket port is normalized before a join**, because behind
   a TLS proxy the port we bind is not the port a browser can reach.
 

@@ -8,9 +8,13 @@ import { DEFAULT_BRUSH, type Brush } from "@/client/paint/brush";
 import { DEFAULT_MAP } from "@/shared/mapIds";
 import { preloadCharacter } from "@/client/figure/model";
 import { LoadingScreen } from "@/client/hud/LoadingScreen";
-import { MobileUnsupported, useIsMobileOrTablet } from "@/client/hud/MobileUnsupported";
+import {
+  MobileUnsupported,
+  useIsMobileOrTablet,
+} from "@/client/hud/MobileUnsupported";
 import { beginLoading, useLoading } from "@/client/app/loading";
 import { LobbyPanel } from "@/client/hud/LobbyPanel";
+import { HunterWait } from "@/client/hud/HunterWait";
 import { DroppedPanel } from "@/client/hud/DroppedPanel";
 import { PhaseBanner } from "@/client/hud/PhaseBanner";
 import { RoundOverPanel } from "@/client/hud/RoundOverPanel";
@@ -64,8 +68,15 @@ export function Game() {
   const loading = useLoading();
   const isMobile = useIsMobileOrTablet();
 
-  const { paused, painting, pausedRef, paintingRef, resume, setPaintOpen, closeOverlays } =
-    usePauseControl({ joined, role, dropped });
+  const {
+    paused,
+    painting,
+    pausedRef,
+    paintingRef,
+    resume,
+    setPaintOpen,
+    closeOverlays,
+  } = usePauseControl({ joined, role, dropped });
 
   const graves = useRoomGraves();
   const { caughtBy } = useCaughtNotice(joined, () => setPaintOpen(false));
@@ -119,12 +130,17 @@ export function Game() {
 
   const create = useCallback(
     (who: string, wanted: string, listed: boolean, maxPlayers: number) =>
-      enter(who, () => createLobby(who, wanted, listed, maxPlayers), "open a game"),
+      enter(
+        who,
+        () => createLobby(who, wanted, listed, maxPlayers),
+        "open a game",
+      ),
     [enter],
   );
 
   const joinCode = useCallback(
-    (who: string, code: string) => enter(who, () => joinLobby(who, code), `join ${code}`),
+    (who: string, code: string) =>
+      enter(who, () => joinLobby(who, code), `join ${code}`),
     [enter],
   );
 
@@ -150,16 +166,6 @@ export function Game() {
     closeOverlays();
     setDropped(false);
   }, [closeOverlays]);
-
-  /** What the pause menu's second button does, which is not the same thing in both rooms. */
-  const quit = useCallback(() => {
-    if (room?.mode === "match" && room.lobbyCode) {
-      const { lobbyCode } = room;
-      enter(name, () => joinLobby(name, lobbyCode), "return to the lobby");
-      return;
-    }
-    leave();
-  }, [enter, leave, name, room]);
 
   // Back into the seat the server is still holding, if it still is — and a plain
   // re-join of the same room if it is not.
@@ -221,27 +227,41 @@ export function Game() {
           <PlayerList
             name={name}
             role={role}
-            showRoles={room ? room.phase !== "waiting" && room.phase !== "countdown" : false}
+            showRoles={
+              room
+                ? room.phase !== "waiting" && room.phase !== "countdown"
+                : false
+            }
           />
-          {room && !dropped && room.phase !== "reveal" && (
-            <PhaseBanner phase={room.phase} seconds={room.timeLeft} role={role} />
-          )}
-          {/* Deliberately *not* hidden while paused. Everyone in the waiting
-              room is a hunter, so everyone holds the pointer lock and nobody has
-              a cursor; pausing is what hands it back, and it is therefore the
-              only moment Start and the map buttons can be clicked at all. */}
-          {room?.mode === "lobby" && !dropped && (
-            <LobbyPanel
-              code={room.code}
-              nextMap={room.nextMap}
-              isHost={room.isHost}
-              isListed={room.isListed}
-              phase={room.phase}
-              timeLeft={room.timeLeft}
-              players={room.playerCount}
-              maxPlayers={room.maxPlayers}
-            />
-          )}
+          {/* One top-centre column, because the hunter waits out the hiding
+              phase in the lobby and both of these would otherwise be pinned to
+              the same spot — which is how the clock ended up behind the panel.
+              Stacking them means the gap is laid out rather than guessed at,
+              and the banner still sits at the top when there is no panel. */}
+          <div className="pointer-events-none absolute left-1/2 top-4 flex -translate-x-1/2 flex-col items-center gap-3">
+            {room?.mode === "lobby" && !dropped && room.phase === "hiding" && (
+              <HunterWait />
+            )}
+            {room?.mode === "lobby" && !dropped && room.phase !== "hiding" && (
+              <LobbyPanel
+                code={room.code}
+                nextMap={room.nextMap}
+                isHost={room.isHost}
+                isListed={room.isListed}
+                phase={room.phase}
+                timeLeft={room.timeLeft}
+                players={room.playerCount}
+                maxPlayers={room.maxPlayers}
+              />
+            )}
+            {room && !dropped && room.phase !== "reveal" && (
+              <PhaseBanner
+                phase={room.phase}
+                seconds={room.timeLeft}
+                role={role}
+              />
+            )}
+          </div>
           {/* A hunter has nothing to camouflage, and the server wipes their
               paint the moment they are caught — so the palette belongs to
               chameleons and to the waiting room, where everybody is still one
@@ -266,9 +286,8 @@ export function Game() {
           {paused && !painting && !dropped && (
             <PauseMenu
               sessionName={room?.code ? `Game ${room.code}` : "Super Chameleon"}
-              mode={room?.mode ?? "lobby"}
               onResume={resume}
-              onLeave={quit}
+              onLeave={leave}
             />
           )}
           {dropped && <DroppedPanel onReconnect={reconnect} onExit={leave} />}
@@ -311,7 +330,9 @@ export function Game() {
           than part of the game, and pinned to the one corner nothing else uses.
           Mounted whether or not the mode is *on*: the chip inside it is the
           toggle, and a switch that vanishes when you use it is a trap. */}
-      {DEV && joined && <DebugPanel map={room?.map ?? DEFAULT_MAP} phase={room?.phase ?? "—"} />}
+      {DEV && joined && (
+        <DebugPanel map={room?.map ?? DEFAULT_MAP} phase={room?.phase ?? "—"} />
+      )}
       {loading && <LoadingScreen />}
     </div>
   );

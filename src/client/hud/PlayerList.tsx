@@ -21,12 +21,13 @@ function Row({
 }) {
   const mark = MARK[role] ?? MARK.chameleon;
   return (
-    <div className={`flex items-baseline gap-1.5 ${you ? "text-emerald-300" : "text-neutral-300"}`}>
+    <div className="flex items-baseline gap-1.5 text-neutral-300">
       <span>{name}</span>
-      {showRole && (
-        <span className={`text-[10px] ${you ? "text-emerald-400/70" : mark.tone}`}>{role}</span>
-      )}
-      {you && <span className="text-[10px] text-emerald-400/70">(you)</span>}
+      {showRole && <span className={`text-[10px] ${mark.tone}`}>{role}</span>}
+      {/* The only green on the row. Your name and side are read the same way as
+          everyone else's — the marker is what says which row is yours, and
+          tinting the whole line made the side colour harder to compare. */}
+      {you && <span className="text-[10px] text-emerald-400">(you)</span>}
     </div>
   );
 }
@@ -51,7 +52,7 @@ export function PlayerList({
         In this game · {ids.length + 1}
       </div>
 
-      {/* Yours first and in green: in a list of near-identical rows, finding
+      {/* Yours first, marked "(you)": in a list of near-identical rows, finding
           yourself should not need reading. */}
       <Row name={name} role={role} showRole={showRoles} you />
 

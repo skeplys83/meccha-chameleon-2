@@ -30,8 +30,10 @@ export function PhaseBanner({
   const ss = String(seconds % 60).padStart(2, "0");
 
   return (
+    // Not positioned here: `Game.tsx` stacks this under the lobby panel when
+    // there is one, so the gap is laid out rather than guessed at.
     <div
-      className={`pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 select-none rounded-lg px-4 py-2 text-center backdrop-blur ${
+      className={`pointer-events-none select-none rounded-lg px-4 py-2 text-center backdrop-blur ${
         phase === "hiding"
           ? "bg-emerald-950/80 text-emerald-200"
           : urgent

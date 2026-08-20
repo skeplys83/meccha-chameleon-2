@@ -3,7 +3,10 @@ import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import * as THREE from "three";
 import { onRoster, remotes } from "@/client/net";
-import { BODY } from "./body";
+import { BODY, BODY_SCALE } from "./body";
+
+/** How far the name badge floats above the top of the head, at full size. */
+const BADGE_GAP = 0.55;
 import { StickFigure } from "@/client/figure/StickFigure";
 import { Shotgun } from "@/client/combat/Shotgun";
 
@@ -26,7 +29,8 @@ function RemotePlayer({
   const group = useRef<THREE.Group>(null);
   const visual = useRef<THREE.Group>(null);
   const remote = remotes.get(id);
-  const [, hy] = BODY[remote?.role ?? "chameleon"];
+  const role = remote?.role ?? "chameleon";
+  const [, hy] = BODY[role];
   const settled = useRef(false);
 
   useEffect(() => {
@@ -66,6 +70,9 @@ function RemotePlayer({
             where they are looking and how far up or down. */}
         <StickFigure
           scale={hy}
+          // A getter, like `pose`: a network patch mutates `target` in place
+          // and deliberately does not re-render this tree.
+          surface={() => remote.target.cling}
           pose={() => remotes.get(id)?.target.pose ?? 0}
           skinId={id}
           aim={
@@ -80,8 +87,10 @@ function RemotePlayer({
           highlight={reveal && remote.role === "chameleon"}
         />
       </group>
+      {/* The gap is scaled with the body too, or a shrinking figure keeps its
+          badge the same distance overhead and it drifts away from the head. */}
       {!(hunting && remote.role === "chameleon") && (
-        <Html position={[0, hy + 0.55, 0]} center distanceFactor={14}>
+        <Html position={[0, hy + BADGE_GAP * BODY_SCALE[role], 0]} center distanceFactor={14}>
           <div className="whitespace-nowrap rounded bg-black/60 px-2 py-0.5 font-mono text-[13px] text-white">
             {remote.name}
           </div>

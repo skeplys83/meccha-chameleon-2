@@ -53,6 +53,11 @@ const UNCLAIMED = [
   // behind "go and re-read the root doc" would train you to pass SKIP_DOC_CHECK
   // habitually, which is how the gate stops meaning anything.
   "docker-compose.yml",
+  // Blender sources and the guide beside them. A `.blend` is binary art with no
+  // prose in the root doc to keep current, and `levels/AUTHORING.md` is its own
+  // documentation — the same reasoning as `docs/`. Gating every save from
+  // Blender behind the root doc is exactly the habit above.
+  "levels/",
   "eslint.config.mjs",
 ];
 

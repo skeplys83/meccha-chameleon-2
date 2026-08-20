@@ -10,6 +10,7 @@ graves.
 | `shoot.ts`      | `resolveShot`: one raycast, people and walls together    |
 | `Shotgun.tsx`   | the weapon a remote hunter carries                       |
 | `Viewmodel.tsx` | the one in your own hands, riding the camera             |
+| `recoil.ts`     | a one-frame pulse from the trigger to the viewmodel      |
 | `Marks.tsx`     | wall marks and their tracers — three seconds, then gone  |
 | `Graves.tsx`    | where somebody was found — permanent                     |
 
@@ -25,6 +26,39 @@ graves.
 3. **A shot is broadcast separately from its mark.** `mark` is where the pellets
    landed; `shot` is where the gun was. A catch relays only `shot`, because
    there is no wall to mark — and it is still the same bang.
+
+## The viewmodel moves, barely
+
+Two motions, both deliberately tiny — this sits a few centimetres from the eye,
+where anything that would read as subtle on a figure in the world reads as the
+whole screen lurching.
+
+- **Recoil**: about 20 cm **straight back along the barrel and nothing else**,
+  home in 0.65s. No pitch: a shotgun into the shoulder shoves, and tipping the
+  viewmodel rotates the whole thing through the crosshair it is aimed at. It is
+  a critically damped spring driven by an impulse, integrated in fixed 1/240
+  sub-steps — setting the offset outright and decaying it reaches full throw in
+  one frame, which reads as a glitch, and integrating over the frame's own delta
+  made the kick depend on the frame rate (0.19 m at 144 Hz, 0.05 m at 30). The
+  decay is squared so the throw is fast and the return slow; a linear one reads
+  as the gun being *pushed* rather than kicking. Shorter than `FIRE_INTERVAL_MS`,
+  so a held trigger cannot stack kicks. It is triggered from
+  `players/usePointerControls.ts` through `recoil.ts` — a boolean read once and
+  cleared, rather than a prop threaded down from `Game.tsx`, which would put a
+  React re-render on every trigger pull.
+- **Walk bob**: a figure-of-eight, 9 mm across and 7 mm up, the vertical at
+  twice the stride — which is what a walk does and what a plain sine does not.
+  **It runs off `players/gait.ts`, which advances under exactly the condition
+  that plays a footstep** — grounded and not clinging — and off
+  `strideFor("hunter")`, the same distance the sound counts. So the gun dips
+  *on* the step, and holds still in the air. Two earlier versions were wrong in
+  different ways: a flat 4.4 cycles/sec (8.8 dips against 2.4 footfalls, and
+  drifting further out of phase the slower you went), then the camera's own
+  movement (in phase, but bobbing through every fall and jump). The amplitude is
+  eased in and out, or the gun stops mid-swing on the frame the last step lands.
+
+Both ride an inner group so the **arms move with the gun** — they are holding
+it, and transforming the gun alone stretches them.
 
 ## Contracts
 

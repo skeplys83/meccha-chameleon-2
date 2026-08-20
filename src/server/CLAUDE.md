@@ -34,7 +34,7 @@ thing that tells them apart, because movement, paint, kills and whistles are
 identical in both. The cycle is lobby → countdown → match → back to the *same*
 lobby, and `state.lobby` is the field that makes the return trip possible.
 
-## The three rules that will bite you
+## The four rules that will bite you
 
 1. **Schema fields use `declare`, never `!`.** Type stripping blanks characters
    out rather than re-emitting, so `name!: string` survives as a real class
@@ -46,7 +46,16 @@ lobby, and `state.lobby` is the field that makes the return trip possible.
    lobby's hiding countdown is a *display mirror* that decides nothing — the
    phase ends when the match calls `sendHunter`. Two timers are two things that
    can disagree, and the number on screen has to be the one that ends the round.
-3. **A match takes a role only from a seat its lobby reserved.** Reservation
+3. **A round ends from either side, and the phase decides which.** In the hunt,
+   the last chameleon caught *or* quitting hands it to the hunters, and the last
+   hunter quitting hands it to the chameleons — nobody is looking any more, and
+   the clock would otherwise run down over an empty search. In `hiding` there is
+   no hunter in the room at all (theirs is in the lobby), so only one side can
+   empty out, and when it does the match calls **`roundAborted` on the lobby**:
+   this room is about to dispose with nobody in it to see a reveal, and the
+   hunter would otherwise watch the mirror countdown run down to a bell that
+   never rings.
+4. **A match takes a role only from a seat its lobby reserved.** Reservation
    options and a client's own join options arrive at `onJoin` indistinguishably,
    so the lobby mints a `pass` and includes it in every reservation. Without it
    any chameleon could leave a match and rejoin claiming the gun — and every
@@ -57,6 +66,9 @@ lobby, and `state.lobby` is the field that makes the return trip possible.
 - **Reads `../shared/`** for `Role`, the phase durations, the fire and whistle
   intervals, and the map table (`mapRoundSeconds`, `mapLimit`). Do not
   re-declare any of them here — `scripts/check-constants.mjs` fails the commit.
+- **`cling` is a surface, not a flag** — `CLING_NONE` / `CLING_WALL` /
+  `CLING_CEILING` from `shared/`. Clamped like every other number off the wire
+  and forced to `CLING_NONE` for a hunter, because clinging silences footsteps.
 - **Messages in** (← `client/net/send.ts`): `state`, `paint`, `clearSkin`,
   `shoot`, `kill`, `whistle`, plus `start` and `setMap` from a lobby's host.
 - **Messages out** (→ `client/net/client.ts`): `shot`, `whistle`, `mark`,

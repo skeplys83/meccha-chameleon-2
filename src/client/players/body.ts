@@ -37,10 +37,46 @@ import type { Role } from "@/shared/protocol";
 const CHAMELEON = 0.12;
 const HUNTER = 0.52;
 
-export const BODY: Record<Role, [hx: number, hy: number, hz: number]> = {
-  chameleon: [CHAMELEON, 1, CHAMELEON],
-  hunter: [HUNTER, 1.3, HUNTER],
+/**
+ * How big each body is against the size it was built at, so the rooms read as
+ * bigger than the people in them. Below 1 shrinks the player and nothing else.
+ *
+ * **It is a single factor per role on purpose.** Every proportion in the game
+ * hangs off `BODY` — the collider, the figure's own scale, eye height, the
+ * brush ring, the footstep stride and its pitch, and every pose's box — so
+ * scaling all three half-extents together moves all of them and leaves each
+ * relationship exactly where it was. Most of all the one that matters: the
+ * chameleon's collider is deliberately much narrower than the body it carries,
+ * and *that gap is the hiding mechanic*. A uniform factor preserves the ratio;
+ * shrinking the height alone would close it.
+ *
+ * **What it does not touch** is anything measured in the world rather than in
+ * bodies: `SPEED` and `JUMP_SPEED` in `Player.tsx`, `GRAVITY` below, and the
+ * camera's zoom range. A smaller player at the same speed covers the map just
+ * as fast, so this changes how big the room *looks*, not how long it takes to
+ * cross. Scale those too if you want the whole effect.
+ */
+export const BODY_SCALE: Record<Role, number> = {
+  hunter: 0.92,
+  /** A little smaller again — a chameleon is the one trying to be scenery. */
+  chameleon: 0.86,
 };
 
-/** Downward acceleration, in units per second squared. */
-export const GRAVITY = 20;
+export const BODY: Record<Role, [hx: number, hy: number, hz: number]> = {
+  chameleon: [
+    CHAMELEON * BODY_SCALE.chameleon,
+    1 * BODY_SCALE.chameleon,
+    CHAMELEON * BODY_SCALE.chameleon,
+  ],
+  hunter: [HUNTER * BODY_SCALE.hunter, 1.3 * BODY_SCALE.hunter, HUNTER * BODY_SCALE.hunter],
+};
+
+/**
+ * Downward acceleration, in units per second squared.
+ *
+ * Low on purpose: the jump is meant to float and carry rather than snap. It is
+ * also the only gravity in the game — `Scene.tsx` hands it to rapier, but the
+ * one rigid body in the scene is `kinematicPosition`, so nothing but
+ * `Player.tsx`'s own integration ever reads it.
+ */
+export const GRAVITY = 12;

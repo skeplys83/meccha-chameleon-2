@@ -15,6 +15,10 @@ and no DOM, so nothing here may touch `window`, React or three.js.
 | `mapIds.ts`  | the map ids, the lobby map, and which ones a match may use       |
 | `maps.ts`    | the registry: name, file, spawn, bound, `roundSeconds`, lighting |
 
+The phase durations (`COUNTDOWN_SECONDS`, `HIDE_SECONDS`, `REVEAL_SECONDS`) are
+tuning, and get retuned. Nothing may hard-code them — including prose: the root
+doc names the constant beside the number for exactly this reason.
+
 ## The three rules that will bite you
 
 1. **Nothing here may be defined twice.** `scripts/check-constants.mjs` runs in
@@ -35,6 +39,10 @@ and no DOM, so nothing here may touch `window`, React or three.js.
   by the client for everything else. It is pure data, which is why it lives here
   rather than in `client/world/`.
 - **`POSE_COUNT` is checked against `figure/poses.ts`** at import time.
+- **`CLING_NONE` / `CLING_WALL` / `CLING_CEILING` are ordered so `!== CLING_NONE`
+  still means "is clinging"**, which is all `sound/` ever asks. It was a boolean
+  until the figure needed three answers: a pose that lies flat lies flat on a
+  floor *and* a ceiling, and stands up to climb a wall.
 - **Leave codes (`LEAVE_IN_PROGRESS`, `LEAVE_STARTING`) are here** rather than as
   a bare `4001` written twice.
 

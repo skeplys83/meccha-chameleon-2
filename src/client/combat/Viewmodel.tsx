@@ -2,6 +2,10 @@ import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { Shotgun } from "./Shotgun";
+import { takeKick } from "./recoil";
+import { strideFor } from "@/client/sound/footsteps";
+import { walkedDistance } from "@/client/players/gait";
+import { BODY_SCALE } from "@/client/players/body";
 
 /** The hunter's own arms and shotgun, held out in front of the camera. */
 
@@ -11,6 +15,52 @@ const PUMP = new THREE.Vector3(0.16, -0.27, -0.78);
 const SHOULDER_R = new THREE.Vector3(0.34, -0.6, 0.14);
 const SHOULDER_L = new THREE.Vector3(-0.32, -0.62, 0.1);
 const ARM_RADIUS = 0.075;
+
+/**
+ * The gun's two idle motions. Both are deliberately tiny: this sits a few
+ * centimetres from the eye, where a movement that would read as subtle on a
+ * character in the world reads as the whole screen lurching.
+ */
+/**
+ * Recoil is a spring, not a keyframe. The gun is thrown **straight back along
+ * the barrel** — no pitch: a shotgun into the shoulder shoves, and tipping the
+ * viewmodel up rotates the whole thing through the crosshair it is aimed at.
+ *
+ * A spring is also what makes it smooth. Setting the offset outright and
+ * decaying it snaps to full throw in a single frame, which reads as a glitch at
+ * 60 Hz; an impulse into velocity takes ~67 ms to reach the peak, which is a
+ * kick. Critically damped (`c = 2√k`), so it comes home without bouncing.
+ */
+const RECOIL_STIFFNESS = 140;
+const RECOIL_DAMPING = 2 * Math.sqrt(RECOIL_STIFFNESS);
+/** Velocity added by one shot. Peaks around 0.2 m and is home inside 0.65s —
+ *  comfortably under `FIRE_INTERVAL_MS`, so kicks cannot stack. */
+const RECOIL_IMPULSE = 7;
+/**
+ * The spring is integrated in fixed sub-steps, not over the frame's own delta.
+ *
+ * Explicit Euler at the frame rate makes the kick depend on the frame rate: one
+ * 1/30 step applies a whole frame of damping before the impulse has moved
+ * anything, so the same shot peaked at 0.19 m on a 144 Hz screen and 0.05 m on
+ * a 30 Hz one. Sub-stepping holds it within 3% from 144 down to 20 fps. The cap
+ * bounds the catch-up after a backgrounded tab, where the frame delta arrives
+ * in seconds.
+ */
+const RECOIL_STEP = 1 / 240;
+const RECOIL_MAX_CATCHUP = 1 / 15;
+
+/** Sideways and vertical throw of the walk, in metres. */
+const BOB_X = 0.009;
+const BOB_Y = 0.007;
+/** How quickly the bob fades in and out as walking starts and stops. Lower is
+ *  slower; this is about a seventh of a second. */
+const BOB_FADE = 0.001;
+
+/**
+ * How far this body walks between footfalls — the *same* number the footstep
+ * sounds count off, so the gun dips on the step rather than near it.
+ */
+const HUNTER_STRIDE = strideFor("hunter");
 
 /** A capsule stretched between two points, used for a whole visible arm. */
 function Arm({ from, to }: { from: THREE.Vector3; to: THREE.Vector3 }) {
@@ -38,27 +88,96 @@ function Arm({ from, to }: { from: THREE.Vector3; to: THREE.Vector3 }) {
 
 export function Viewmodel() {
   const group = useRef<THREE.Group>(null);
+  /** Everything the camera carries. Held apart from `group` so the outer one
+   *  can copy the camera exactly and this one can be nudged about. */
+  const rig = useRef<THREE.Group>(null);
+  /** How far back the recoil spring is holding the gun, and how fast it is
+   *  moving. Metres and metres per second. */
+  const recoil = useRef(0);
+  const recoilVel = useRef(0);
+  /** Distance walked, in radians of stride. */
+  const stride = useRef(0);
+  /** The last reading of the walked-distance counter, so this can take the
+   *  difference. */
+  const walkedAt = useRef(walkedDistance());
+  /** The bob's amplitude, eased so it fades in and out instead of snapping on
+   *  the first and last step. */
+  const swing = useRef(0);
 
   // Priority 1: after every movement callback, which is where the camera is
   // placed. Mount order cannot be relied on — `Player` is keyed on the room and
   // this is not, so a lobby → match crossing re-registers the player *after*
   // this and the gun starts reading last frame's camera. That reads as the
   // shotgun swimming around while you walk, in matches but not in the lobby.
-  useFrame(({ camera }) => {
+  useFrame(({ camera }, delta) => {
     const g = group.current;
     if (!g) return;
     g.position.copy(camera.position);
     g.quaternion.copy(camera.quaternion);
+
+    const r = rig.current;
+    if (!r) return;
+
+    // **Only while walking.** `gait` advances under the same condition that
+    // plays a footstep — grounded and not clinging — so it stands still in the
+    // air and the gun stands still with it. Reading the camera's own movement
+    // instead, as this first did, bobbed the gun through every fall and jump.
+    const walked = walkedDistance();
+    const advanced = walked - walkedAt.current;
+    walkedAt.current = walked;
+    // Half a turn per stride: the vertical below runs at twice this, so it dips
+    // exactly once per footfall.
+    stride.current += (advanced / HUNTER_STRIDE) * Math.PI;
+
+    // Eased rather than switched, or the gun stops mid-swing on the frame the
+    // last step lands and starts from wherever it was left.
+    const target = advanced > 1e-5 ? 1 : 0;
+    swing.current += (target - swing.current) * (1 - Math.pow(BOB_FADE, delta));
+
+    if (takeKick()) recoilVel.current += RECOIL_IMPULSE;
+    let remaining = Math.min(delta, RECOIL_MAX_CATCHUP);
+    while (remaining > 0) {
+      const h = Math.min(remaining, RECOIL_STEP);
+      recoilVel.current +=
+        (-RECOIL_STIFFNESS * recoil.current -
+          RECOIL_DAMPING * recoilVel.current) *
+        h;
+      recoil.current += recoilVel.current * h;
+      remaining -= h;
+    }
+
+    // Figure-of-eight: the horizontal swings once a stride, the vertical twice,
+    // which is what a walk does and what a plain sine does not. `+z` is back
+    // towards the eye, so the recoil is straight into the shoulder.
+    r.position.set(
+      Math.sin(stride.current) * BOB_X * swing.current,
+      Math.sin(stride.current * 2) * BOB_Y * swing.current,
+      recoil.current,
+    );
   }, 1);
 
   return (
     <group ref={group}>
-      {/* Angled slightly inward so the barrel converges on the crosshair. */}
-      <group position={GUN} rotation={[0.03, -0.06, 0]}>
-        <Shotgun scale={1.1} />
+      {/* This hangs off the *camera*, not off the body, so it is the one thing
+          `BODY` does not scale on its own. Left alone it would grow relative to
+          a shrinking world — the whole point of `BODY_SCALE` is that the room
+          reads as bigger than the person in it, and a full-size shotgun in
+          front of a smaller hunter says the opposite.
+
+          Outside the rig, so the bob and the recoil are scaled with it rather
+          than staying in world metres. */}
+      <group scale={BODY_SCALE.hunter}>
+        {/* The arms are inside the rig with the gun: they hold it, so they carry
+            the recoil and the walk with it. Moving the gun alone stretches them. */}
+        <group ref={rig}>
+          {/* Angled slightly inward so the barrel converges on the crosshair. */}
+          <group position={GUN} rotation={[0.03, -0.06, 0]}>
+            <Shotgun scale={1.1} />
+          </group>
+          <Arm from={SHOULDER_R} to={GRIP} />
+          <Arm from={SHOULDER_L} to={PUMP} />
+        </group>
       </group>
-      <Arm from={SHOULDER_R} to={GRIP} />
-      <Arm from={SHOULDER_L} to={PUMP} />
     </group>
   );
 }

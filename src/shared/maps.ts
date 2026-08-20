@@ -113,7 +113,7 @@ export const MAPS: Record<MapId, GameMap> = {
       lights: {
         scale: 0.05,
         distance: 16,
-        ambient: { intensity: 0.75, color: "#ffffff" },
+        ambient: { intensity: 0.5, color: "#ffffff" },
       },
       toneMapping: "AgXToneMapping",
       exposure: 1.0,

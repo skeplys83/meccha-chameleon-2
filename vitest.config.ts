@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 /**
@@ -5,6 +6,11 @@ import { defineConfig } from "vitest/config";
  * (`@colyseus/testing` hard-codes 2568), so no two files may run at once.
  */
 export default defineConfig({
+  // The same `@/` the app uses, so a test can import client code that is pure
+  // logic. Vite resolves it from tsconfig for the app; vitest needs telling.
+  resolve: {
+    alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
+  },
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],

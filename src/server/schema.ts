@@ -15,9 +15,10 @@ export class Player extends Schema {
   declare yaw: number;
   declare pitch: number;
   declare pose: number;
-  /** Stuck to a wall or the ceiling. Cosmetic — it keeps other clients from
-   *  playing footsteps for someone sliding along a surface. */
-  declare cling: boolean;
+  /** What this chameleon is stuck to: `CLING_NONE`, `CLING_WALL` or
+   *  `CLING_CEILING`. It silences their footsteps for everyone else, and tells
+   *  every client which way up to draw a pose that lies flat. */
+  declare cling: number;
   declare strokes: ArraySchema<string>;
 
   constructor() {
@@ -37,7 +38,7 @@ defineTypes(Player, {
   yaw: "number",
   pitch: "number",
   pose: "number",
-  cling: "boolean",
+  cling: "number",
   strokes: ["string"],
 });
 

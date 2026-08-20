@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame } from "@react-three/fiber";
+import { markDrawn } from "@/client/paint/eyedropper";
 import { KeyboardControls } from "@react-three/drei";
 import { Physics } from "@react-three/rapier";
 import { controlMap } from "@/client/players/controls";
@@ -59,6 +60,9 @@ function FrameLimiter({ fps }: { fps: number }) {
     // debt would otherwise force a burst of catch-up renders.
     carry.current = Math.min(carry.current - interval, interval);
     gl.render(scene, camera);
+    // The eyedropper reads the framebuffer at priority 3 and must not read one
+    // this frame never wrote — see `paint/eyedropper.ts`.
+    markDrawn();
     if (DEV) reportDraw();
   }, 2);
 

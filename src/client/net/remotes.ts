@@ -8,8 +8,10 @@ export type RemoteTarget = {
   pitch: number;
   /** Index into POSES. */
   pose: number;
-  /** Stuck to a wall or the ceiling: they are climbing, so they are silent. */
-  cling: boolean;
+  /** What they are stuck to — `CLING_*` in `shared/protocol`. Non-zero means
+   *  climbing, so they are silent; which surface decides which way up a pose
+   *  that lies flat is drawn. */
+  cling: number;
 };
 
 export type Remote = {

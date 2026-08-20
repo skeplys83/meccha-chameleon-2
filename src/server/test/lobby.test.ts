@@ -154,6 +154,29 @@ describe("a lobby", () => {
     expect(host.state.phase).toBe("hiding");
   });
 
+  it("releases the hunter when the round ends before they are sent in", async () => {
+    const host = await openLobby();
+    const room = roomOf(colyseus, host.roomId);
+    inner(room).matchId = "FAKE";
+
+    await inner(room).roundAborted("FAKE");
+    await settle();
+
+    // The hunter never left this room, so this is where they have to be told —
+    // otherwise they watch a mirror countdown run down to a bell that will
+    // never ring.
+    expect(host.state.phase).toBe("reveal");
+    expect(host.state.winner).toBe("hunters");
+    expect(host.state.timeLeft).toBeGreaterThan(0);
+
+    // And it hands the lobby back afterwards rather than sticking there.
+    roomOf(colyseus, host.roomId).state.timeLeft = 1;
+    await settle(1600);
+    expect(host.state.phase).toBe("waiting");
+    expect(host.state.winner).toBe("");
+    expect(host.state.timeLeft).toBe(0);
+  });
+
   it("does not dispose when its last player leaves", async () => {
     const host = await openLobby();
     const code = host.roomId;

@@ -19,7 +19,8 @@ export function LobbyPanel({
   nextMap: string;
   isHost: boolean;
   isListed: boolean;
-  /** `"waiting"` or `"countdown"` — a lobby is never in any other. */
+  /** `"waiting"` or `"countdown"`, and `"reveal"` if the round ended before the
+   *  hunter was ever sent in. Never `"hiding"` — `HunterWait` replaces this. */
   phase: Phase;
   /** Seconds left on the countdown. Zero while waiting. */
   timeLeft: number;
@@ -28,6 +29,9 @@ export function LobbyPanel({
 }) {
   const [copied, setCopied] = useState(false);
   const counting = phase === "countdown";
+  /** A lobby only reaches `reveal` when its match ended before the hunter was
+   *  ever sent in — everybody hiding left. The round-over card is over this. */
+  const roundOver = phase === "reveal";
   /** Two is the floor: a round needs a hunter and something to hunt. The server
    *  refuses Start below it too — this only greys the button out. */
   const enough = players >= MIN_PLAYERS;
@@ -62,13 +66,16 @@ export function LobbyPanel({
   };
 
   return (
-    <div className="absolute left-1/2 top-4 w-[22rem] -translate-x-1/2 rounded-lg border border-neutral-700 bg-neutral-950/90 px-4 py-3 text-neutral-100">
+    <div className="pointer-events-auto w-[22rem] rounded-lg border border-neutral-700 bg-neutral-950/90 px-4 py-3 text-neutral-100">
       <div className="flex items-center justify-between">
         <div>
           <div className="text-[10px] uppercase tracking-widest text-neutral-500">
             Invite code · {isListed ? "public" : "unlisted"}
             {isHost && (
-              <span className="font-semibold text-red-400"> · you are host</span>
+              <span className="font-semibold text-red-400">
+                {" "}
+                · you are host
+              </span>
             )}
           </div>
           <div className="font-mono text-2xl tracking-[0.35em]">{code}</div>
@@ -104,7 +111,7 @@ export function LobbyPanel({
           </span>
         </span>
       </div>
-      {!counting && !enough && (
+      {!counting && !roundOver && !enough && (
         <div className="mt-1 text-[10px] leading-snug text-neutral-500">
           Waiting for {MIN_PLAYERS - players} more — a round needs at least{" "}
           {MIN_PLAYERS}.
@@ -135,7 +142,7 @@ export function LobbyPanel({
           {/* No Start while the countdown runs: it is already starting, and the
               server ignores a second press anyway rather than restarting the
               clock. */}
-          {!counting && (
+          {!counting && !roundOver && (
             <button
               onClick={sendStart}
               disabled={!enough}
@@ -153,7 +160,9 @@ export function LobbyPanel({
           <div className="mt-3 text-[10px] uppercase tracking-widest text-neutral-500">
             Next map
           </div>
-          <div className="text-lg font-medium text-neutral-100">{mapName(nextMap)}</div>
+          <div className="text-lg font-medium text-neutral-100">
+            {mapName(nextMap)}
+          </div>
           <p className="mt-2 text-xs text-neutral-500">
             Waiting for the host to start. One player keeps the shotgun and the
             rest become chameleons — your paint comes with you.

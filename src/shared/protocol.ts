@@ -11,6 +11,18 @@ export type Phase = "waiting" | "countdown" | "hiding" | "hunt" | "reveal";
 /** Half-extent of the arena interior. `world/Room.tsx` builds the shell from it. */
 export const ROOM_HALF = 20;
 
+/**
+ * What a chameleon is stuck to, and therefore which way up they are drawn.
+ *
+ * It replaced a boolean because the figure needs three answers where the
+ * footsteps only needed two: a pose that lies flat lies flat on a floor and on
+ * a ceiling, and stands up to climb a wall. Ordered so `cling !== CLING_NONE`
+ * is still "is clinging", which is all `sound/` ever asks.
+ */
+export const CLING_NONE = 0;
+export const CLING_WALL = 1;
+export const CLING_CEILING = 2;
+
 /** How far out the server lets a player claim to be. */
 export const ROOM_LIMIT = 19.9;
 
@@ -20,7 +32,7 @@ export const ROOM_LIMIT = 19.9;
  */
 export const POSE_COUNT = 5;
 
-export const MAX_STROKES = 800;
+export const MAX_STROKES = 1500;
 
 /** Minimum gap between two shots, in milliseconds. */
 export const FIRE_INTERVAL_MS = 800;
@@ -51,7 +63,7 @@ export const MAX_PLAYERS = 12;
 export const COUNTDOWN_SECONDS = 5;
 
 /** How long the chameleons get on the map before the hunter is let in. */
-export const HIDE_SECONDS = 35;
+export const HIDE_SECONDS = 40;
 
 export const REVEAL_SECONDS = 20;
 

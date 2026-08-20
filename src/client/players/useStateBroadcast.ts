@@ -11,7 +11,8 @@ export type NetState = {
   yaw: number;
   pitch: number;
   pose: number;
-  cling: boolean;
+  /** What they are stuck to — `CLING_*` in `shared/protocol`. */
+  cling: number;
 };
 
 /**

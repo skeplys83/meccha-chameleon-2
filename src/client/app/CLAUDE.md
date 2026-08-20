@@ -23,7 +23,7 @@ mechanism and the prose that explains it; the component is now composition.
 | ----------------------- | ------------------------------------------------------- |
 | `usePauseControl`       | pause, palette, pointer lock — and their exclusion      |
 | `useNetEvents`          | every `net/` subscription, including the room reset     |
-| `useRoundAudio`         | the tick, the bell, the gong                            |
+| `useRoundAudio`         | the tick, the bell, the gong, and the hunt's music       |
 | `useRoundAssets`        | the map and music preloads                              |
 | `useRoomGraves`         | graves, de-duplicated, dropped on `onLeftRoom`          |
 | `useCaughtNotice`       | the three-and-a-half seconds after you are caught       |
@@ -57,8 +57,13 @@ mechanism and the prose that explains it; the component is now composition.
   `0` decides where things are, `1` copies a result of that (the viewmodel, the
   audio listener), `2` draws, `3` reads the drawn frame back. Mount order is not
   a substitute.
+- **`FrameLimiter` skips the draw, not just the work in it**, and priority 3 runs
+  anyway. It must call `markDrawn()` after `gl.render` so the eyedropper knows
+  which frames have a framebuffer worth reading — see `paint/CLAUDE.md`.
 - **`Scene.tsx` passes the phase down as three separate facts** — `reveal`,
   `hunting`, `frozen` — because each is read by a different part of the tree.
+- **`leave` is the only exit, from either room.** There is no "back to the
+  lobby" path out of a match: a player who walked out of a round is out of it.
 - **Esc closes the pause menu for a chameleon and not for a hunter.** A hunter's
   Esc never reaches the app: the browser spends it releasing the pointer lock,
   and `pointerlockchange` is what raises their menu.

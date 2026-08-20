@@ -9,6 +9,7 @@ is, for the brush).
 | ------------------ | -------------------------------------------------------- |
 | `StickFigure.tsx`  | one posed, painted body                                  |
 | `poses.ts`         | `POSES`: the joint-angle table, and each pose's own box  |
+| `flat.ts`          | how a pose that lies flat is oriented, per surface        |
 | `rig.ts`           | bone names, rest rotations, and how an angle is applied  |
 | `model.ts`         | fetching `player.glb`, imperatively                      |
 | `samples.ts`       | points on the body, for the buried-fraction probe        |
@@ -22,11 +23,95 @@ is, for the brush).
    lying pose's box is stated lying down. `players/Player.tsx` rebuilds the
    collider from it and puts the *underside* back where it was; a pose whose box
    is wrong is one that sinks into the floor or floats above it.
+
+   **The table is fitted, not derived**, so it does not follow `BODY` on its
+   own. `poseExtents` and `poseCentre` scale it by the body's height against
+   `FITTED_HY` — pose 0's own, read off the table so the two cannot drift.
+   Without that, `BODY_SCALE` shrank the figure and left its lying and curled
+   colliders full size.
 3. **A pose is composed onto a bone's rest rotation, never written over it.**
    The rig comes out of Blender with meaningful rest rotations and the skeleton
    sits inside a node the exporter rotated to stand a Z-up model up. Overwriting
    rather than composing gives you a body folded inside out, and the failure
    looks like a bad angle rather than a bad operation.
+
+## A pose lies flat per its own mode, and the box follows
+
+`Pose.flat` is one of three, and it is per-pose because the poses disagree:
+
+| key | `flat` | on the floor | held: a wall *or* a ceiling |
+| --- | ------ | ------------ | --------------------------- |
+| 1 Stand | `none` | upright | upright |
+| 2 Reach up | `back` | back down, head forward | upright |
+| 3 Star jump | `back` | back down, head forward | upright |
+| 4 Lie flat | `side` | on its shoulder, as it always was | the same — it never stands up |
+| 5 Curl up | `none` | a ball reads the same either way up | upright |
+
+**Only the floor is lain on.** A wall and a ceiling are both *held*, and a body
+holds them the same way. That single rule is what made the corner between them
+work: a `back` pose lying on a ceiling is long along its **forward** axis, and
+you face a wall to climb it — so reaching the ceiling drove a body-length of
+collider straight into that wall and jammed there. Held upright, the long axis
+is vertical and hangs into the room instead.
+
+`side` is the exception that proves it: it never stands up at all, because its
+long axis is left-right, so on a ceiling it already lies *across* the wall it
+climbed rather than into it. That is why pose 4 worked while 2 and 3 stuck.
+
+**Lying only ever makes the box shorter, never wider.** The turned box supplies
+its *vertical* extent and nothing else; horizontally it stays the standing
+footprint, which is the one shape already known to fit everywhere the body can
+be.
+
+That single rule closed three separate "stuck" reports with one cause. A
+body-length box swung out sideways goes wherever the body happens to be facing,
+and next to a wall that is *into* the wall — 0.84 units of it on letting go of
+one. A kinematic collider that starts a frame penetrating gets no movement back
+at all, so the player simply stops.
+
+```
+2 Reach up   held [0.12, 1.10, 0.12]  ->  on the floor [0.12, 0.12, 0.12]
+4 Lie flat   held [0.23, 0.23, 0.12]  ->  the same, it never stands up
+```
+
+The body still *draws* full length and hangs well outside that box. That is the
+hiding mechanic doing its job — `body.ts` makes the collider smaller than the
+figure on purpose — and `players/inside.ts` is what stops the overlap ever
+becoming a way *through* a wall.
+
+**The box is stated standing up and turned to match** (`flat.ts`, `turnHalf`).
+That is the whole reason flagging a pose is a one-word change: the alternative is
+re-measuring every box by hand, and the first cut did exactly that — `reach` was
+flagged flat, kept its 1.1-tall standing collider, and **lay down hanging in
+mid-air** instead of resting on the floor.
+
+```
+2 Reach up   stated [0.12, 1.10, 0.12]  ->  on the floor [0.12, 0.12, 1.10]
+4 Lie flat   stated [0.23, 0.96, 0.12]  ->  on the floor [0.96, 0.23, 0.12]
+```
+
+Half-extents are unsigned, so they are rotated and taken absolute; a **centre**
+keeps its signs, because an offset toward the head has to end up an offset
+*forward* once the head is pointing forward.
+
+**`back` is not a rotation about one axis.** It wants the back down *and* the
+head forward, which is π about `(0, 1, −1)`. Two single-axis attempts failed
+first, and neither looked like a rotation bug:
+
+- **About Z** — that is `side`, and it was applied to everything. On its
+  shoulder the body is about 0.33 half-wide against a box stated at 0.23, so a
+  tenth of a metre hung out of the collider and went through the ceiling it was
+  lying against.
+- **About X** — got the back down but swung the head to `+Z`. A body that lies
+  down feet-first slides feet-first when you walk, which is the tell.
+
+`test/flat.test.ts` pins where the head, the back *and* a shoulder end up for
+every mode on every surface, and that a standing box lays down flat enough to
+rest on the floor.
+
+`rootX` — the crumple — is a tip in the body's *own* frame, so it composes
+underneath the flat orientation rather than beside it. `StickFigure` slerps
+between orientations with the same damping the joints use.
 
 ## Contracts
 

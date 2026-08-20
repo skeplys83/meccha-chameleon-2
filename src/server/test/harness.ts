@@ -27,6 +27,7 @@ export const roomOf = (colyseus: ColyseusTestServer, roomId: string) =>
 type Internals = {
   start(): Promise<void>;
   finish(winner: "chameleons" | "hunters"): void;
+  roundAborted(id: string): Promise<void>;
   hunterId: string;
   matchId: string | null;
 };
