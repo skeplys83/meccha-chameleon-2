@@ -190,3 +190,45 @@ services:
 
 1. **Page Load:** Browser requests `https://superchameleon.io`. Cloudflare terminates SSL and routes the request over the encrypted tunnel to `cloudflared` on the VPS, which proxies to `http://localhost:3000`.
 2. **Matchmaking & WebSocket:** Client queries `/api/sessions` and opens a WebSocket to `wss://superchameleon.io` (port 443). Cloudflare upgrades the connection to WebSocket and tunnels traffic directly into the Colyseus game server on port 3000.
+
+---
+
+## 5. GameDistribution
+
+**Nothing about the game is uploaded to them.** Their developer guidelines
+refuse external hosting *"except for Real Multiplayer games"* — which this is,
+so superchameleon.io stays the only place the game runs, and the deploy above is
+still the whole deploy.
+
+What is uploaded is `gamedistribution/index.html`, on its own, zipped: a wrapper
+page whose iframe points at the live site and passes the publisher's URL through
+as `gd_sdk_referrer_url`. The SDK inside the frame reads that itself. Without it
+every impression is attributed to nobody.
+
+It does not change when the game changes, so it is uploaded once and forgotten.
+The two things that would make it stale are the domain moving and
+GameDistribution changing the parameter.
+
+**The ad SDK is `src/client/app/gamedistribution.ts`** and is inert until
+`GAME_ID` is filled in from their control panel. Their activation step needs a
+pre-roll watched all the way through from inside their own iframe preview
+before the integration is approved.
+
+### What has to be filled in
+
+| what | where |
+| --- | --- |
+| `GAME_ID` — the 32-character hash from their control panel | `src/client/app/gamedistribution.ts` |
+| `GAME_URL` — where the game actually runs | `gamedistribution/index.html` |
+
+Nothing else is configurable and there are no environment variables: the SDK
+loads itself and reads `gd_sdk_referrer_url` off the frame's own query string.
+
+### The one thing that could break their embed
+
+**A hunter is first person and the camera is the mouse.** Pointer lock in a
+cross-origin frame needs `allow="pointer-lock"`, which our wrapper grants to the
+game — but the wrapper is itself inside *their* publisher's frame, and that one
+is theirs. If a publisher embeds without it, chameleons play fine and hunters
+cannot look around. Worth asking them before submitting, because it is not
+something a code change here can fix.

@@ -2,7 +2,34 @@
  * CrazyGames SDK v3 integration layer for Super Chameleon.
  * Provides safe helpers for Instant Multiplayer, room tracking, and invite links
  * with graceful fallback when running outside the portal or offline.
+ *
+ * **The portal integration is switched off** — see `SDK_ENABLED` below. Every
+ * SDK-touching function short-circuits, and the `<script>` that loaded the SDK
+ * is gone from `index.html`.
+ *
+ * **What is still live is the plain invite link**, which was always the
+ * fallback here and is what the game runs on now: `generateInviteLink` builds
+ * `?code=ABCD` against our own origin for the lobby's Copy button, and
+ * `getInitialInviteRoom` reads `?code=` / `?room=` back off the URL for the
+ * start menu and the auto-join. Neither has anything to do with the portal.
+ * Do not delete this file to remove CrazyGames; those two go with it.
  */
+
+/**
+ * Whether to talk to the portal at all.
+ *
+ * One flag rather than a deleted integration, because the code costs nothing
+ * switched off and this may be worth another go. Turning it back on takes two
+ * edits: this, *and* putting the SDK script back in the `<head>` of
+ * `index.html` —
+ *
+ *     <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
+ *
+ * The flag alone leaves every call here looking for a `window.CrazyGames` that
+ * no longer loads. The tag is written down here rather than left commented out
+ * in `index.html`, so nothing about it ships in the page.
+ */
+const SDK_ENABLED = false;
 
 type UpdateRoomOptions = {
   roomId?: string;
@@ -79,6 +106,9 @@ let supported: boolean | null = null;
  * from the embed test so `npm run dev` still exercises the portal path.
  */
 function isSupportedSdkEnvironment(): boolean {
+  // The one gate every SDK call in this file already passes through, which is
+  // why switching the integration off needs nothing else.
+  if (!SDK_ENABLED) return false;
   if (supported !== null) return supported;
   const environment = window.CrazyGames?.SDK?.environment;
   // Do not memoize before the SDK script has reported one.
@@ -94,7 +124,7 @@ function isSupportedSdkEnvironment(): boolean {
  * Safe to call multiple times or when offline.
  */
 export async function initCrazySDK(): Promise<boolean> {
-  if (typeof window === "undefined") return false;
+  if (!SDK_ENABLED || typeof window === "undefined") return false;
   if (sdkPromise) return sdkPromise;
 
   sdkPromise = (async () => {

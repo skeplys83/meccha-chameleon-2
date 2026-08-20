@@ -10,7 +10,8 @@ things that decide when anything heavy is downloaded.
 | `Game.tsx`       | top-level state and every overlay. ~30 lines of state, one JSX tree |
 | `session/`       | the hooks it is composed from — one mechanism each              |
 | `Scene.tsx`      | Canvas, Physics, frame priorities, mark and grave lifetimes    |
-| `crazygames.ts`  | the portal SDK, inert unless a crazygames.com frame is above us |
+| `crazygames.ts`  | the portal SDK — **switched off** — and the `?code=` invite link |
+| `gamedistribution.ts` | the ad SDK: one break, two events, and a failsafe out of it |
 | `loading.ts`     | one counter: is the player waiting on something to arrive      |
 | `dev.ts`         | developer mode, and the player snapshot the readout samples    |
 
@@ -28,7 +29,8 @@ mechanism and the prose that explains it; the component is now composition.
 | `useRoomGraves`         | graves, de-duplicated, dropped on `onLeftRoom`          |
 | `useRoomChat`           | the lobby's chat log — subscribed *before* the join      |
 | `useCaughtNotice`       | the three-and-a-half seconds after you are caught       |
-| `useCrazyGames`         | invites, instant multiplayer, room reporting            |
+| `useCrazyGames`         | the `?code=` auto-join; its portal half is switched off  |
+| `useGameDistribution`   | the ad break, and the handle its two placements hang on  |
 | `useWhistle`            | a chameleon's periodic tell                             |
 | `useDevHotkey`          | backquote                                               |
 
@@ -55,6 +57,43 @@ mechanism and the prose that explains it; the component is now composition.
 
 ## Contracts
 
+- **Ads are GameDistribution's, and four of their rules are load-bearing**: the
+  SDK loads once on mount and never from a button (or the first ad takes too
+  long to arrive), while an ad *shows* only from a click and only outside
+  gameplay (or the browser refuses to autoplay it). Pre-roll is the click that
+  enters a game; mid-roll is leaving one from the pause menu. **The host's Start
+  button is deliberately not a placement** — it begins a countdown everyone else
+  is watching on a server clock, so an ad there is a player who misses the start
+  of hiding.
+- **The `?code=` auto-join must never show one.** It is a page load, not a
+  click, which is why `createFromMenu` / `joinFromMenu` wrap the plain
+  `create` / `joinCode` rather than the ad call living inside them —
+  `useCrazyGames` and `reconnect` get the unwrapped pair.
+- **An ad break is not a pause, but it wants what a pause wants**, so
+  `usePauseControl` takes it as an option rather than a second writer deciding
+  the same things. It mutes through the same `setAudioSuspended` call and hands
+  the pointer lock back — an ad you cannot click because the cursor is captured
+  is worse than no ad. **Two traps in that**: the lock has to be actively
+  *taken*, since the lock effect only stops asking and a hunter is already
+  holding one; and the `pointerlockchange` handler must ignore the break, or
+  releasing the lock reads as Esc and opens the pause menu behind the ad.
+- **`GAME_ID` empty means the ad SDK is entirely off** — nothing is fetched and
+  no break ever fires. **`AD_TIMEOUT_MS` is load-bearing**: `SDK_GAME_START` is
+  the only thing that ends a break, so a blocked or failed ad would otherwise
+  leave the game paused and muted while a server-side round clock runs down.
+- **Nothing about the game is uploaded to GameDistribution.** They allow
+  external hosting for real multiplayer games; what they take is the wrapper in
+  `gamedistribution/`, which is not part of the build. See
+  `docs/DEPLOYMENT.md`.
+- **The CrazyGames integration is off, and `crazygames.ts` is not dead code.**
+  `SDK_ENABLED` there is `false` and the SDK `<script>` is gone from
+  `index.html`; restoring one without the other leaves every call hunting for a
+  `window.CrazyGames` that never loads. **What the file still carries is the
+  plain invite link** — `generateInviteLink` builds `?code=ABCD` against our own
+  origin for the lobby's Copy button, and `getInitialInviteRoom` reads it back
+  for the start menu's code box and for `useCrazyGames`' auto-join. Those were
+  always the fallback path and are now the only path, so deleting the file to be
+  rid of the portal takes invites with it.
 - **A change of room is a clean slate**, and `net/`'s `onLeftRoom` is the one
   place that says so. Anything added later that belongs to a room resets there.
 - **Anything replayed on join subscribes from `Game.tsx`, never from the panel

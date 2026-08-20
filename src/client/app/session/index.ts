@@ -4,6 +4,7 @@
 export { useCaughtNotice } from "./useCaughtNotice";
 export { useCrazyGames } from "./useCrazyGames";
 export { useDevHotkey } from "./useDevHotkey";
+export { useGameDistribution } from "./useGameDistribution";
 export { useNetEvents } from "./useNetEvents";
 export { usePauseControl } from "./usePauseControl";
 export { useAudioUnlockOnGesture, useRoundAssets } from "./useRoundAssets";

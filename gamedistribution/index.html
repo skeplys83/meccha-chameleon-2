@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Super Chameleon</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <!--
+      The wrapper uploaded to GameDistribution, and the *only* thing uploaded.
+
+      GameDistribution's developer guidelines refuse external hosting "except
+      for Real Multiplayer games" — which this is, so the game itself stays on
+      superchameleon.io and is never zipped up. What they take instead is this
+      one page: an iframe pointing at the live game, carrying the parent URL as
+      `gd_sdk_referrer_url` so the SDK inside the frame knows which publisher's
+      site it is being played on. Without it every impression is attributed to
+      nobody.
+
+      Adapted from their own `index_iframe.html`:
+      https://github.com/GameDistribution/GD-HTML5
+
+      To publish: zip this file on its own and upload it. There is nothing to
+      rebuild and nothing here that changes when the game does.
+    -->
+    <style>
+      html { height: 100%; }
+      body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #0a0a0a; }
+      #game {
+        position: absolute; top: 0; left: 0;
+        width: 0; height: 0;
+        min-width: 100%; min-height: 100%;
+        max-width: 100%; max-height: 100%;
+        overflow: hidden; box-sizing: border-box;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      `pointer-lock` is not optional. A hunter plays in first person and the
+      camera is the mouse, so without it that half of the game does not work at
+      all in a cross-origin frame — and this frame is always cross-origin,
+      because the game is served from its own domain. `autoplay` is for the
+      SDK's video ads and for the game's own audio.
+    -->
+    <iframe
+      id="game"
+      frameborder="0"
+      allow="autoplay; fullscreen; pointer-lock"
+      allowfullscreen
+      seamless="seamless"
+      scrolling="no"
+    ></iframe>
+    <script type="application/javascript">
+      /** Where the game actually lives. */
+      var GAME_URL = "https://superchameleon.io";
+
+      function parameters(url) {
+        var out = {};
+        var at = url.indexOf("?");
+        if (at === -1) return out;
+        url.substr(at + 1).split("&").forEach(function (pair) {
+          var kv = pair.split("=");
+          out[kv[0]] = decodeURIComponent(String(kv[1]).replace(/\+/g, " "));
+        });
+        return out;
+      }
+
+      /** The publisher's page this wrapper is embedded on, which is what the
+       *  SDK attributes the impression to. */
+      function referrer() {
+        var parent = document.location.href;
+        if (window.location !== window.parent.location && document.referrer) {
+          parent = document.referrer;
+        }
+        // Their own wrapper does this: a localhost referrer is a test run and
+        // is reported as the portal rather than as an unknown publisher.
+        if (document.referrer.indexOf("localhost") !== -1) {
+          parent = "https://gamedistribution.com/";
+        }
+        return parameters(parent).gd_sdk_referrer_url || parent;
+      }
+
+      document.getElementById("game").src =
+        GAME_URL + "?gd_sdk_referrer_url=" + encodeURIComponent(referrer());
+    </script>
+  </body>
+</html>

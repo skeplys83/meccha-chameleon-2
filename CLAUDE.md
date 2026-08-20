@@ -183,6 +183,8 @@ levels/             the .blend files the maps are exported from, and the raw kit
                     AUTHORING.md there is the map-building guide
 Dockerfile          the single-port production container build
 scripts/            check-docs, check-constants, make-favicon, export-level
+gamedistribution/   the one page uploaded to the portal — an iframe wrapper
+                    around the live site. Not part of the build
 ```
 
 **Every map is one `.glb` exported from Blender, and the repo has no part in

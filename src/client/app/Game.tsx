@@ -38,6 +38,7 @@ import {
   useCaughtNotice,
   useCrazyGames,
   useDevHotkey,
+  useGameDistribution,
   useNetEvents,
   usePauseControl,
   useRoomChat,
@@ -70,6 +71,9 @@ export function Game() {
   const loading = useLoading();
   const isMobile = useIsMobileOrTablet();
 
+  /** An ad has the screen, and the handle the two placements hang on. */
+  const { adBreak, requestAd } = useGameDistribution();
+
   const {
     paused,
     painting,
@@ -80,7 +84,7 @@ export function Game() {
     setPaintOpen,
     setChatOpen,
     closeOverlays,
-  } = usePauseControl({ joined, role, dropped });
+  } = usePauseControl({ joined, role, dropped, adBreak });
 
   /** Chat is a waiting-room thing, in the two phases where nobody has a side
    *  yet — the same window the server accepts a `chat` message in. During
@@ -161,6 +165,27 @@ export function Game() {
 
   useCrazyGames({ joined, room, name, create, joinCode });
 
+  // Pre-roll, on the two buttons that actually start a game. Wrapped rather
+  // than put inside `create`/`joinCode` themselves: those are also called by
+  // the `?code=` auto-join above, which is a page load rather than a click —
+  // an ad there breaks their "user input only" rule and a browser would refuse
+  // to autoplay it regardless. `reconnect` is exempt for the same reason.
+  const createFromMenu = useCallback(
+    (who: string, wanted: string, listed: boolean, maxPlayers: number) => {
+      requestAd();
+      create(who, wanted, listed, maxPlayers);
+    },
+    [create, requestAd],
+  );
+
+  const joinFromMenu = useCallback(
+    (who: string, code: string) => {
+      requestAd();
+      joinCode(who, code);
+    },
+    [joinCode, requestAd],
+  );
+
   // T opens the chat box. `preventDefault` because otherwise the same keypress
   // types its own "t" into the input it just opened; `KeyT` is free in
   // `players/controls.ts`, where turning is Q and E.
@@ -199,6 +224,9 @@ export function Game() {
   );
 
   const leave = useCallback(() => {
+    // Mid-roll. A click, and squarely outside gameplay — this is the player
+    // walking out of the round.
+    requestAd();
     cancelLock();
     stopAllLoops();
     void disconnect();
@@ -206,7 +234,7 @@ export function Game() {
     setRoom(null);
     closeOverlays();
     setDropped(false);
-  }, [closeOverlays]);
+  }, [closeOverlays, requestAd]);
 
   // Back into the seat the server is still holding, if it still is — and a plain
   // re-join of the same room if it is not.
@@ -248,7 +276,7 @@ export function Game() {
         // A dropped player's input goes nowhere. The reveal is *not* in here:
         // the round is decided but everyone keeps walking, which is how you go
         // and look at the spot that beat you.
-        paused={paused || dropped || chatting}
+        paused={paused || dropped || chatting || adBreak}
         brush={brush}
         onBrush={setBrush}
         picking={picking}
@@ -367,7 +395,7 @@ export function Game() {
           )}
         </>
       ) : (
-        <StartMenu onCreate={create} onJoinCode={joinCode} />
+        <StartMenu onCreate={createFromMenu} onJoinCode={joinFromMenu} />
       )}
       {/* Last, and over everything including the menu, because it is the one
           overlay that is not about the game: while it is up there is no floor

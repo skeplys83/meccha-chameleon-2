@@ -8,6 +8,9 @@ type Options = {
   joined: boolean;
   role: Role;
   dropped: boolean;
+  /** An ad is on screen. It is not a pause — there is no menu and nothing to
+   *  resume — but it wants the same two things a pause does. */
+  adBreak?: boolean;
 };
 
 /**
@@ -15,7 +18,10 @@ type Options = {
  * one mechanism.
  *
  * **`paused`, `painting` and `chatting` are mutually exclusive, and every path
- * has to keep them that way.** Opening the palette clears the pause; Esc closes
+ * has to keep them that way.** (`adBreak` is not one of them — it is not a
+ * state this hook owns but one handed in, and it overlaps all three freely. It
+ * is here because it wants the two things a pause wants, the cursor and the
+ * silence, and having two writers decide those is how they end up disagreeing.) Opening the palette clears the pause; Esc closes
  * the palette before it will pause; the hunter's lock handler refuses to pause
  * while it is open. Losing the window was once the exception — it set `paused` and left
  * `painting` alone, which hid the pause menu *and* the palette while the keys
@@ -23,7 +29,7 @@ type Options = {
  * pressed Esc to shut an invisible palette and only then found something to
  * resume. Owning both states here is what stops a future path forgetting.
  */
-export function usePauseControl({ joined, role, dropped }: Options) {
+export function usePauseControl({ joined, role, dropped, adBreak = false }: Options) {
   const [paused, setPaused] = useState(false);
   // `painting` means the palette is up. Hovering your own body opens it, and
   // from then on it stays open until it is minimised — a palette that closed
@@ -40,6 +46,7 @@ export function usePauseControl({ joined, role, dropped }: Options) {
   const paintingRef = useLatestRef(painting);
   const pausedRef = useLatestRef(paused);
   const chattingRef = useLatestRef(chatting);
+  const adBreakRef = useLatestRef(adBreak);
 
   /** Opening the panel hands the cursor back so you can draw. Closing it takes
    *  nothing back here — clearing `painting` is enough, because the lock effect
@@ -102,19 +109,24 @@ export function usePauseControl({ joined, role, dropped }: Options) {
   // buttons are reachable. A chameleon never held the lock, so this is a no-op
   // for them; a hunter usually lost it to Esc already, but not if something
   // else raised the menu.
+  //
+  // An ad takes it for the same reason and has to *take* it: the lock effect
+  // below only stops asking, and a hunter mid-hunt is already holding one.
   useEffect(() => {
-    if (!paused) return;
+    if (!paused && !adBreak) return;
     // Cancel first: `requestLock` keeps retrying for about two seconds, and a
     // retry landing after the menu opened would snatch the cursor back off it.
     cancelLock();
     document.exitPointerLock();
-  }, [paused]);
+  }, [paused, adBreak]);
 
   // Pause silences the room too. Without this a shot fired the instant before
-  // Esc keeps ringing behind the menu.
+  // Esc keeps ringing behind the menu. An ad silences it for the same reason
+  // and through the same call — two writers would fight over whether the game
+  // is audible when an ad ends while the pause menu is up.
   useEffect(() => {
-    setAudioSuspended(paused);
-  }, [paused]);
+    setAudioSuspended(paused || adBreak);
+  }, [paused, adBreak]);
 
   useEffect(() => {
     if (!joined) return;
@@ -126,9 +138,11 @@ export function usePauseControl({ joined, role, dropped }: Options) {
       return;
     }
 
-    if (paused || painting || chatting || dropped) return;
+    // An ad you cannot click because the cursor is captured is worse than no
+    // ad, so the lock goes for the length of the break like it does for a menu.
+    if (paused || painting || chatting || dropped || adBreak) return;
     requestLock();
-  }, [joined, role, paused, painting, chatting, dropped]);
+  }, [joined, role, paused, painting, chatting, dropped, adBreak]);
 
   /**
    * Esc opens the pause menu, and closes it again — but only for a chameleon,
@@ -181,12 +195,22 @@ export function usePauseControl({ joined, role, dropped }: Options) {
         setPaused(false);
         return;
       }
-      if (held && !paintingRef.current && !chattingRef.current) setPaused(true);
+      // An ad is not the player asking for a menu. Without this the break above
+      // hands the lock back, this reads that as Esc, and the pause menu opens
+      // *behind* the ad — to be found on top of the game once it finishes.
+      if (
+        held &&
+        !paintingRef.current &&
+        !chattingRef.current &&
+        !adBreakRef.current
+      ) {
+        setPaused(true);
+      }
       held = false;
     };
     document.addEventListener("pointerlockchange", onLockChange);
     return () => document.removeEventListener("pointerlockchange", onLockChange);
-  }, [joined, role, dropped, paintingRef, chattingRef]);
+  }, [joined, role, dropped, paintingRef, chattingRef, adBreakRef]);
 
   return {
     paused,
