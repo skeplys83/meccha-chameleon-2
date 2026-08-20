@@ -80,6 +80,13 @@ mechanism and the prose that explains it; the component is now composition.
   *taken*, since the lock effect only stops asking and a hunter is already
   holding one; and the `pointerlockchange` handler must ignore the break, or
   releasing the lock reads as Esc and opens the pause menu behind the ad.
+- **The ad SDK loads only for portal traffic**, decided by
+  `gd_sdk_referrer_url` being on the URL — which the wrapper always appends and
+  a direct visitor to superchameleon.io never has. It is *not* decided by being
+  framed, because the game can be embedded anywhere. **This is a safety rule
+  before it is a commercial one:** an ad SDK loading on the game's own site can
+  take that site down with it, and there is no reason to carry that risk for
+  traffic the portal is not part of.
 - **`GAME_ID` empty means the ad SDK is entirely off** — nothing is fetched and
   no break ever fires. **`AD_TIMEOUT_MS` is load-bearing**: `SDK_GAME_START` is
   the only thing that ends a break, so a blocked or failed ad would otherwise

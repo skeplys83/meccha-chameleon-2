@@ -209,8 +209,10 @@ It does not change when the game changes, so it is uploaded once and forgotten.
 The two things that would make it stale are the domain moving and
 GameDistribution changing the parameter.
 
-**The ad SDK is `src/client/app/gamedistribution.ts`** and is inert until
-`GAME_ID` is filled in from their control panel. Their activation step needs a
+**The ad SDK is `src/client/app/gamedistribution.ts`.** It needs `GAME_ID` from
+their control panel *and* a `gd_sdk_referrer_url` on the URL, which only the
+wrapper adds — so superchameleon.io played directly never loads it, and the
+site cannot be taken down by an ad script it has no reason to be running. Their activation step needs a
 pre-roll watched all the way through from inside their own iframe preview
 before the integration is approved.
 

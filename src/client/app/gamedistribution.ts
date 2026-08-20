@@ -18,6 +18,15 @@
  * input, only outside gameplay, game paused, game muted. The last two are
  * `usePauseControl`'s job and the first two are the hook's.
  *
+ * **Nothing here runs unless the game is being played through them.** The SDK
+ * loads only when the page carries `gd_sdk_referrer_url`, which the wrapper
+ * always appends and a direct visitor to superchameleon.io never has. Two
+ * reasons, and the first is the one that matters: **an ad SDK that loads on
+ * the game's own site can take the game down with it** — an ad container over
+ * the canvas, an `SDK_GAME_PAUSE` with no `SDK_GAME_START` behind it, anything
+ * — and there is no reason to accept that risk for traffic they are not part
+ * of. The second is simply that direct traffic is not theirs to monetise.
+ *
  * **This game is self-hosted, which they allow.** Their developer guidelines
  * refuse external hosting "except for Real Multiplayer games", which is what
  * this is — a lobby is a live websocket room and there is no static bundle to
@@ -95,8 +104,25 @@ function setPlaying(next: boolean) {
   listeners.forEach((fn) => fn(next));
 }
 
-/** Whether ads are configured at all. */
-export const adsEnabled = () => GAME_ID !== "";
+/**
+ * Whether this page is being played through GameDistribution.
+ *
+ * The wrapper in `gamedistribution/` appends `gd_sdk_referrer_url` to the
+ * frame it opens, and nothing else does — so its presence is the one honest
+ * signal that this is portal traffic rather than somebody who typed the domain
+ * in. Being framed is *not* that signal: the game can be embedded anywhere.
+ */
+function throughPortal() {
+  if (typeof window === "undefined") return false;
+  try {
+    return new URLSearchParams(window.location.search).has("gd_sdk_referrer_url");
+  } catch {
+    return false;
+  }
+}
+
+/** Whether ads are configured *and* this is a session they belong in. */
+export const adsEnabled = () => GAME_ID !== "" && throughPortal();
 
 /**
  * Load the SDK, once. Safe to call repeatedly; does nothing without a
