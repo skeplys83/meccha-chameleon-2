@@ -1,5 +1,6 @@
 import { Client, getStateCallbacks, type Room } from "colyseus.js";
 import {
+  CHAT_HISTORY,
   LEAVE_IN_PROGRESS,
   LEAVE_STARTING,
   type Phase,
@@ -27,6 +28,10 @@ import {
 } from "./events";
 import { getAdvertisedGamePort } from "./sessions";
 
+/** Ever-increasing, across rooms: a chat line's id is only ever a React key,
+ *  and one that is never re-used cannot collide with a line still on screen. */
+let chatSeq = 0;
+
 /** Mirrors the Player schema declared in server/schema.ts. */
 type PlayerSchema = {
   name: string;
@@ -53,7 +58,6 @@ type StateSchema = {
   winner?: string;
   maxPlayers?: number;
   players?: { get(id: string): PlayerSchema | undefined; size?: number };
-  chat?: { forEach(cb: (line: { name: string; text: string }) => void): void };
 };
 
 type Callbacks = {
@@ -63,9 +67,6 @@ type Callbacks = {
   };
   graves: {
     onAdd(cb: (raw: string, index: number) => void): void;
-  };
-  chat: {
-    onAdd(cb: () => void): void;
   };
   onChange(cb: () => void): void;
 };
@@ -240,33 +241,28 @@ async function attach(joined: Room): Promise<RoomInfo> {
     });
   });
 
-  // Chat is state, not a broadcast, so this fires for the lines already in the
-  // log when you join as well as for each new one — which is the whole reason a
-  // latecomer sees the conversation.
+  // Chat is a broadcast and nothing keeps it: there is no log on the server to
+  // replay, so this room's conversation begins at the moment we walked in. The
+  // rolling copy below is only what is on screen — it dies with the room.
   //
-  // The *whole* log goes out each time rather than the one line that arrived.
-  // The server trims the oldest away once it is full, and a trim shifts every
-  // index under it; a listener stitching single lines together cannot tell that
-  // from a new message, and would either swallow one or show an old one twice.
-  let lastChat = "";
-  const publishChat = () => {
-    const lines: ChatMessage[] = [];
-    (joined.state as StateSchema).chat?.forEach((line) => {
-      if (typeof line?.text !== "string" || !line.text) return;
-      lines.push({
-        id: String(lines.length),
-        name: typeof line.name === "string" && line.name ? line.name : "someone",
-        text: line.text,
-      });
-    });
-    // Guarded like `publish` below: a trim re-announces lines that have not
-    // changed, and every emit costs a React render.
-    const key = lines.map((l) => `${l.name}\u0000${l.text}`).join("\u0001");
-    if (key === lastChat) return;
-    lastChat = key;
+  // The *whole* list is emitted each time rather than the line that arrived,
+  // because that is the shape the panel already takes and a whole list has no
+  // ordering to reconcile.
+  let lines: ChatMessage[] = [];
+  joined.onMessage("chat", (msg: { name?: string; text?: string }) => {
+    if (typeof msg?.text !== "string" || !msg.text) return;
+    lines = [
+      ...lines,
+      {
+        // A counter, not a position: the trim below shifts every index under
+        // it, and a React key that moves between lines re-uses the wrong node.
+        id: String(chatSeq++),
+        name: typeof msg.name === "string" && msg.name ? msg.name : "someone",
+        text: msg.text,
+      },
+    ].slice(-CHAT_HISTORY);
     emitChat(lines);
-  };
-  $(joined.state).chat.onAdd(publishChat);
+  });
 
   joined.onMessage("shot", (msg: { id: string }) => {
     if (msg?.id) emitShot(msg.id);

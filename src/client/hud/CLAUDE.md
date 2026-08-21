@@ -62,8 +62,9 @@ reads them from there now.
   between rooms is harder to find than one that does not. The box renders in
   `waiting` and `countdown`, the same window the server accepts a `chat`
   message in (`Game.tsx` owns that condition) and takes its lines as a prop —
-  subscribing to `onChat` from inside it missed the backlog replayed during the
-  join, see `app/session/useRoomChat` — and for the whole of it: closed
+  subscribing to `onChat` from inside it would miss anything said in the window
+  between the socket going live and `room` arriving, see
+  `app/session/useRoomChat` — and for the whole of it: closed
   it is the prompt naming the key, open it is the field. It used to appear only
   once somebody had spoken, which left the first player in a lobby no way to
   discover chat existed. **The lines above it float** — no plate, no blur, no

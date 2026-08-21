@@ -43,31 +43,15 @@ defineTypes(Player, {
 });
 
 /**
- * One line of lobby chat.
- *
- * A class rather than a joined string, unlike `graves`: that packs
- * `"x,y,z,name"` into one field and the client has to take the name as the
- * remainder, because a name may contain a comma. A message may contain
- * anything at all, so it is never put near a delimiter in the first place.
+ * **Chat is not in here.** It used to be an `ArraySchema<ChatLine>`, precisely
+ * so that a latecomer was handed what had already been said; it is now a plain
+ * broadcast, and a conversation exists only for the people who were in the room
+ * to hear it. Nothing is kept, so there is nothing to hand over.
  */
-export class ChatLine extends Schema {
-  /** Copied from the author, not referenced by session id — an id is per room
-   *  and the log outlives the round trip that invalidates it. */
-  declare name: string;
-  declare text: string;
-}
-
-defineTypes(ChatLine, {
-  name: "string",
-  text: "string",
-});
 
 export class GameState extends Schema {
   declare players: MapSchema<Player>;
   declare graves: ArraySchema<string>;
-  /** The lobby's chat log. Kept in state rather than broadcast so somebody
-   *  arriving five minutes in is handed what was already said. */
-  declare chat: ArraySchema<ChatLine>;
   /** Which map this room is playing. */
   declare map: string;
   /** `"lobby"` or `"match"`. */
@@ -94,14 +78,12 @@ export class GameState extends Schema {
     // Death markers live in state, not in a broadcast: they are permanent, so
     // someone joining an hour later still has to see every one of them.
     this.graves = new ArraySchema<string>();
-    this.chat = new ArraySchema<ChatLine>();
   }
 }
 
 defineTypes(GameState, {
   players: { map: Player },
   graves: ["string"],
-  chat: [ChatLine],
   map: "string",
   mode: "string",
   nextMap: "string",

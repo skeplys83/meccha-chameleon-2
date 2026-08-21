@@ -27,7 +27,7 @@ mechanism and the prose that explains it; the component is now composition.
 | `useRoundAudio`         | the tick, the bell, the gong, and the hunt's music       |
 | `useRoundAssets`        | the map and music preloads                              |
 | `useRoomGraves`         | graves, de-duplicated, dropped on `onLeftRoom`          |
-| `useRoomChat`           | the lobby's chat log — subscribed *before* the join      |
+| `useRoomChat`           | what has been said since you walked in — no backlog      |
 | `useCaughtNotice`       | the three-and-a-half seconds after you are caught       |
 | `useCrazyGames`         | the `?code=` auto-join; its portal half is switched off  |
 | `useGameDistribution`   | the ad break, and the handle its two placements hang on  |
@@ -107,12 +107,12 @@ mechanism and the prose that explains it; the component is now composition.
 - **A change of room is a clean slate**, and `net/`'s `onLeftRoom` is the one
   place that says so. Anything added later that belongs to a room resets there.
 - **Anything replayed on join subscribes from `Game.tsx`, never from the panel
-  that draws it.** `net/client.ts` replays graves and the chat log during
-  `attach`, before the join promise resolves — so a listener owned by a
-  component that mounts on `room` arriving has already missed the backlog.
-  `ChatPanel` renders only in a waiting lobby and lost every existing line to
-  exactly this; `useRoomChat` holds the subscription and hands the panel an
-  array.
+  that draws it.** `net/client.ts` replays graves during `attach`, before the
+  join promise resolves — so a listener owned by a component that mounts on
+  `room` arriving has already missed the backlog. **Chat has no backlog any
+  more** — it is a broadcast the server keeps none of — but `useRoomChat` still
+  subscribes here, because the panel mounts a few hundred milliseconds after the
+  socket goes live and a line landing in that window would be lost.
 - **`Scene.tsx` owns the frame priorities**, the game's one ordering guarantee:
   `0` decides where things are, `1` copies a result of that (the viewmodel, the
   audio listener), `2` draws, `3` reads the drawn frame back. Mount order is not

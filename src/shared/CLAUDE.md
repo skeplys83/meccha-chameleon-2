@@ -51,9 +51,9 @@ doc names the constant beside the number for exactly this reason.
 - **Leave codes (`LEAVE_IN_PROGRESS`, `LEAVE_STARTING`) are here** rather than as
   a bare `4001` written twice.
 - **The chat limits are here because both halves enforce them.**
-  `MAX_CHAT_LENGTH` caps the server's truncation *and* the input's `maxLength`,
-  and `CHAT_HISTORY` is both the server's trim and the length of the log the
-  client keeps. `CHAT_INTERVAL_MS` is the server's alone today, and sits beside
+  `MAX_CHAT_LENGTH` caps the server's truncation *and* the input's `maxLength`.
+  `CHAT_HISTORY` is now the client's alone — the length of the rolling list it
+  keeps on screen — because the server stores no chat to trim. `CHAT_INTERVAL_MS` is the server's alone today, and sits beside
   them rather than being the one chat number somewhere else.
 
 ---

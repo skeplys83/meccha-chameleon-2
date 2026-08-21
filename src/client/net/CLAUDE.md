@@ -53,15 +53,15 @@ let go, because a reservation is held for only fifteen seconds.
   `sound/` still reads it as truthy-means-climbing; `figure/` reads *which*
   surface, to decide which way up to draw a pose that lies flat. It rides in the
   same `state` message as everything else, twenty times a second.
-- **Chat arrives as state, not as a message, and `onChat` carries the whole
-  log.** `sendChat` goes out; nothing comes back on `onMessage`. `client.ts`
-  subscribes to the `chat` array and emits every line each time it changes,
-  including once on join — which is what a latecomer sees the conversation
-  through. **Not one line at a time**: the server trims the oldest away when
-  the log is full, which shifts every index under it, and a listener stitching
-  single lines together cannot tell a trim from a new message. The emit is
-  guarded on a content key, like `publish`, because a trim re-announces lines
-  that have not changed.
+- **Chat is a broadcast, and nothing is replayed on join.** It used to be state
+  precisely so a latecomer was handed the backlog; the server now keeps no copy
+  at all, so a conversation exists only for whoever was in the room to hear it.
+  `client.ts` holds the rolling list — the last `CHAT_HISTORY` lines, trimmed
+  locally — and `onChat` still carries it **whole** rather than a line at a
+  time, because that is the shape the panel takes. The list dies with the room:
+  `useRoomChat` clears it on `onLeftRoom`, and there is nowhere else it lives.
+  Line ids are a counter, never a position, so a trim cannot slide a React key
+  onto a different line.
 - **The browser-facing socket port is normalized before a join**, because behind
   a TLS proxy the port we bind is not the port a browser can reach.
 

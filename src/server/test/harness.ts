@@ -36,6 +36,17 @@ export const inner = (room: unknown) => room as unknown as Internals;
 
 export type Client = ClientRoom<GameState>;
 
+/**
+ * Every chat line a client is *told*, in order. Chat is a broadcast and the
+ * server keeps no copy, so there is no state for a test to read it out of —
+ * listening is the only way to see it, which is the point of the change.
+ */
+export function heard(client: Client) {
+  const lines: { name: string; text: string }[] = [];
+  client.onMessage("chat", (line: { name: string; text: string }) => lines.push(line));
+  return lines;
+}
+
 /** Give the room loop a few ticks to settle. */
 export const settle = (ms = 150) => new Promise((r) => setTimeout(r, ms));
 

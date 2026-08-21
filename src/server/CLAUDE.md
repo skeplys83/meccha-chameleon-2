@@ -74,16 +74,18 @@ lobby, and `state.lobby` is the field that makes the return trip possible.
   `shoot`, `kill`, `whistle`, `chat`, plus `start` and `setMap` from a lobby's
   host.
 - **Messages out** (→ `client/net/client.ts`): `shot`, `whistle`, `mark`,
-  `caught`, `clearSkin`, `paint`, `moveTo`, `moveFailed`. **There is no
+  `caught`, `clearSkin`, `paint`, `chat`, `moveTo`, `moveFailed`. **There is no
   "match over" message** — `moveTo` is the news.
 - **`chat` is a waiting-room message**, refused in a match and refused in a
   lobby outside `waiting` and `countdown`. A match never carries it because a
   channel between the people being hunted is coordination against the one
   player looking for them; the two lobby phases it *is* allowed in are the two
-  where nobody has a side yet. It is **not broadcast** — the `chat` log lives in
-  `GameState`, so a live line and the backlog handed to a latecomer are one
-  mechanism. A `ChatLine` is a Schema class rather than a joined string,
-  unlike `graves`, because a message may contain any delimiter you pick.
+  where nobody has a side yet. It **is a broadcast, and nothing keeps it.** It
+  used to live in `GameState` as an `ArraySchema<ChatLine>`, so that a live line
+  and the backlog handed to a latecomer were one mechanism; a lobby is now a
+  room you can only hear while you are standing in it, and somebody arriving
+  mid-conversation starts on an empty box. The client trims its own copy to
+  `CHAT_HISTORY`, which is the only place that number is spent now.
 - **Names and chat are filtered here, and only here.** A name is a join option
   and a message is a websocket frame, so a filter on the client is decoration —
   same trust model as movement and kills. The two choke points are `onJoin` and
@@ -124,9 +126,10 @@ replace a name, read a name more strictly — and that every fallback name
 survives the filter, which is the false positive that would otherwise have the
 server renaming people to something it then rejects.
 
-`lobby.test.ts` also covers chat: the log every client reads, the backlog a
-latecomer is handed, the trim to `CHAT_HISTORY`, the rate limit, and the two
-phases it goes quiet in. `match.test.ts` covers the refusal.
+`lobby.test.ts` also covers chat: the line everybody is told, the latecomer who
+is told none of it, the trim and cap on one message, the rate limit, and the two
+phases it goes quiet in. It reads them through `heard()` in the harness, since
+listening is now the only way to see a line. `match.test.ts` covers the refusal.
 
 They live in `test/` rather than beside the source, because none of them maps
 to one module — `lobby.test.ts` and `match.test.ts` both exercise `room.ts` — and

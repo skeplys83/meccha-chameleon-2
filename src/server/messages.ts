@@ -1,10 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { Client } from "colyseus";
 import type { GameRoom } from "./room.ts";
-import { ChatLine } from "./schema.ts";
 import { cleanChat } from "./clean.ts";
 import {
-  CHAT_HISTORY,
   CHAT_INTERVAL_MS,
   MAX_CHAT_LENGTH,
   FIRE_INTERVAL_MS,
@@ -204,8 +202,11 @@ export function registerMessages(room: GameRoom) {
    * nobody has a side yet — during `hiding` the lobby holds the drawn hunter
    * alone, and there is nobody to talk to and a log everyone will come back to.
    *
-   * Not broadcast: the state patch is the delivery, which is what makes a live
-   * message and the history handed to a latecomer the same mechanism.
+   * **Broadcast, and kept nowhere.** It used to live in room state so that
+   * somebody arriving mid-conversation was handed it; a lobby is now a room you
+   * can only hear while you are standing in it, and a latecomer starts on an
+   * empty box. Nothing is stored, so there is no history to leak into the next
+   * round either.
    */
   room.onMessage("chat", (client: Client, msg: ChatMsg) => {
     if (!room.isLobby) return;
@@ -233,12 +234,10 @@ export function registerMessages(room: GameRoom) {
     if (now - (lastChat.get(client.sessionId) ?? 0) < CHAT_INTERVAL_MS) return;
     lastChat.set(client.sessionId, now);
 
-    const line = new ChatLine();
-    line.name = player.name;
-    line.text = clean;
-    room.state.chat.push(line);
-    const overflow = room.state.chat.length - CHAT_HISTORY;
-    if (overflow > 0) room.state.chat.splice(0, overflow);
+    // To the sender too: nobody renders their own line locally, so this is the
+    // one delivery and everyone in the room sees the same list in the same
+    // order.
+    room.broadcast("chat", { name: player.name, text: clean });
   });
 
   return { forget };

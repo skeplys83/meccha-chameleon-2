@@ -11,8 +11,8 @@ export type NetMark = {
 /** Where a chameleon was found, in world space, and who it was. */
 export type Grave = { id: string; position: [number, number, number]; name: string };
 
-/** One line of lobby chat. `id` is its position in the log, which is only ever
- *  read as a React key — the log arrives whole, so nothing tracks a line. */
+/** One line of lobby chat. `id` is a counter, read only as a React key — the
+ *  list arrives whole, so nothing tracks a line by it. */
 export type ChatMessage = { id: string; name: string; text: string };
 
 /** Which room you are in and what it is doing. */
@@ -52,11 +52,10 @@ const shotListeners = new Set<(shooterId: string) => void>();
 const whistleListeners = new Set<(whistlerId: string) => void>();
 const markListeners = new Set<(mark: NetMark) => void>();
 const graveListeners = new Set<(grave: Grave) => void>();
-/** The lobby's whole chat log, re-sent whenever it changes — including once on
- *  join, because the log is state rather than a broadcast. Whole rather than
- *  per-line because the server trims the oldest away, which shifts every index
- *  under it; a listener accumulating single lines cannot tell a trim from a new
- *  message. */
+/** What has been said in this lobby *since we arrived*, re-sent whole whenever
+ *  a line lands. Nothing is replayed on join: chat is a broadcast and the
+ *  server keeps none of it. Whole rather than per-line because that is the
+ *  shape the panel takes, and `client.ts` owns the rolling copy. */
 const chatListeners = new Set<(messages: ChatMessage[]) => void>();
 /** Somebody was caught and is now a hunter. */
 const caughtListeners = new Set<

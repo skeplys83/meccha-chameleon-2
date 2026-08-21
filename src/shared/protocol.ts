@@ -85,7 +85,8 @@ export const LEAVE_IN_PROGRESS = 4001;
 /** This lobby is already counting down. */
 export const LEAVE_STARTING = 4002;
 
-/** How many lines of lobby chat are kept for whoever arrives next. */
+/** How many lines of lobby chat a client keeps on screen. Nothing is kept on
+ *  the server — chat is a broadcast, and a latecomer is handed none of it. */
 export const CHAT_HISTORY = 30;
 
 /** Longest message the server will take. */

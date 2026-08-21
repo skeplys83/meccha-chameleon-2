@@ -42,11 +42,12 @@ win** if the last one is caught. Both rooms are the same class under two
 registered names; the lobby stays behind precisely so there is somewhere to come
 back to — and so the hunter has somewhere to wait.
 
-**A lobby is the one place anybody talks.** It has a chat box on `T`, and its
-log lives in room state rather than in a broadcast, so somebody arriving five
-minutes in is handed the conversation. It goes quiet the moment the round is
-underway — a match never carries chat at all, because a channel between the
-people being hunted is coordination against the one player looking for them.
+**A lobby is the one place anybody talks.** It has a chat box on `T`, and what
+is said is a broadcast the server keeps no copy of — somebody arriving five
+minutes in is handed none of it and hears only what is said from then on. It
+goes quiet the moment the round is underway — a match never carries chat at
+all, because a channel between the people being hunted is coordination against
+the one player looking for them.
 
 Two things follow and are load-bearing. **A code is the only way *in*, and
 listing only decides whether you can *find* it**: a lobby is public by default
@@ -141,7 +142,7 @@ commit`.
 | command             | what it proves                                                    |
 | ------------------- | ------------------------------------------------------------------- |
 | `npm run typecheck` | both projects compile, and neither half used the other's globals   |
-| `npm test`          | the server suite in `src/server/test/`: 39 tests over the rooms, the draw, the clock, the lobby's chat, and the filter |
+| `npm test`          | the server suite in `src/server/test/`: 90 tests over the rooms, the draw, the clock, the lobby's chat, and the filter |
 | `npm run lint`      | the import boundaries, and the React rules                         |
 | `npm run build`     | the client bundles                                                  |
 

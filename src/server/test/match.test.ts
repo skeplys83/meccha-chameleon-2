@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { ColyseusTestServer } from "@colyseus/testing";
-import { bootTestServer, connected, inner, roomOf, settle } from "./harness.ts";
+import { bootTestServer, connected, heard, inner, roomOf, settle } from "./harness.ts";
 import { DEFAULT_MATCH_MAP } from "../../shared/mapIds.ts";
 
 let colyseus: ColyseusTestServer;
@@ -231,10 +231,11 @@ describe("a match", () => {
 describe("chat in a match", () => {
   it("is refused, in hiding and in the hunt alike", async () => {
     const first = await openMatch();
+    const said = heard(first);
 
     first.send("chat", { text: "behind the second pillar" });
     await settle();
-    expect(first.state.chat.length).toBe(0);
+    expect(said).toEqual([]);
 
     await beginHunt(first.roomId);
     first.send("chat", { text: "still nothing" });
@@ -242,6 +243,6 @@ describe("chat in a match", () => {
 
     // Chat is a waiting-room thing. A channel between the people being hunted
     // is coordination against the one player looking for them.
-    expect(first.state.chat.length).toBe(0);
+    expect(said).toEqual([]);
   });
 });
