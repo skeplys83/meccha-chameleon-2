@@ -7,9 +7,22 @@ import { kickViewmodel } from "@/client/combat/recoil";
 import { sendKill, sendPaint, sendShoot } from "@/client/net";
 import { setLockTarget } from "@/client/players/pointerLock";
 import { createBrushCursor, type BrushCursor } from "@/client/paint/brushCursor";
-import { cancelPick, requestPick } from "@/client/paint/eyedropper";
+import {
+  cancelPick,
+  moveWatch,
+  requestPick,
+  stopWatch,
+  watchPixel,
+} from "@/client/paint/eyedropper";
 import { albedoAt } from "@/client/paint/albedo";
+import {
+  createCursorHint,
+  createPickPreview,
+  type CursorHint,
+  type PickPreview,
+} from "@/client/paint/pickPreview";
 import { MAX_SIZE, MIN_SIZE, type Brush } from "@/client/paint/brush";
+import { rememberColor } from "@/client/paint/palette";
 import { startLoop, stopLoop } from "@/client/sound/engine";
 import { FIRE_INTERVAL_MS } from "@/shared/protocol";
 import { newLook, type Look } from "./look";
@@ -90,6 +103,16 @@ export function usePointerControls({
   const frozenRef = useRef(frozen);
   const pickingRef = useRef(picking);
   const onPickedRef = useRef(onPicked);
+  /** The swatch beside the cursor, alive only while the eyedropper is armed. */
+  const preview = useRef<PickPreview | null>(null);
+  /** The label under the brush ring. Held in a ref for the same reason the
+   *  brush cursor is: the effects below have to be able to put it away, and
+   *  a hint left showing under a menu is not cleared by a mouse that has
+   *  stopped moving. */
+  const hint = useRef<CursorHint | null>(null);
+  /** Where the cursor was last seen, so an eyedropper armed from the keyboard
+   *  has somewhere to put its swatch before the mouse moves again. */
+  const lastMouse = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
     brushRef.current = brush;
@@ -112,15 +135,39 @@ export function usePointerControls({
     // The ring is a real object in the scene and sits exactly under the cursor,
     // so it would be the thing sampled.
     cursor.current?.cancel();
+    hint.current?.setVisible(false);
     document.body.style.cursor = "crosshair";
+
+    // The swatch lives exactly as long as the arming does, so there is no state
+    // to clear anywhere else — disarming, picking, pausing and leaving all run
+    // this teardown.
+    const swatch = createPickPreview();
+    preview.current = swatch;
+    // Placed up front: F arms the pick without moving the mouse, and a circle
+    // parked in the corner until you do would read as broken. **The colour
+    // comes off the drawn frame**, not from `albedoAt` — the swatch answers
+    // "what am I looking at", and raw albedo held up against the surface it was
+    // taken from does not match it: grey stone under torchlight is brown on
+    // screen. The brush still takes the albedo, which is what makes the body
+    // come out that same brown under that same light. See `eyedropper.ts`.
+    const { x, y } = lastMouse.current;
+    swatch.move(x, y);
+    watchPixel(x, y, (hex) => swatch.setColor(hex));
+
     return () => {
       document.body.style.cursor = "";
+      stopWatch();
+      preview.current = null;
+      swatch.destroy();
     };
   }, [picking, onPicked]);
 
   useEffect(() => {
     paintingRef.current = painting;
-    if (!painting) cursor.current?.cancel();
+    if (!painting) {
+      cursor.current?.cancel();
+      hint.current?.setVisible(false);
+    }
   }, [painting]);
 
   useEffect(() => {
@@ -129,6 +176,7 @@ export function usePointerControls({
     // painting or turning the camera once the pointer handlers wake up again.
     if (!paused) return;
     cursor.current?.cancel();
+    hint.current?.setVisible(false);
     look.current.orbiting = false;
     hoverRef.current?.(false);
   }, [paused, look]);
@@ -158,6 +206,12 @@ export function usePointerControls({
 
     // The lock may already be held when this component is built.
     look.current.locked = document.pointerLockElement === canvas;
+
+    // Shown with the brush ring, and nowhere else: hovering your own body is
+    // the moment somebody is thinking about colour, and the eyedropper is
+    // otherwise a button you have to already know about.
+    const label = createCursorHint("F to pick a colour");
+    hint.current = label;
 
     const brushCursor = createBrushCursor({
       canvas,
@@ -226,7 +280,13 @@ export function usePointerControls({
       // Left button on your own body draws on it — unless the round is over and
       // this body is being shown to everybody, which is not the moment to repaint
       // the camouflage that is the subject of the exhibit.
-      if (!frozenRef.current && !look.current.locked && brushCursor.begin(e)) return;
+      if (!frozenRef.current && !look.current.locked && brushCursor.begin(e)) {
+        // A colour counts as *used* here and nowhere else: a drag begun with it.
+        // Recording it where it is chosen would fill the history with every
+        // shade the cursor crossed on its way across the wheel.
+        rememberColor(brushRef.current.color);
+        return;
+      }
 
       // Only the hunter takes the pointer lock — a chameleon keeps their cursor so
       // the brush and the palette are always to hand.
@@ -279,6 +339,9 @@ export function usePointerControls({
     };
 
     const onMouseMove = (e: MouseEvent) => {
+      lastMouse.current.x = e.clientX;
+      lastMouse.current.y = e.clientY;
+
       /** Nothing that needs a button held may survive the button coming up. */
       if (e.buttons === 0 && (look.current.orbiting || brushCursor.drawing)) {
         brushCursor.end();
@@ -308,7 +371,18 @@ export function usePointerControls({
       // turn the camera, and must not report a hover — a hover pops the palette
       // open, and opening the palette clears `paused`, so the pause menu used
       // to vanish the moment you moved the mouse towards it.
-      if (pausedRef.current) return;
+      if (pausedRef.current) {
+        label.setVisible(false);
+        return;
+      }
+
+      // The armed eyedropper's swatch follows the pointer; its colour is read
+      // off the drawn frame by `useEyedropperReadback`, which keeps answering
+      // for as long as the watch stands.
+      if (pickingRef.current) {
+        preview.current?.move(e.clientX, e.clientY);
+        moveWatch(e.clientX, e.clientY);
+      }
 
       // A stroke already in flight wins over everything else the mouse could
       // mean — including a right button pressed mid-drag. The exception is a
@@ -317,6 +391,9 @@ export function usePointerControls({
       if (brushCursor.drawing) {
         if (frozenRef.current) brushCursor.cancel();
         else brushCursor.move(e);
+        // The ring is under the cursor and the stroke is already happening;
+        // there is nothing left to advertise.
+        label.setVisible(false);
         return;
       }
 
@@ -328,10 +405,15 @@ export function usePointerControls({
         !look.current.orbiting &&
         !pickingRef.current
       ) {
-        hoverRef.current?.(brushCursor.move(e));
+        const overBody = brushCursor.move(e);
+        hoverRef.current?.(overBody);
+        // The label rides with the ring: same condition, same moment.
+        label.move(e.clientX, e.clientY);
+        label.setVisible(overBody);
       } else {
         brushCursor.cancel();
         hoverRef.current?.(false);
+        label.setVisible(false);
       }
 
       if (!look.current.locked && !look.current.orbiting) return;
@@ -356,6 +438,9 @@ export function usePointerControls({
       look.current.focused = false;
       brushCursor.cancel();
       look.current.orbiting = false;
+      // No ring, no label — and nothing will move the mouse to clear it while
+      // the tab is in the background.
+      label.setVisible(false);
     };
     const onFocus = () => {
       look.current.focused = true;
@@ -378,6 +463,9 @@ export function usePointerControls({
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
+      stopWatch();
+      hint.current = null;
+      label.destroy();
       cancelPick();
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("wheel", onWheel);

@@ -1,17 +1,22 @@
-import { useEffect, useMemo, useRef } from "react";
-import { SWATCHES } from "@/client/paint/palette";
+import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { recentColors, subscribeColors, WHITE } from "@/client/paint/palette";
 import { MAX_SIZE, MIN_SIZE, type Brush } from "./brush";
 
-const WHEEL = 156;
+const WHEEL = 208;
+
+/** One channel of HSV→RGB, 0..1. Kept numeric and separate from the hex form:
+ *  the wheel redraws whole every time the brightness moves, and going through a
+ *  string per pixel made that 43 000 allocations a frame. */
+function hsvChannel(n: number, h: number, s: number, v: number) {
+  const k = (n + h * 6) % 6;
+  return v - v * s * Math.max(0, Math.min(k, 4 - k, 1));
+}
 
 function hsvToHex(h: number, s: number, v: number) {
-  const f = (n: number) => {
-    const k = (n + h * 6) % 6;
-    const c = v - v * s * Math.max(0, Math.min(k, 4 - k, 1));
-    return Math.round(c * 255)
+  const f = (n: number) =>
+    Math.round(hsvChannel(n, h, s, v) * 255)
       .toString(16)
       .padStart(2, "0");
-  };
   return `#${f(5)}${f(3)}${f(1)}`;
 }
 
@@ -50,8 +55,11 @@ function ColorWheel({
   const canvas = useRef<HTMLCanvasElement>(null);
   const dragging = useRef(false);
 
-  // Drawn at full value once: darkening lives on the slider, so the wheel stays
-  // a stable map you can learn.
+  // **Redrawn at the brightness the slider is on.** It used to be drawn once at
+  // full value, on the grounds that a wheel which never changes is a map you
+  // can learn — but the colour you are mixing is the one you are about to
+  // paint, and a wheel glowing at full brightness while the brush is dark
+  // showed every colour except that one.
   useEffect(() => {
     const el = canvas.current;
     const ctx = el?.getContext("2d");
@@ -70,16 +78,16 @@ function ColorWheel({
           continue;
         }
         const hue = (Math.atan2(dy, dx) / (Math.PI * 2) + 1) % 1;
-        const hex = hsvToHex(hue, Math.min(1, dist / radius), 1);
-        image.data[i] = parseInt(hex.slice(1, 3), 16);
-        image.data[i + 1] = parseInt(hex.slice(3, 5), 16);
-        image.data[i + 2] = parseInt(hex.slice(5, 7), 16);
+        const sat = Math.min(1, dist / radius);
+        image.data[i] = Math.round(hsvChannel(5, hue, sat, v) * 255);
+        image.data[i + 1] = Math.round(hsvChannel(3, hue, sat, v) * 255);
+        image.data[i + 2] = Math.round(hsvChannel(1, hue, sat, v) * 255);
         // Feather the rim so the circle does not look jagged.
         image.data[i + 3] = Math.round(255 * Math.min(1, radius - dist));
       }
     }
     ctx.putImageData(image, 0, 0);
-  }, []);
+  }, [v]);
 
   const pick = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const el = canvas.current;
@@ -145,6 +153,9 @@ export function PaintPanel({
   onClear: () => void;
 }) {
   const { h, s, v } = useMemo(() => hexToHsv(brush.color), [brush.color]);
+  // The colours this tab has painted with. Client-side and in memory only —
+  // `palette.ts` says why a history beat a fixed row of presets.
+  const recent = useSyncExternalStore(subscribeColors, recentColors);
 
   if (!open) {
     return (
@@ -163,7 +174,7 @@ export function PaintPanel({
 
   return (
     <div
-      className="absolute bottom-4 right-4 w-[184px] select-none rounded-lg bg-black/70 p-3 font-mono text-xs text-neutral-100 backdrop-blur"
+      className="absolute bottom-4 right-4 w-[232px] select-none rounded-lg bg-black/70 p-3 font-mono text-xs text-neutral-100 backdrop-blur"
     >
       <div className="mb-2 flex items-center justify-between">
         <span className="uppercase tracking-widest text-neutral-400">Paint</span>
@@ -211,52 +222,74 @@ export function PaintPanel({
         or right-drag across your body
       </p>
 
-      <button
-        onClick={() => onPickingChange(!picking)}
-        title="Take a colour from the screen"
-        className={`mt-2.5 flex w-full items-center justify-center gap-2 rounded border px-2 py-2 text-[11px] transition ${
-          picking
-            ? "border-white bg-white/15 text-white"
-            : "border-neutral-600 text-neutral-300 hover:bg-neutral-700"
-        }`}
-      >
-        <span aria-hidden>◎</span>
-        {picking ? "click a colour" : "pick colour"}
-      </button>
-
-      <div className="mt-2.5 grid grid-cols-5 gap-1.5">
-        {SWATCHES.map((hex) => (
-          <button
-            key={hex}
-            onClick={() => onBrush({ ...brush, color: hex })}
-            style={{ background: hex }}
-            className={`h-7 rounded border transition ${
-              brush.color.toLowerCase() === hex
-                ? "border-white"
-                : "border-white/20 hover:border-white/60"
-            }`}
-          />
-        ))}
-      </div>
-
-      <div className="mt-2.5 flex items-center justify-between text-[11px] text-neutral-400">
-        <span className="flex items-center gap-2">
-          <span
-            className="rounded-full border border-white/30"
-            style={{
-              background: brush.color,
-              width: 6 + brush.size * 44,
-              height: 6 + brush.size * 44,
-            }}
-          />
-          {brush.color}
-        </span>
+      {/* The three actions, one row, one size. They were scattered — pick full
+          width here, white and clear tucked in beside the size readout — which
+          made three equal choices look like one heading and two footnotes. */}
+      <div className="mt-2.5 grid grid-cols-3 gap-1.5 text-[11px]">
+        <button
+          onClick={() => onPickingChange(!picking)}
+          title="Take a colour from the world (F)"
+          className={`flex h-8 items-center justify-center gap-1 rounded border transition ${
+            picking
+              ? "border-white bg-white/15 text-white"
+              : "border-neutral-600 text-neutral-300 hover:bg-neutral-700"
+          }`}
+        >
+          <span aria-hidden>◎</span>
+          pick
+          <span className={picking ? "text-neutral-300" : "text-neutral-500"}>F</span>
+        </button>
+        <button
+          onClick={() => onBrush({ ...brush, color: WHITE })}
+          title="Back to plain white"
+          className="flex h-8 items-center justify-center rounded border border-neutral-600 text-neutral-300 transition hover:bg-neutral-700"
+        >
+          white
+        </button>
         <button
           onClick={onClear}
-          className="rounded border border-neutral-600 px-2 py-1 text-neutral-300 transition hover:bg-neutral-700"
+          title="Wipe the paint off your body"
+          className="flex h-8 items-center justify-center rounded border border-neutral-600 text-neutral-300 transition hover:bg-neutral-700"
         >
           clear
         </button>
+      </div>
+
+      {/* Empty until something has been painted, and nothing stands in for it:
+          a row of placeholders is a row of buttons that do nothing. */}
+      {recent.length > 0 && (
+        <>
+          <div className="mt-2.5 text-[11px] uppercase tracking-wide text-neutral-400">
+            Recent
+          </div>
+          <div className="mt-1 grid grid-cols-5 gap-1.5">
+            {recent.map((hex) => (
+              <button
+                key={hex}
+                onClick={() => onBrush({ ...brush, color: hex })}
+                title={hex}
+                style={{ background: hex }}
+                className={`h-7 rounded border transition ${
+                  brush.color.toLowerCase() === hex
+                    ? "border-white"
+                    : "border-white/20 hover:border-white/60"
+                }`}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      <div className="mt-2.5 flex items-center gap-2 text-[11px] text-neutral-400">
+        <span
+          className="rounded-full border border-white/30"
+          style={{
+            background: brush.color,
+            width: 6 + brush.size * 44,
+            height: 6 + brush.size * 44,
+          }}
+        />
+        {brush.color}
       </div>
     </div>
   );

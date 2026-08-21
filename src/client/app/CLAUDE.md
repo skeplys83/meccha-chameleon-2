@@ -105,6 +105,10 @@ mechanism and the prose that explains it; the component is now composition.
   for the start menu's code box and for `useCrazyGames`' auto-join. Those were
   always the fallback path and are now the only path, so deleting the file to be
   rid of the portal takes invites with it.
+- **`Game.tsx` owns the two HUD keys, `T` and `F`.** Chat and the eyedropper
+  both need a key that works while their panel is merely legible, and neither
+  belongs to `players/controls.ts`. `picking` is *derived* from the armed flag
+  and the palette being on screen, so it cannot outlive the panel.
 - **A change of room is a clean slate**, and `net/`'s `onLeftRoom` is the one
   place that says so. Anything added later that belongs to a room resets there.
 - **Anything replayed on join subscribes from `Game.tsx`, never from the panel

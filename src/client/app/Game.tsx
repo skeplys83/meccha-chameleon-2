@@ -56,8 +56,11 @@ export function Game() {
    *  side it is on, which only the room can answer. */
   const [joined, setJoined] = useState(false);
   const [brush, setBrush] = useState<Brush>(DEFAULT_BRUSH);
-  /** The eyedropper is armed: the next click in the world takes its colour. */
-  const [picking, setPicking] = useState(false);
+  /** The eyedropper has been armed: the next click in the world takes its
+   *  colour. Whether it *is* armed is `picking` below — the palette going away
+   *  disarms it, and deriving that rather than clearing it from an effect is
+   *  what stops an armed pick outliving the panel and swallowing a click. */
+  const [pickArmed, setPickArmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("player");
   /** The connection died on its own. Distinct from every deliberate exit, and
@@ -95,6 +98,13 @@ export function Game() {
     !dropped &&
     (room.phase === "waiting" || room.phase === "countdown");
 
+  /** Whether the palette is on screen at all — a hunter has nothing to
+   *  camouflage, and the exhibit is not repainted. The eyedropper and its F key
+   *  live and die with it. */
+  const canPaint = !paused && !dropped && !rooted && role === "chameleon";
+  /** The eyedropper is armed *and* still has a palette to belong to. */
+  const picking = pickArmed && canPaint;
+
   const graves = useRoomGraves();
   // Subscribed here rather than in the panel: the backlog is replayed during
   // the join, long before anything conditional on `room` has mounted.
@@ -121,7 +131,7 @@ export function Game() {
       // Joining is a clean slate.
       forgetAllSkins();
       setBrush(DEFAULT_BRUSH);
-      setPicking(false);
+      setPickArmed(false);
       setError(null);
       setName(who);
       setJoined(true);
@@ -210,6 +220,23 @@ export function Game() {
     return () => window.removeEventListener("keydown", onKey);
   }, [canChat, chatting, setChatOpen]);
 
+  // F arms and disarms the eyedropper. It is the one paint control worth a key:
+  // the click it waits for lands in the world, so reaching back to the panel to
+  // arm it means looking away from the surface you wanted. `KeyF` is free in
+  // `players/controls.ts`.
+  //
+  // Not gated on the palette being open — minimised, the button is a colour
+  // swatch and the crosshair plus the cursor swatch are the whole interface.
+  useEffect(() => {
+    if (!canPaint || chatting) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== "KeyF" || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+      setPickArmed((p) => !p);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canPaint, chatting]);
+
   // The box cannot outlive the window it belongs to: the countdown ending is
   // what closes it for everybody, rather than each client noticing separately.
   useEffect(() => {
@@ -286,13 +313,17 @@ export function Game() {
         picking={picking}
         onPicked={(hex) => {
           setBrush((b) => ({ ...b, color: hex }));
-          setPicking(false);
+          setPickArmed(false);
         }}
         onHoverBody={onHoverBody}
       />
       {joined ? (
         <>
-          <ControlsPanel role={role} />
+          {/* Chameleons only. A hunter walks and shoots, which no legend has
+              to say — and everyone waiting in a lobby is nominally one, so the
+              panel appears when the draw hands you a side that has something
+              to learn. */}
+          {role === "chameleon" && <ControlsPanel />}
           {/* Sides are secret until they exist. Everyone waiting in a lobby is
               nominally a hunter — that is what `onJoin` sets — so labelling the
               rows before the draw would print "hunter" beside every name and
@@ -339,14 +370,14 @@ export function Game() {
               paint the moment they are caught — so the palette belongs to
               chameleons and to the waiting room, where everybody is still one
               button press from being either. */}
-          {!paused && !dropped && !rooted && role === "chameleon" && (
+          {canPaint && (
             <PaintPanel
               open={painting}
               onOpenChange={setPaintOpen}
               brush={brush}
               onBrush={setBrush}
               picking={picking}
-              onPickingChange={setPicking}
+              onPickingChange={setPickArmed}
               onClear={() => {
                 clearSkin(SELF);
                 sendClearSkin();

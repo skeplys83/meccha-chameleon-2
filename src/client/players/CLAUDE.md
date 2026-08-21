@@ -11,7 +11,7 @@ climbing, and `BODY` (the collider size for each role).
 | `look.ts`                 | `Look` and `Motion` — the two mutable structs it moves    |
 | `usePointerControls.ts`   | every meaning of the mouse, and the strokes it produces   |
 | `useStateBroadcast.ts`    | your transform, on a timer                                |
-| `useEyedropperReadback.ts`| the framebuffer read, at frame priority 3                 |
+| `useEyedropperReadback.ts`| the framebuffer reads — the click's fallback and the swatch's, at priority 3 |
 | `RemotePlayers.tsx`       | everybody else, damped toward their last packet           |
 | `controls.ts` `controller.ts` `camera.ts` `cling.ts` `body.ts` `pointerLock.ts` | the pieces each of those uses |
 
@@ -119,6 +119,22 @@ It raycasts `shell` only — floor, walls, ceiling — never the furniture. See
 
 ## Contracts
 
+- **The eyedropper's cursor swatch is `usePointerControls`' too**, created and
+  destroyed by the arming effect and moved from `onMouseMove`. **Its colour is
+  the drawn pixel, not the albedo the click takes** — it answers "what am I
+  looking at", and raw albedo held up beside the surface it came from does not
+  match it, because a grey stone under torchlight is brown on screen. The brush
+  still takes albedo, which is what makes the painted body come out that same
+  brown under that same light. `useEyedropperReadback` answers a **standing**
+  watch every drawn frame, since the world moves under a still cursor.
+- **A colour is recorded as *used* when a drag begins**, from the same branch
+  that starts the stroke: `rememberColor` in `paint/palette.ts` feeds the
+  panel's recent row.
+- **The "F to pick a colour" label rides with the brush ring**, on the same
+  condition and in the same handler. It is held in a ref rather than closed
+  over, because every effect that cancels the ring — pausing, minimising the
+  palette, arming the pick — has to put the label away too: a mouse that has
+  stopped moving will not clear it.
 - **`Game.tsx` owns pause, paint and the role**; this folder receives them as
   props. `frozen` is not `paused` — a rooted survivor keeps their mouse.
 - **Publishes `remoteFigures`** for `combat/shoot.ts` to raycast.

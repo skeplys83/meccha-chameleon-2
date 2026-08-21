@@ -10,7 +10,8 @@ the panel they are driven from.
 | `skin.ts`         | one canvas per player, and the stroke encoding on the wire  |
 | `surface.ts`      | where a dab lands on the texture, and the seam handling     |
 | `brushCursor.ts`  | the drag: hit-testing the body, the ring, the stroke stream |
-| `brush.ts` `palette.ts` `pick.ts` `eyedropper.ts` | size, colour, hit-testing, screen sampling |
+| `brush.ts` `palette.ts` `pick.ts` `eyedropper.ts` | size, the recent-colour history, hit-testing, screen sampling |
+| `pickPreview.ts`  | the two things that ride the cursor: the swatch, and the hint |
 | `PaintPanel.tsx`  | the palette UI                                              |
 
 ## The four rules that will bite you
@@ -60,8 +61,9 @@ So `albedo.ts` raycasts the drawn geometry on the click itself and returns
 `material.color` times the texel under the hit UV. Both maps make that exact:
 the arena's twelve materials are untextured and **named for their own hex**
 (11 of 12 round-trip to their own name through the linear→sRGB conversion; the
-twelfth is just called "Material"), and the dungeon is one 1024² atlas with a
-white base factor. Neither has vertex colours. It needs no frame at all — the
+twelfth is just called "Material"), and the dungeon is a 1024² atlas plus the
+baked `dirt_ground`, both with a white base factor, so the picked colour is the
+texel itself. Neither has vertex colours. It needs no frame at all — the
 ray is cast in the pointer handler.
 
 **Skinned meshes are excluded on purpose.** `SkinnedMesh.raycast` costs ~6 ms a
@@ -69,10 +71,14 @@ ray (see `pick.ts`), so with several players on screen one click would drop a
 frame. The cost is that you cannot pick another player's paint; scenery is the
 point.
 
-### The framebuffer read is still there, as the fallback
+### The framebuffer read is still there, for two things
 
 When the ray hits nothing solid — sky, background — `eyedropper.ts` reads the
 drawn pixel at frame priority 3 instead, which for something unlit is right.
+
+**The cursor swatch reads it too, and always.** That is not a fallback but the
+answer to a different question: the click asks what the brush should hold, the
+swatch asks what the player is looking at.
 
 **The trap there is that `FrameLimiter` does not draw every frame.** It caps at
 60 fps by skipping `gl.render` outright, so on a 120 Hz display half of all
@@ -120,6 +126,46 @@ one number and grows the schema.
 
 ## Contracts
 
+- **The eyedropper is armed with `F` as well as with the button**, and the key
+  is `Game.tsx`'s — the click it waits for lands in the world, so reaching back
+  to the panel to arm it means looking away from the surface you wanted. The
+  arming is *derived*, not stored: `picking` is the armed flag **and** the
+  palette still being on screen, so pausing, dying or the reveal disarms it
+  rather than leaving a pick to swallow the next click.
+- **The row under the wheel is a history, not a palette.** The ten fixed
+  presets are gone: a preset is a guess at what somebody wants, and a chameleon
+  is matching a wall, so the colour they mixed two walls ago is worth more than
+  "rose". A colour enters it when a **stroke begins** with it — recorded from
+  `players/usePointerControls`, because recording where a colour is *chosen*
+  would fill the row with every shade the cursor crossed on the wheel. It is in
+  memory, client-side, never sent, and outlives a room on purpose.
+- **The wheel is drawn at the brightness the slider is on**, and redrawn when it
+  moves. It used to be drawn once at full value so that it stayed a map you
+  could learn; the colour being mixed is the one about to be painted, and a
+  wheel glowing at full brightness while the brush was dark showed every colour
+  except that one. The fill is numeric — `hsvChannel`, not the hex form — since
+  a redraw is 43 000 pixels and a string per pixel made that a frame of
+  allocations.
+- **`pick`, `white` and `clear` are one row of three equal buttons.** They are
+  three choices of the same weight, and scattering them — pick full width, the
+  other two tucked beside the size readout — made one look like a heading and
+  two like footnotes. **They still do different kinds of thing**: `white`
+  reloads the brush, `clear` wipes the body and paint has no undo, so the
+  labels stay distinct even though the buttons match.
+- **The brush ring is where the eyedropper is advertised.** Hovering your own
+  body is the moment somebody is thinking about colour, so the ring appearing
+  brings "F to pick a colour" with it, and the label goes the instant the pick
+  is armed. It is the only place the key is named outside the panel and the
+  controls legend.
+- **The click takes albedo; the cursor swatch shows the drawn pixel.** They are
+  different questions and the answers differ by exactly the room's lighting.
+  Showing the brush's own value in the circle was wrong on screen — a grey
+  stone under the dungeon's torches is brown, and a grey circle held against
+  brown ground reads as a broken picker. The swatch is what you are looking at
+  *and* what the body will look like once that albedo is lit by the same room.
+  It is plain DOM updated imperatively, fed by a **standing** watch in
+  `eyedropper.ts` that `useEyedropperReadback` answers on every drawn frame —
+  standing rather than per-move because the world moves under a still cursor.
 - **`SELF` is the local player's key**; remotes use their Colyseus session id.
 - **Painting needs no mode, only a free cursor** — anyone not holding the pointer
   lock can paint, which is why a hunter has to open the palette to do it.
