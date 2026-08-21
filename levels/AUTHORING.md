@@ -45,6 +45,97 @@ It also refuses to write a file with no collision objects at all, and warns when
 a level suddenly exports at more than twice its previous size — which is what a
 palette leak looks like from outside.
 
+### Baked procedural surfaces
+
+A material carrying a **`tile_period`** custom property is a baked procedural.
+The dungeon's dirt ground is the one that exists.
+
+```
+Dirt Ground node group      tuned in Blender, sliders for every layer,
+      |                     driven by world position — no tiling, no seams
+      |   scripts/export-level.sh ─┐    (bakes, then exports: ~0.8s + ~1.7s)
+      v                            |
+levels/textures/dirt_ground.png    |    committed, rebuilt by every export
+      |                            |
+      v                            v
+public/maps/dungeon.glb                 one joined floor, world-projected UVs
+```
+
+**The export bakes.** `export-level.py` calls `bake-material.py`'s `main()` for
+every material carrying a `tile_period`, in the same `--background` process that
+is already holding the .blend open, so a slider you moved is in the map you
+built. It costs about **1 s** of a 2.5 s export — measured, after an earlier
+claim that a bake would be "slow and unpredictable" turned out to be worth
+nothing. Run `scripts/bake-material.py` by hand only when you want the PNG
+refreshed without exporting.
+
+**`world_uv_join` on the material asks for the export-time join.** The dirt
+needs it: its tiles are *rotated* 90° to break up the kit's repeating pebble
+bumps, and a seamless tile only stays seamless when it repeats by translation,
+so the floor is joined into one object and projected in world space. The join is
+undone the moment the export finishes. **The projection offsets by `+ 0.5`**,
+because the bake plane is centred on the origin and spans −period/2..+period/2 —
+without it the map is half a tile out of phase with the viewport you tuned in.
+
+A material *without* the flag keeps whatever UVs its mesh already has, which is
+how a procedural could be mapped in object space and stay instanced. Nothing
+uses that today.
+
+**The tiling check is a periodicity test, not an edge comparison.** The obvious
+check — first row of pixels against the last — cries wolf on anything with hard
+edges: masonry puts a mortar joint exactly on the tile boundary, so those two
+pixels sit in different courses *by design* and differ wildly while the tile
+repeats perfectly. `bake-material.py` bakes two periods into a 256² probe and
+compares the halves instead, judged against the pattern's own contrast, since
+Cycles jitters its samples and the floor is never exactly zero.
+
+**Why it is built this way.** The kit's dirt tile is one small patch of the
+shared atlas repeated under all 110 floor tiles, so the ground read as flat and
+a chameleon lying on it was a silhouette. The replacement puts its contrast at
+**1-2 m** — the scale a body covers and a brush can match in two or three
+strokes — because camouflage here is painted by hand: detail finer than a stroke
+cannot be reproduced, and a smooth painted body on a speckled ground stands out
+*more*.
+
+**Three rules hold it together:**
+
+1. **The tiles are rotated in 90-degree steps** (hashed from each tile's own
+   position, so it never reshuffles) to break up the kit's repeating pebble
+   bumps, which marched in step every 4 m.
+2. **The node group is periodic by construction** — every noise is sampled on a
+   torus, so `Tile Period` metres of it wrap exactly. That is what makes one
+   baked square tile with no seam.
+3. **The export joins the floor into one object and projects UVs in world
+   space.** Both halves matter: a seamless tile only stays seamless when it
+   repeats by *translation*, and per-tile UVs plus per-tile rotation means a
+   rotated tile meets its neighbour's edge with the wrong one. That shipped
+   once, and the seams were visible from across the room.
+
+The join is undone the moment the export finishes, so the `.blend` keeps its
+individual tiles. The per-tile UVs they still carry are vestigial — the export
+overwrites them — and the *tuning* material ignores UVs entirely.
+
+**Two Blender traps worth knowing before you build a lattice in nodes.** A Math
+node's sockets default to **0.5**, not 0 — so `WRAP(value, max)` with the Min
+left alone wraps into `[0.5, max)` and quietly breaks periodicity. And `MODULO`
+is signed, so a row at −1 offsets the wrong way and a running bond breaks either
+side of an object's origin; `WRAP` is what you want.
+
+Move a slider, save, export. **The stale-bake trap is gone by construction**,
+since the export bakes — but the check that caught it survives for the
+export-by-hand path: the bake writes `dirt_ground.bake.json` beside the PNG, and
+the export refuses to write a file whose sliders have moved since, naming the
+ones that did. The stamp is on disk rather than on the material because
+**writing a custom property does not mark a .blend dirty** — Blender never
+offers to save it, so a stamp kept there quietly never arrives, which is how the
+check failed the first time it was needed. Beside the PNG it is also committed,
+so a fresh checkout is verified too, and it diffs.
+
+Note what the export writes: `levels/textures/dirt_ground.png` is a build
+artefact of the node graph, so an export leaves it modified in the working tree
+whenever the sliders have moved. That is the point — it keeps the committed PNG
+and the .blend telling the same story.
+
 ### The asset palette
 
 Keep the source kit in its own collection, parked well clear of the map, and
@@ -450,6 +541,13 @@ a real level, which is real but not a rescue.
 15. Floor filed outside the collection the floor plan is derived from.
 16. A bbox-based walkability check reporting a false blockage at an open piece.
 17. Colliders left in a solid display mode, hiding the map in the viewport.
+18. A seamless texture given per-tile UVs on tiles that are rotated — seamless
+    only survives repetition by translation.
+19. Moving a `Dirt Ground` slider and shipping the previous bake. **The export
+    now bakes**, so this cannot happen through the script; exporting by hand
+    still can, and the stamp beside the PNG is what refuses it.
+20. Keeping any bookkeeping in a custom property and expecting it to persist: a
+    property write leaves the .blend *clean*, so nothing prompts you to save it.
 
 ---
 

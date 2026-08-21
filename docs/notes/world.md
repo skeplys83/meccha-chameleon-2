@@ -305,8 +305,11 @@ downloading in the background cannot raise it.
     dungeon has put that under real pressure for the first time.** It was 784 KB
     on disk and 213 KB gzipped while it was an empty shell; with 464 props it is
     **3.1 MB on disk and ~995 KB gzipped**, which is now larger than the music.
-    Geometry is the whole file — 175 distinct meshes, no texture worth naming,
-    because the kit shares one atlas and KTX2 would be pure overhead. **Serving
+    Geometry was the whole file — 175 distinct meshes against a kit atlas that
+    compresses to 17 KB. **That is no longer quite true**: the dirt ground is a
+    baked procedural now, ~300 KB of PNG, and its world-projected UVs cost a
+    joined 22 k-vert mesh where 110 instanced tiles cost nothing. KTX2 is still
+    overhead at this size. **Serving
     `public/` compressed is still the cheapest win** and costs nothing.
 
     The two levers, measured rather than guessed: **quantization**

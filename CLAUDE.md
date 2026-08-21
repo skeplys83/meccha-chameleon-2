@@ -191,8 +191,14 @@ gamedistribution/   the one page uploaded to the portal — an iframe wrapper
 **Every map is one `.glb` exported from Blender, and the repo has no part in
 making one.** `levels/<id>.blend` is the map, `public/maps/<id>.glb` is its
 export, and the row in `shared/maps.ts` is a display name plus the few numbers
-the game needs before the file has loaded. There is no build step and no
-generated file.
+the game needs before the file has loaded. There is no build step between the
+.blend and the .glb.
+
+**The dungeon's ground is generated, though.** `levels/textures/` holds a PNG per
+procedural material — one today, the dirt ground — baked out of a Blender node
+group by the export, with a `.bake.json` beside it recording the sliders it came
+from. They are committed, because glTF cannot carry a node
+graph and the game can only load an image. See [levels/AUTHORING.md](levels/AUTHORING.md).
 
 **Hosted deployments run on a single exposed port.** In production Colyseus
 attaches directly to the HTTP server on `PORT` (default 3000) unless `GAME_PORT`
