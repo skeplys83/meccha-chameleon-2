@@ -6,6 +6,7 @@ import { CreateGamePanel } from "./CreateGamePanel";
 import { LegalPage } from "./LegalPage";
 import { Footer } from "./Footer";
 import { getInitialInviteRoom } from "@/client/app/crazygames";
+import { DEV } from "@/client/app/dev";
 
 /** The name lives in `sessionStorage`, scoped to the tab. */
 const NAME_KEY = "mc_name";
@@ -32,6 +33,7 @@ function writeName(name: string) {
 export function StartMenu({
   onCreate,
   onJoinCode,
+  onQuickPlay,
 }: {
   onCreate: (
     name: string,
@@ -40,6 +42,8 @@ export function StartMenu({
     maxPlayers: number,
   ) => void;
   onJoinCode: (name: string, code: string) => void;
+  /** Dev builds only: straight into a round, second window and all. */
+  onQuickPlay: (name: string) => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [ready, setReady] = useState(false);
@@ -129,6 +133,25 @@ export function StartMenu({
               >
                 Create game
               </button>
+
+              {/* Dev builds only, and `DEV` is substituted by vite rather than
+                  read — so this button and the hook behind it are dropped from
+                  the production bundle entirely. See `app/dev.ts`. */}
+              {DEV && (
+                <>
+                  <button
+                    onClick={() => ready && onQuickPlay(takeName())}
+                    disabled={!ready}
+                    className="mt-3 w-full rounded-lg border border-amber-500/70 bg-amber-500/10 px-6 py-2.5 text-sm text-amber-200 transition hover:bg-amber-500/20 disabled:opacity-40"
+                  >
+                    Quick play (dev)
+                  </button>
+                  <p className="mt-2 text-[11px] leading-snug text-neutral-600">
+                    Opens a second window as the other player and starts the round.
+                    The draw decides which of you gets the gun.
+                  </p>
+                </>
+              )}
             </section>
 
             {/* ── Or type someone's code ──────────────────────────────────── */}

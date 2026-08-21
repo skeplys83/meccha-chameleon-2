@@ -33,6 +33,7 @@ mechanism and the prose that explains it; the component is now composition.
 | `useGameDistribution`   | the ad break, and the handle its two placements hang on  |
 | `useWhistle`            | a chameleon's periodic tell                             |
 | `useDevHotkey`          | backquote                                               |
+| `useDevQuickPlay`       | dev builds: a game, a second window, and Start           |
 
 ## The three rules that will bite you
 
@@ -127,6 +128,13 @@ mechanism and the prose that explains it; the component is now composition.
 - **Esc closes the pause menu for a chameleon and not for a hunter.** A hunter's
   Esc never reaches the app: the browser spends it releasing the pointer lock,
   and `pointerlockchange` is what raises their menu.
+- **`useDevQuickPlay` drives the ordinary path fast; it does not add a new
+  one.** It opens a lobby, points a second window at the `?code=` invite, and
+  sends `start` when the seat fills. **The popup is opened in the click
+  handler**, parked on `about:blank` until there is a code — one opened later
+  from the effect is outside the gesture and every browser blocks it. Nothing
+  about the server changes for it, and nothing may: a solo version means forking
+  `MIN_PLAYERS` and the win conditions, and the draw stays the server's.
 - **Developer mode is `import.meta.env.DEV`** and must not be reachable in
   production — not by an env var, not by a query parameter, not by a key. The
   point of tying it to the build is that there is no switch to find.

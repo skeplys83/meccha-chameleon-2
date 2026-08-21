@@ -37,6 +37,23 @@ page for everybody who is not the developer. It replaces Next's
 machine's addresses because Vite checks the *host* once rather than the origin of
 every asset request.
 
+**Quick play, on the start menu, in dev builds only.** One click opens an
+unlisted two-player game, sends a second browser window to it through the same
+`?code=` invite everybody else uses, and presses Start the moment that player is
+seated — five seconds of countdown later both windows are in the map. **It does
+not skip the lobby**, because nothing can: a match takes a role only from a seat
+its lobby reserved. It changes nothing on the server, which is the point — a
+solo version would have to fork `MIN_PLAYERS` *and* the win conditions, since a
+lone player is drawn as the hunter and a round with no chameleons ends the
+instant it starts. Which window gets the gun is the server's draw, and not
+negotiable. Allow popups for localhost or the second window never opens; the
+console says so when it is blocked.
+
+**`./scripts/export-level.sh <id>` rebuilds a map, and bakes what needs baking**
+— about 2.5 s for the dungeon, of which the dirt ground's Cycles bake and its
+tiling check are ~1 s. It rewrites `levels/textures/dirt_ground.png` as it goes,
+so that file turning up modified after an export is the pipeline working.
+
 Useful env vars: `PORT` (web, default 3000), `GAME_PORT` (Colyseus, default 2567 in dev, defaults to `PORT` in production for single-port hosting),
 `HMR_PORT` (Vite's dev socket, default 24678), `PUBLIC_GAME_PORT` (what clients
 are *told* to connect to, when a proxy fronts Colyseus), `SESSION_NAME`,

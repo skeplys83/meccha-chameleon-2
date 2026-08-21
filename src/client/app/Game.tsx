@@ -38,6 +38,7 @@ import {
   useCaughtNotice,
   useCrazyGames,
   useDevHotkey,
+  useDevQuickPlay,
   useGameDistribution,
   useNetEvents,
   usePauseControl,
@@ -164,6 +165,9 @@ export function Game() {
   );
 
   useCrazyGames({ joined, room, name, create, joinCode });
+
+  // Dev builds only, and dropped from the production bundle with `DEV`.
+  const quickPlay = useDevQuickPlay(room);
 
   // Pre-roll, on the two buttons that actually start a game. Wrapped rather
   // than put inside `create`/`joinCode` themselves: those are also called by
@@ -395,7 +399,15 @@ export function Game() {
           )}
         </>
       ) : (
-        <StartMenu onCreate={createFromMenu} onJoinCode={joinFromMenu} />
+        <StartMenu
+          onCreate={createFromMenu}
+          onJoinCode={joinFromMenu}
+          onQuickPlay={(who) =>
+            quickPlay((map, listed, maxPlayers) =>
+              create(who, map, listed, maxPlayers),
+            )
+          }
+        />
       )}
       {/* Last, and over everything including the menu, because it is the one
           overlay that is not about the game: while it is up there is no floor

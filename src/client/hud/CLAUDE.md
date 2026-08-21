@@ -77,6 +77,10 @@ reads them from there now.
   `window` by drei's `KeyboardControls`, so without it typing "was" walks you
   across the arena. That is also why Esc is handled inside the input rather
   than by `usePauseControl` — the stopped event never reaches the global one.
+- **The start menu's one dev affordance is Quick play**, gated on `DEV` so vite
+  drops it from the production bundle along with the hook behind it. It does not
+  breach the no-picking-sides rule: it starts a round, and the draw is still the
+  server's.
 - **The clock is displayed, never counted.** `timeLeft` comes off room state.
 - **The DEV chip stays visible when the readout is hidden.** It is the toggle,
   and a switch that vanishes when you use it is a trap.
